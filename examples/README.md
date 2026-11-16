@@ -10,5 +10,6 @@ blocks; it is an input to `RoutedPipelineSolver`. No simulation output is commit
 | `level2-two-channels` | two coupled 20 Mbps channels in one block |
 | `level3-three-channels` | TRAFFIC, XTALK_LOW and XTALK_HIGH blocks over three channels |
 | `level4-ddr3-write` | the AM3352 DDR3 lower-byte write; see [its README](level4-ddr3-write/README.md) |
+| `coupon` | no SI blocks: a NanoVNA measurement coupon with committed predicted S-parameters; see [hardware validation](../docs/hardware-validation.md) |
 
 [Routed stage examples](routed/README.md) describe the local runners and stage renders.
