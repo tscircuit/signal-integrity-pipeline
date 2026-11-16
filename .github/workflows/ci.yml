@@ -13,6 +13,8 @@ jobs:
         with:
           version: 11.25.0
       - uses: oven-sh/setup-bun@v2
+      # ngspice runs the few-second known-answer decks gated only on PATH (docs/ibis-fixture-check.md).
+      - run: sudo apt-get update && sudo apt-get install -y ngspice
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
