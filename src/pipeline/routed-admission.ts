@@ -12,6 +12,10 @@ export interface RoutedProblem {
   ibisSources: IbisSources
   scopeDistanceMm?: number
   materials?: RoutedCompileOptions['materials']
+  /** Discretisation overrides for convergence checks: ladder refinement, transient max step and BEM panels per edge. */
+  refinement?: number
+  stepSeconds?: number
+  panels?: number
 }
 export interface RoutedBlockPlan {
   id: string
@@ -45,7 +49,7 @@ export class RoutedAdmissionSolver extends BaseSolver {
       })))
       const experiment = block.circuit.find(record => record.type === 'simulation_experiment')!
       if (experiment.type !== 'simulation_experiment') throw new Error('Missing admitted experiment')
-      const options: RoutedCompileOptions = { riseSeconds: Math.min(...block.signals.flatMap(signal => endpointPorts(signal.driver)).map(id => edgeSeconds(block.pins.get(id)!))), refinement: 1, stepSeconds: experiment.time_per_step! / 1000, durationSeconds: block.duration, materials: this.input.materials }
+      const options: RoutedCompileOptions = { riseSeconds: Math.min(...block.signals.flatMap(signal => endpointPorts(signal.driver)).map(id => edgeSeconds(block.pins.get(id)!))), refinement: this.input.refinement ?? 1, stepSeconds: this.input.stepSeconds ?? experiment.time_per_step! / 1000, durationSeconds: block.duration, materials: this.input.materials, ...(this.input.panels !== undefined && { panels: this.input.panels }) }
       const artifactPrefix = `blocks/${id}`
       this.plans.push(snapshot({ id, name: block.block.name ?? id, warnings: block.warnings,
         sections: { circuitJson: block.circuit, scope: block.settings.copperScope, requiredSourcePortIds: block.settings.lanes.flatMap(lane => [lane.from.sourcePortId!, lane.to.sourcePortId!]), referenceSourcePortId: block.settings.channelReference!.sourcePortId!, artifactPrefix },

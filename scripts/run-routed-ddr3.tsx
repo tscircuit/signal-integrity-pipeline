@@ -17,6 +17,12 @@ const output = resolve(process.env.SI_STAGE_VISUALS_DIR ?? '.cache/ddr-level4')
 const directory = process.env.IBIS_MODEL_DIR ?? 'models'
 const ibisSources = Object.fromEntries(await Promise.all(['sprm552c.ibs', 'W631GG6MB-12.ibs'].map(async file => [`models/${file}`, await readFile(join(directory, file), 'utf8')])))
 await mkdir(output, { recursive: true })
+/** `--name=value` flag, used for the discretisation overrides of the refinement study (docs/refinement.md). */
+const flag = (name: string): string | undefined => process.argv.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
+/** Numeric `--name=value` flag, or undefined when absent. */
+const number = (name: string): number | undefined => flag(name) === undefined ? undefined : Number(flag(name))
+const discretisation = { refinement: number('refinement'), stepSeconds: number('step-seconds'), panels: number('panels') }
+const compileOnly = process.argv.includes('--compile-only')
 /** Save the stage's actual drawing over the real board, including an explicit failed state when no capture exists. */
 async function render(name: string, drawing: GraphicsObject): Promise<void> {
   const svg = boardPictureSvg(circuitJson, drawing, 1800, 1400)
@@ -26,7 +32,7 @@ async function render(name: string, drawing: GraphicsObject): Promise<void> {
 let circuitJson: CircuitJson
 if (process.argv.includes('--addr-cmd')) {
   const physical = JSON.parse(await readFile(process.env.SI_DDR3_BOARD ?? join(directory, 'ddr3-board.json'), 'utf8')) as CircuitJson
-  circuitJson = await withDdr3Signals(physical, ibisSources, { block: 'DDR3_ADDR_CMD' })
+  circuitJson = await withDdr3Signals(physical, ibisSources, { block: 'DDR3_ADDR_CMD', nets: flag('nets')?.split(',') })
 } else {
   const circuit = new Circuit({ platform: { partsEngineDisabled: true, platformFetch: async url => new Response(ibisSources[`models/${String(url).split('/').at(-1)}`]) } })
   circuit.add(<Board />)
@@ -35,14 +41,14 @@ if (process.argv.includes('--addr-cmd')) {
   const errors = circuitJson.filter(record => record.type.endsWith('_error'))
   if (errors.length) throw new Error(JSON.stringify(errors))
 }
-const native = createNativeSolver({ timeoutMs: 45 * 60 * 1000 })
+const native = createNativeSolver({ timeoutMs: (number('timeout-minutes') ?? 45) * 60 * 1000 })
 let invocations = 0
 let nativeMilliseconds = 0
 const started = performance.now()
 const timings: Record<string, number> = {}
 const stats: Record<string, unknown> = {}
 let stageStart = started
-const root = new RoutedPipelineSolver({ circuitJson, ibisSources, scopeDistanceMm: 1 }, {
+const root = new RoutedPipelineSolver({ circuitJson, ibisSources, scopeDistanceMm: 1, ...discretisation }, {
   progress: console.log,
   runSolver: async request => {
     if (++invocations !== 1 || request.solver !== 'ngspice') throw new Error('DDR evidence allows exactly one ngspice invocation')
@@ -71,6 +77,10 @@ try {
         const compiled = root.stageOutput('RouteNetworkSolver').value[0]
         await writeFile(join(output, 'evidence.json'), JSON.stringify(compiled.evidence))
         await writeFile(join(output, 'compile.json'), JSON.stringify({ cells: compiled.evidence.cells, deckBytes: Buffer.byteLength(compiled.deck), deckSha256: sha256(compiled.deck), qualification: 'compiled-only' }, null, 2))
+        if (compileOnly) {
+          await writeFile(join(output, 'simulation.cir'), compiled.deck)
+          break
+        }
       }
     }
     if (performance.now() - last > 15000) {
@@ -78,6 +88,7 @@ try {
       last = performance.now()
     }
   }
+  if (compileOnly) process.exit(0)
   const block = root.getOutput().blocks[0]
   await writeFile(join(output, 'capture.json'), JSON.stringify(block.capture))
   await writeFile(join(output, 'evidence.json'), JSON.stringify(block.compiled.evidence))

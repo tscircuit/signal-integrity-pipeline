@@ -23,6 +23,8 @@ SI_NATIVE_TESTS=1 IBIS_MODEL_DIR=/path/to/models node --import tsx --test tests/
 Native checks skip without `SI_NATIVE_TESTS=1` or without `ngspice` on `PATH`. Vendor checks
 skip without `IBIS_MODEL_DIR` or without the named file (`sprm552c.ibs`, `W631GG6MB-12.ibs`).
 
+The full-board DDR3 discretisation check (ladder, time step and BEM panel refinement) is in [refinement.md](refinement.md).
+
 ## Results
 
 Measured on 2026-11-14 (#27–#29b on 2026-11-17). Cross-sections use b = 1 mm and copper unless stated otherwise.

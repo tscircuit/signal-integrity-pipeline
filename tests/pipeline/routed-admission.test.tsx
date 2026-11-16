@@ -24,6 +24,18 @@ test('admission uses shared block lowering, retains warnings and rejects invalid
   assert.throws(() => new RoutedAdmissionSolver({ ...input, scopeDistanceMm: 0 }).solve(), /scope distance/)
 })
 
+test('discretisation overrides reach the compile options; defaults keep the experiment step', async () => {
+  const input = (await routedVisualFixture()).root.inputProblem
+  const base = new RoutedAdmissionSolver(input)
+  base.solve()
+  const options = base.getOutput().value[0].bindings.options
+  assert.equal(options.refinement, 1)
+  assert.equal('panels' in options, false)
+  const refined = new RoutedAdmissionSolver({ ...input, refinement: 2, stepSeconds: options.stepSeconds / 2, panels: 18 })
+  refined.solve()
+  assert.deepEqual(refined.getOutput().value[0].bindings.options, { ...options, refinement: 2, stepSeconds: options.stepSeconds / 2, panels: 18 })
+})
+
 test('empty boards admit no fake blocks', () => {
   const solver = new RoutedAdmissionSolver({ circuitJson: [], ibisSources: {} })
   solver.solve()

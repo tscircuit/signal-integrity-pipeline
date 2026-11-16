@@ -30,6 +30,7 @@ export const routedStages = [
       scope: sections.scope,
       maskThicknessMm: sections.maskThicknessMm,
       materials: p.stageOutput('RoutedAdmissionSolver').value[i].bindings.options.materials,
+      panels: p.stageOutput('RoutedAdmissionSolver').value[i].bindings.options.panels,
       artifactPrefix: p.stageOutput('RoutedAdmissionSolver').value[i].sections.artifactPrefix,
     })),
   ]),
