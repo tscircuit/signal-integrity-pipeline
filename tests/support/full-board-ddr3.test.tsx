@@ -41,6 +41,7 @@ test(modelSelection, options, async () => {
   // Branched neighbours such as RN5_INPUT_SYS4_CPU_PULL stay in the copper scope; only selected copper becomes lanes.
   const [write] = prepareBlocks({ circuit, sources, distanceMm: 1 })
   const cpuModelRevision = `models/sprm552c.ibs SHA-256 ${CPU_MODEL_SHA256}`
+  assert.ok(write.warnings)
   assert.ok(
     write.warnings.some(
       (warning) =>
