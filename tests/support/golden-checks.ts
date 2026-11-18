@@ -160,6 +160,53 @@ export function ngspiceAvailable(): boolean {
   })
 }
 
+/** ASCII letters, digits and underscore count as part of a diagnostic word. */
+function isDiagnosticWordCharacter(character = ""): boolean {
+  return (
+    (character >= "a" && character <= "z") ||
+    (character >= "A" && character <= "Z") ||
+    (character >= "0" && character <= "9") ||
+    character === "_"
+  )
+}
+
+/** Recognize ngspice's failure messages when bounded by non-word characters. */
+function hasGoldenDiagnostic(line: string): boolean {
+  const messages = ["error", "fatal", "aborted", "timestep too small"]
+  for (let start = 0; start < line.length; start++) {
+    if (isDiagnosticWordCharacter(line[start - 1])) continue
+    for (const message of messages) {
+      const end = start + message.length
+      if (
+        line.slice(start, end).toLowerCase() === message &&
+        !isDiagnosticWordCharacter(line[end])
+      )
+        return true
+    }
+  }
+  return false
+}
+
+/** Find the first diagnostic across LF and CRLF native output. */
+function goldenDiagnostic(output: string): string | undefined {
+  return output.replaceAll("\r\n", "\n").split("\n").find(hasGoldenDiagnostic)
+}
+
+/** Parse one wrdata row, advancing past each run of whitespace between fields. */
+function parseGoldenRow(line: string): number[] {
+  const row = line.trim()
+  const values: number[] = []
+  let start = 0
+  for (let index = 0; index < row.length; index++) {
+    if (row[index].trim() !== "") continue
+    values.push(Number(row.slice(start, index)))
+    while (index + 1 < row.length && row[index + 1].trim() === "") index++
+    start = index + 1
+  }
+  values.push(Number(row.slice(start)))
+  return values
+}
+
 /**
  * Run one small deck through the repo's sequential native adapter (OMP_NUM_THREADS=1) and return
  * its `wrdata golden.dat ...` rows: time (or sweep) first, then each saved vector.
@@ -172,19 +219,11 @@ export async function runGoldenDeck(deck: string): Promise<number[][]> {
     args: ["-n", "-b", "golden.cir"],
     outputFiles: ["golden.dat"],
   })
-  const diagnostic = (output.stdout + "\n" + output.stderr)
-    .split(/\r?\n/)
-    .find((line) =>
-      /\b(?:error|fatal|aborted|timestep too small)\b/i.test(line),
-    )
+  const diagnostic = goldenDiagnostic(output.stdout + "\n" + output.stderr)
   if (diagnostic) throw new Error(`ngspice: ${diagnostic}`)
   const text = output.files["golden.dat"]
   if (!text) throw new Error("ngspice wrote no golden.dat")
-  return text
-    .trim()
-    .split("\n")
-    .slice(1)
-    .map((line) => line.trim().split(/\s+/).map(Number))
+  return text.trim().split("\n").slice(1).map(parseGoldenRow)
 }
 
 /** Linear interpolation of column `column` at `time` over ascending time rows. */
