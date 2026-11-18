@@ -1,3 +1,4 @@
+import type { Matrix } from "../extraction"
 import { fail } from "./diagnostics"
 
 export interface SpiceVector {
@@ -88,7 +89,7 @@ export function formatSpiceVectors(vectors: SpiceVector[]): string {
 export function spiceProbeRows(
   text: string,
   probes: readonly { signalNode: string; referenceNode: string }[],
-): number[][] {
+): Matrix {
   const vectors = new Map(
     parseSpiceVectors(text).map((vector) => [vector.name, vector.values]),
   )
