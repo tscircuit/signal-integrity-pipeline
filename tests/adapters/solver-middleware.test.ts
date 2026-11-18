@@ -72,7 +72,10 @@ test('reports ngspice only, caches version probes and returns the solver result 
   assert.equal((await fetch(`${url}/api/run-solver`)).status, 405)
 })
 
-test('rejects unsupported solvers, executable/cwd options, unsafe paths and unsafe ngspice commands before execution', async (t) => {
+const rejectedRequests = `rejects unsupported solvers, executable/cwd options, ${
+  'unsafe paths and unsafe ngspice commands before execution'
+  }`
+test(rejectedRequests, async (t) => {
   let calls = 0
   const url = await server(t, {
     runSolver: async () => {
@@ -220,10 +223,10 @@ test('admits a routed DDR-sized deck above the old 16 MiB body limit', async (t)
   const deck = `title\n*${'x'.repeat(17 * 1024 * 1024)}\n.tran 1e-11 8e-9\n.end`
   let calls = 0
   const url = await server(t, { runSolver: async value => {
-    calls++
-    assert.equal(value.files['simulation.cir'], deck)
-    return result
-  } })
+      calls++
+      assert.equal(value.files['simulation.cir'], deck)
+      return result
+    } })
   assert.equal((await post(url, { ...request, files: { 'simulation.cir': deck } })).status, 200)
   assert.equal(calls, 1)
 })

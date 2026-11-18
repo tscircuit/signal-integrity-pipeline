@@ -35,7 +35,10 @@ type SolverMiddlewareContext = Required<SolverMiddlewareOptions> & {
   queue: <T>(run: () => Promise<T>) => Promise<T>
   solvers?: Promise<LocalSolvers>
 }
-type HttpError = Error & { status?: number; code?: string }
+type HttpError = Error & {
+  status?: number
+  code?: string
+}
 
 /** Find the first executable named ngspice on PATH. */
 async function findNgspice(): Promise<string | undefined> {
@@ -78,10 +81,13 @@ export async function detectLocalSolvers(): Promise<LocalSolvers> {
       maxBuffer: 65536,
       env: { ...process.env, OMP_NUM_THREADS: '1' },
     })
-    output = probe.stdout + probe.stderr
+    output = `${probe.stdout}${probe.stderr}`
   } catch (error) {
-    const probe = error as { stdout?: string; stderr?: string }
-    output = (probe.stdout ?? '') + (probe.stderr ?? '')
+    const probe = error as {
+      stdout?: string
+      stderr?: string
+    }
+    output = `${probe.stdout ?? ''}${probe.stderr ?? ''}`
   }
   const version = ngspiceVersion(output)
   return { ngspice: { available: true, version } }
@@ -181,7 +187,10 @@ async function createRequestReader(request: IncomingMessage, limit: number): Pro
 }
 
 /** Keep local responses out of browser caches. */
-function writeJsonResponse(response: ServerResponse, { status, body }: { status: number; body: unknown }): void {
+function writeJsonResponse(response: ServerResponse, { status, body }: {
+  status: number
+  body: unknown
+}): void {
   response.writeHead(status, {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store',
@@ -191,7 +200,10 @@ function writeJsonResponse(response: ServerResponse, { status, body }: { status:
 }
 
 /** Return a readable JSON error to the browser adapter. */
-function writeErrorResponse(response: ServerResponse, { status, message }: { status: number; message: string }): void {
+function writeErrorResponse(response: ServerResponse, { status, message }: {
+  status: number
+  message: string
+}): void {
   writeJsonResponse(response, { status, body: { error: message } })
 }
 
@@ -200,7 +212,10 @@ const modelAssets = ['sn74lvc1g04.ibs', 'sn65hvd72.ibs', 'sprm552c.ibs', 'W631GG
 
 /** Send only explicitly allowed local assets. */
 async function writeLocalAssetResponse(
-  { response, name }: { response: ServerResponse; name: string },
+  { response, name }: {
+    response: ServerResponse
+    name: string
+  },
   { boardFile, modelDirectory }: SolverMiddlewareContext,
 ): Promise<void> {
   let file: string | undefined
@@ -220,7 +235,10 @@ async function writeLocalAssetResponse(
 
 /** Read and validate the deck before reserving a solver slot. */
 async function runSolverRequest(
-  { request, response }: { request: IncomingMessage; response: ServerResponse },
+  { request, response }: {
+    request: IncomingMessage
+    response: ServerResponse
+  },
   { maxRequestBytes, queue, runSolver }: SolverMiddlewareContext,
 ): Promise<void> {
   if (request.headers['content-type']?.split(';')[0] !== 'application/json')
@@ -252,7 +270,11 @@ function isLoopbackHost(host: string = ''): boolean {
 
 /** Dispatch the three local API routes after the same-origin check. */
 async function routeHttpRequest(
-  { request, response, path }: { request: IncomingMessage; response: ServerResponse; path: string },
+  { request, response, path }: {
+    request: IncomingMessage
+    response: ServerResponse
+    path: string
+  },
   context: SolverMiddlewareContext,
 ): Promise<void> {
   if (
@@ -297,7 +319,14 @@ export function createSolverMiddleware({
       })
     return next
   }
-  const context = { runSolver, detectSolvers, maxRequestBytes, modelDirectory, boardFile, queue }
+  const context = {
+    runSolver,
+    detectSolvers,
+    maxRequestBytes,
+    modelDirectory,
+    boardFile,
+    queue,
+  }
   return (request, response, next) => {
     const path = request.url?.split('?')[0] ?? ''
     if (!path.startsWith('/api/')) return next()

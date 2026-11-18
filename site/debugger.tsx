@@ -9,7 +9,27 @@ import type { CircuitJson } from '../src/board'
 import { boardPicture, boardPictureView } from '../src/board/board-picture'
 import type { IbisSources } from '../src/buffers'
 
-type AtlasMove = { x: number; y: number; zoom: number }
+/** Pixel translation and scale applied to the rendered atlas. */
+type AtlasMove = {
+  x: number
+  y: number
+  zoom: number
+}
+
+/** The atlas's pixel height stays within these bounds as the container resizes. */
+const MIN_ATLAS_HEIGHT_PX = 360
+const MAX_ATLAS_HEIGHT_PX = 720
+/** Keep the aspect ratio finite for a camera whose horizontal span is zero. */
+const MIN_CAMERA_WIDTH = 1e-9
+/** Wheel sensitivity and the zoom limit relative to the full board. */
+const WHEEL_ZOOM_SENSITIVITY = 0.002
+const MAX_ATLAS_ZOOM = 20
+/** Near-full-width views can reuse the default camera. */
+const FULL_CAMERA_WIDTH_FRACTION = 0.999
+/** Wait for panning and zooming to settle before regenerating the visible drawing. */
+const REDRAW_DELAY_MS = 250
+/** Offset the hover label so the pointer does not cover it. */
+const HOVER_OFFSET_PX = 12
 
 /** A native wheel listener for zooming the routed atlas. */
 type AtlasWheelListener = (event: WheelEvent) => void
@@ -29,7 +49,10 @@ function createAtlasWheelListener({
     event.preventDefault()
     const box = element.getBoundingClientRect()
     setMove(({ x, y, zoom }) => {
-      const next = Math.min(20 / base.current, Math.max(1 / base.current, zoom * Math.exp(-event.deltaY * 0.002)))
+      const requestedZoom = zoom * Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY)
+      const minZoom = 1 / base.current
+      const maxZoom = MAX_ATLAS_ZOOM / base.current
+      const next = Math.min(maxZoom, Math.max(minZoom, requestedZoom))
       const factor = next / zoom
       const pointerX = event.clientX - box.left
       const pointerY = event.clientY - box.top
@@ -45,13 +68,19 @@ function zoomedRegion({
   view,
   camera,
   move,
-}: { width: number; height: number; view: Viewbox; camera: Viewbox; move: AtlasMove }): Viewbox | undefined {
+}: {
+  width: number
+  height: number
+  view: Viewbox
+  camera: Viewbox
+  move: AtlasMove
+}): Viewbox | undefined {
   const scale = Math.min(width / (view.maxX - view.minX), height / (view.maxY - view.minY))
   const left = (width - (view.maxX - view.minX) * scale) / 2
   const top = (height - (view.maxY - view.minY) * scale) / 2
   const minX = view.minX + ((0 - move.x) / move.zoom - left) / scale
   const maxX = view.minX + ((width - move.x) / move.zoom - left) / scale
-  if (maxX - minX >= (camera.maxX - camera.minX) * 0.999) return
+  if (maxX - minX >= (camera.maxX - camera.minX) * FULL_CAMERA_WIDTH_FRACTION) return
   return {
     minX,
     maxX,
@@ -60,23 +89,39 @@ function zoomedRegion({
   }
 }
 
+/** Dim labels other than the one under the cursor while keeping the camera visible. */
+function atlasHoverStyle(label: string): string {
+  const labelledLayer = '.routed-atlas-layers [data-label]:not([data-label=""]):not([data-label="camera"])'
+  return `${labelledLayer}:not([data-label=${JSON.stringify(label)}]) { opacity: 0.2 }`
+}
+
 /**
  * The real board under the stage drawing at the container's width.
  * Ctrl/⌘ + wheel zooms (1–20×) and dragging pans; after a pause the zoomed region is re-rendered crisply.
  * Hovering a net, curve or mark dims everything else that is labelled and names it.
  */
-function RoutedAtlas({ circuit, graphics }: { circuit: CircuitJson; graphics: GraphicsObject }): React.JSX.Element {
+function RoutedAtlas({ circuit, graphics }: {
+  circuit: CircuitJson
+  graphics: GraphicsObject
+}): React.JSX.Element {
   const container = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   const [region, setRegion] = useState<Viewbox>()
   const [move, setMove] = useState<AtlasMove>({ x: 0, y: 0, zoom: 1 })
-  const [hover, setHover] = useState<{ label: string; x: number; y: number }>()
+  const [hover, setHover] = useState<{
+    label: string
+    x: number
+    y: number
+  }>()
   const camera = boardPictureView(circuit, graphics)
   const view = region ?? camera
-  const height = Math.round(Math.min(720, Math.max(360, (width * (camera.maxY - camera.minY)) / Math.max(camera.maxX - camera.minX, 1e-9))))
+  const cameraWidth = camera.maxX - camera.minX
+  const cameraHeight = camera.maxY - camera.minY
+  const scaledHeight = (width * cameraHeight) / Math.max(cameraWidth, MIN_CAMERA_WIDTH)
+  const height = Math.round(Math.min(MAX_ATLAS_HEIGHT_PX, Math.max(MIN_ATLAS_HEIGHT_PX, scaledHeight)))
   // Zoom of the rendered region relative to the full camera; CSS zoom on top of it stays within 1–20× overall.
   const base = useRef(1)
-  base.current = (camera.maxX - camera.minX) / (view.maxX - view.minX)
+  base.current = cameraWidth / (view.maxX - view.minX)
   useEffect(() => {
     const element = container.current!
     const observer = new ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)))
@@ -92,15 +137,29 @@ function RoutedAtlas({ circuit, graphics }: { circuit: CircuitJson; graphics: Gr
     if (move.zoom === 1 && move.x === 0 && move.y === 0) return
     // Once interaction pauses, the visible part becomes the rendered region: sharp copper, same-size labels.
     const timer = setTimeout(() => {
-      setRegion(zoomedRegion({ width, height, view, camera, move }))
+      setRegion(zoomedRegion({
+        width,
+        height,
+        view,
+        camera,
+        move,
+      }))
       setMove({ x: 0, y: 0, zoom: 1 })
-    }, 250)
+    }, REDRAW_DELAY_MS)
     return (): void => clearTimeout(timer)
   }, [move])
   const picture = useMemo(() => {
     if (!(width > 0)) return
-    return boardPicture({ circuit, drawing: graphics, width, height, region })
+    return boardPicture({
+      circuit,
+      drawing: graphics,
+      width,
+      height,
+      region,
+    })
   }, [circuit, graphics, width, height, region])
+  const { x, y, zoom } = move
+  const transform = `translate(${x}px, ${y}px) scale(${zoom})`
   return (
     <div
       ref={container}
@@ -112,7 +171,14 @@ function RoutedAtlas({ circuit, graphics }: { circuit: CircuitJson; graphics: Gr
         setMove({ x: 0, y: 0, zoom: 1 })
       }}
       onPointerMove={(event) => {
-        if (event.buttons === 1 && base.current * move.zoom > 1) setMove((move) => ({ ...move, x: move.x + event.movementX, y: move.y + event.movementY }))
+        const canPan = event.buttons === 1 && base.current * move.zoom > 1
+        if (canPan) {
+          setMove(move => ({
+            ...move,
+            x: move.x + event.movementX,
+            y: move.y + event.movementY,
+          }))
+        }
         const label = (event.target as Element).closest?.('[data-label]')?.getAttribute('data-label')
         const box = container.current!.getBoundingClientRect()
         if (!label || label === 'camera') return setHover(undefined)
@@ -121,15 +187,18 @@ function RoutedAtlas({ circuit, graphics }: { circuit: CircuitJson; graphics: Gr
       onPointerLeave={() => setHover(undefined)}
     >
       {picture && (
-        <div className="routed-atlas-layers" style={{ transform: `translate(${move.x}px, ${move.y}px) scale(${move.zoom})` }}>
+        <div className="routed-atlas-layers" style={{ transform }}>
           <div dangerouslySetInnerHTML={{ __html: picture.board }} />
           <div dangerouslySetInnerHTML={{ __html: picture.overlay }} />
         </div>
       )}
       {hover && (
         <>
-          <style>{`.routed-atlas-layers [data-label]:not([data-label=""]):not([data-label="camera"]):not([data-label=${JSON.stringify(hover.label)}]) { opacity: 0.2 }`}</style>
-          <span className="routed-atlas-label" style={{ left: hover.x + 12, top: hover.y + 12 }}>
+          <style>{atlasHoverStyle(hover.label)}</style>
+          <span className="routed-atlas-label" style={{
+            left: hover.x + HOVER_OFFSET_PX,
+            top: hover.y + HOVER_OFFSET_PX,
+          }}>
             {hover.label}
           </span>
         </>
@@ -138,7 +207,10 @@ function RoutedAtlas({ circuit, graphics }: { circuit: CircuitJson; graphics: Gr
   )
 }
 
-const drawings = new WeakMap<RoutedPipelineSolver, { key: string; graphics: GraphicsObject }>()
+const drawings = new WeakMap<RoutedPipelineSolver, {
+  key: string
+  graphics: GraphicsObject
+}>()
 
 /** Draw a stage once per solver state. */
 function stageDrawing(root: RoutedPipelineSolver, number: number): GraphicsObject {
@@ -166,7 +238,10 @@ export interface BoardPageProps {
 /** Read a fixed local asset via the dev backend; vendor bytes stay outside the repository. */
 export async function localAsset(name: string): Promise<string> {
   const response = await fetch(`/api/local-assets/${encodeURIComponent(name)}`)
-  const body = (await response.json()) as { text?: string; error?: string }
+  const body = (await response.json()) as {
+    text?: string
+    error?: string
+  }
   if (!response.ok || body.text === undefined) throw new Error(body.error ?? `missing local asset: ${name}`)
   return body.text
 }
@@ -181,6 +256,9 @@ async function renderBoard(tree: React.ReactElement): Promise<CircuitJson> {
   if (errors.length) throw new Error(JSON.stringify(errors))
   return records
 }
+
+/** Include copper within one millimetre of each signal route in the debugger. */
+const SCOPE_DISTANCE_MM = 1
 
 /** Finish asset IO and TSX rendering before handing inputs to the debugger. */
 async function loadBoardSolver({
@@ -212,7 +290,8 @@ async function loadBoardSolver({
     const path = record.ibis_model_asset.project_relative_path
     ibisSources[path] ??= ibisSources[`models/${path.split('/').at(-1)}`]
   }
-  onReady(new RoutedPipelineSolver({ circuitJson, ibisSources, scopeDistanceMm: 1 }, { runSolver, progress: (): void => undefined }))
+  const problem = { circuitJson, ibisSources, scopeDistanceMm: SCOPE_DISTANCE_MM }
+  onReady(new RoutedPipelineSolver(problem, { runSolver, progress: (): void => undefined }))
 }
 
 type DebuggerSolver = NonNullable<GenericSolverDebuggerProps['solver']>
@@ -227,11 +306,18 @@ function asDebuggerSolver(solver: PublicDebuggerSolver): DebuggerSolver {
 }
 
 /** Show a fixture's routed stages using the local ngspice HTTP execution port. */
-export function BoardPage({ 'board-tree': boardTree, 'load-board': loadBoard, models }: BoardPageProps): React.JSX.Element {
+export function BoardPage({
+  'board-tree': boardTree,
+  'load-board': loadBoard,
+  models,
+}: BoardPageProps): React.JSX.Element {
   const revision = useRef(0)
   const [step, setStep] = useState(0)
   const debuggerElement = useRef<HTMLElement>(null)
-  const [ready, setReady] = useState<{ solver: RoutedPipelineSolver; revision: number }>()
+  const [ready, setReady] = useState<{
+    solver: RoutedPipelineSolver
+    revision: number
+  }>()
   const [error, setError] = useState<string>()
   useEffect(() => {
     if (!ready || !debuggerElement.current) return
