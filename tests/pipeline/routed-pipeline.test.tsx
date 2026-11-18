@@ -23,6 +23,11 @@ import {
 } from "../../src/simulation"
 import type { SolverContext } from "../../src/solver"
 import { renderCoreSignals } from "../support/core-render"
+import {
+  driverWeights,
+  transientDuration,
+  voltageNames,
+} from "../support/routed-deck"
 import { routedProblem } from "../support/routed-fixture"
 import { routedVisualFixture } from "../support/routed-visual-fixture"
 
@@ -102,10 +107,8 @@ const synthetic: SolverContext = {
   progress: (): void => undefined,
   runSolver: async (request) => {
     const deck = request.files["simulation.cir"]
-    const duration = Number(/^\.tran\s+\S+\s+(\S+)/m.exec(deck)![1])
-    const names = [
-      ...new Set([...deck.matchAll(/v\(([^)]+)\)/g)].map((match) => match[1])),
-    ]
+    const duration = transientDuration(deck)
+    const names = voltageNames(deck)
     return {
       stdout: "",
       stderr: "",
@@ -200,10 +203,7 @@ test("default two-trace TSX deck retains the measured driver lead-in and capture
       "83867184e5373f0b20e056fe1011de164269396e2b51bb5ff76a171a288371ad",
       "default two-trace deck pins the deliberate single skin multiport realization",
     )
-  const values = /^VKU0 .*PWL\((.+)\)$/m
-    .exec(deck.deck)![1]
-    .split(/\s+/)
-    .map(Number)
+  const values = driverWeights(deck.deck)
   const weights = values
     .filter((_, i) => i % 2 === 0)
     .map((time, i) => [time, values[2 * i + 1]])

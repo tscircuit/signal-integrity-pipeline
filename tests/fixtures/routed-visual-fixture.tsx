@@ -9,6 +9,7 @@ import type { CircuitJson } from "../../src/board"
 import { formatSpiceVectors } from "../../src/observation"
 import { RoutedPipelineSolver } from "../../src/pipeline"
 import type { SolverContext } from "../../src/solver"
+import { savedVectors, transientDuration, voltageNames } from "./routed-deck"
 
 /** Build the synthetic 3.3 V model with the specified package resistance in ohms. */
 function singleEndedIbis({
@@ -178,13 +179,8 @@ export function routedVisualFixture(
       progress: (): void => undefined,
       runSolver: async (request) => {
         const deck = request.files["simulation.cir"]
-        const duration = Number(/^\.tran\s+\S+\s+(\S+)/m.exec(deck)![1])
-        const saved = /^\.save (.+)$/m.exec(deck)![1]
-        const names = [
-          ...new Set(
-            [...saved.matchAll(/v\(([^)]+)\)/g)].map((match) => match[1]),
-          ),
-        ]
+        const duration = transientDuration(deck)
+        const names = voltageNames(savedVectors(deck))
         return {
           stdout: "",
           stderr: "",

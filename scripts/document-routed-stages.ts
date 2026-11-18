@@ -33,13 +33,26 @@ export function routedStageDocumentation(): string {
   return `${table}\n\n\`\`\`mermaid\n${flow}\n\`\`\`\n\n\`\`\`mermaid\n${states}\n\`\`\`\n`
 }
 
+/** Replace the first complete generated block, leaving other text intact. */
+function replaceRoutedStageDocumentation(
+  text: string,
+  documentation: string,
+): string {
+  const startMarker = "<!-- routed-stages:start -->"
+  const endMarker = "<!-- routed-stages:end -->"
+  const start = text.indexOf(startMarker)
+  if (start < 0) return text
+  const end = text.indexOf(endMarker, start + startMarker.length)
+  if (end < 0) return text
+  return (
+    text.slice(0, start) + startMarker + "\n" + documentation + text.slice(end)
+  )
+}
+
 for (const path of ["README.md", "docs/ARCHITECTURE.md"]) {
   const text = readFileSync(path, "utf8")
   writeFileSync(
     path,
-    text.replace(
-      /<!-- routed-stages:start -->[\s\S]*?<!-- routed-stages:end -->/,
-      `<!-- routed-stages:start -->\n${routedStageDocumentation()}<!-- routed-stages:end -->`,
-    ),
+    replaceRoutedStageDocumentation(text, routedStageDocumentation()),
   )
 }

@@ -119,14 +119,42 @@ test("agent rules live only in AGENTS.md", () => {
     )
 })
 
+/** Read generated stage names from numbered Markdown table rows. */
+function documentedStageNames(text: string): string[] {
+  const names: string[] = []
+  for (const line of text
+    .replaceAll("\r", "\n")
+    .replaceAll("\u2028", "\n")
+    .replaceAll("\u2029", "\n")
+    .split("\n")) {
+    if (!line.startsWith("| ") || !line.endsWith(" |")) continue
+    const columns = line.slice(2, -2).split(" | ")
+    if (columns.length !== 2) continue
+    const [number, name] = columns
+    if (!number || ![...number].every((char) => char >= "0" && char <= "9"))
+      continue
+    if (
+      !name ||
+      ![...name].every(
+        (char) =>
+          (char >= "A" && char <= "Z") ||
+          (char >= "a" && char <= "z") ||
+          (char >= "0" && char <= "9") ||
+          char === "_",
+      )
+    )
+      continue
+    names.push(name)
+  }
+  return names
+}
+
 test("routed documentation stage order is generated from the debugger tuple", () => {
   for (const file of ["README.md", "docs/ARCHITECTURE.md"]) {
     const text = readFileSync(join(root, file), "utf8")
       .split("<!-- routed-stages:start -->")[1]
       .split("<!-- routed-stages:end -->")[0]
-    const names = [...text.matchAll(/^\| \d+ \| (\w+) \|$/gm)].map(
-      (match) => match[1],
-    )
+    const names = documentedStageNames(text)
     assert.deepEqual(
       names,
       routedStages.map((stage) => stage.solverName),

@@ -19,7 +19,8 @@ registerHooks({
       specifier === "react" ||
       specifier.startsWith("@tscircuit/core") ||
       specifier.startsWith("tsx") ||
-      /^https?:/.test(specifier)
+      specifier.startsWith("http:") ||
+      specifier.startsWith("https:")
     )
       throw Error(
         "Forbidden import " + specifier + " from " + context.parentURL,
