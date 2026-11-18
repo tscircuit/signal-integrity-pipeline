@@ -11,6 +11,9 @@ import type { IbisSources } from '../src/buffers'
 
 type AtlasMove = { x: number; y: number; zoom: number }
 
+/** A native wheel listener for zooming the routed atlas. */
+type AtlasWheelListener = (event: WheelEvent) => void
+
 /** Zoom about the cursor only with ctrl/⌘, so the page still scrolls normally. */
 function createAtlasWheelListener({
   element,
@@ -20,7 +23,7 @@ function createAtlasWheelListener({
   element: HTMLDivElement
   base: React.RefObject<number>
   setMove: React.Dispatch<React.SetStateAction<AtlasMove>>
-}): (event: WheelEvent) => void {
+}): AtlasWheelListener {
   return (event) => {
     if (!event.ctrlKey && !event.metaKey) return
     event.preventDefault()
