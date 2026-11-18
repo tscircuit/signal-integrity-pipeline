@@ -1,4 +1,4 @@
-import { causalLossPoles, causalLossResponse, referenceSeries, type ExtractedRoutes, type ExtractedRouteSlice, type RouteReturn } from '../extraction'
+import { causalLossPoles, causalLossResponse, referenceSeries, type ExtractedRoutes, type ExtractedRouteSlice } from '../extraction'
 import { RouteEnergy, seriesEnergy, shuntEnergy, skinEnergy } from './route-energy'
 import { type RouteWire, type RouteXY } from '../board'
 
@@ -14,7 +14,7 @@ function delayPerMetre(slice: ExtractedRouteSlice): number {
   return Math.sqrt(Math.max(...slice.line.L.map(row => row.reduce((total, entry) => total + Math.abs(entry), 0))) * Math.max(...slice.line.C.map(row => row.reduce((total, entry) => total + Math.abs(entry), 0))))
 }
 
-interface ArcCell { wire: RouteWire; start: number; end: number; before: string; after: string }
+interface ArcCell { start: number; end: number; before: string; after: string }
 interface ArcWire { offset: number; length: number; cells: number[]; sign: number }
 
 /** Locate a physical point along the original (simplified) polyline, including its bends. */
@@ -39,11 +39,10 @@ interface RouteLadderInput {
   riseSeconds: number
   refinement?: number
   cellsPerRise?: number
-  returnPath?: RouteReturn
 }
 
 /** Integrate every local matrix energy onto delay-bounded route-arc cells, independent of curve tessellation. */
-export function* routeLadderSteps({ extracted, endpoint, riseSeconds, refinement = 1, cellsPerRise = 10, returnPath }: RouteLadderInput): Generator<RouteLadder, RouteLadder> {
+export function* routeLadderSteps({ extracted, endpoint, riseSeconds, refinement = 1, cellsPerRise = 10 }: RouteLadderInput): Generator<RouteLadder, RouteLadder> {
   if (!(riseSeconds > 0) || !Number.isInteger(refinement) || refinement < 1 || refinement > 4) throw new Error('Positive rise time and bounded integer spatial refinement (1..4) required')
   if (!(cellsPerRise >= .5 && cellsPerRise <= 40)) throw new Error('Cells per rise time must be in [0.5,40]')
   const lines: string[] = []
@@ -88,7 +87,7 @@ export function* routeLadderSteps({ extracted, endpoint, riseSeconds, refinement
       const end = length * (i + 1) / count
       const a = arcPoint(start, { run, arc })
       const b = arcPoint(end, { run, arc })
-      cells.push({ wire: seed, start, end, before: endpoint(a.wire, a.position), after: endpoint(b.wire, b.position) })
+      cells.push({ start, end, before: endpoint(a.wire, a.position), after: endpoint(b.wire, b.position) })
     }
     for (const wire of run) {
       const entry = arc.get(wire.id)!
@@ -168,53 +167,15 @@ export function* routeLadderSteps({ extracted, endpoint, riseSeconds, refinement
       }
     }
   }
-  // The trace's own DC resistance sets its crossover, before a hybrid return adds return-path resistance.
   const dc = cells.map((_, i) => R.rows[i].get(i) ?? 0)
-  if (returnPath) {
-    const weights = cells.map(cell => {
-      const index = returnPath.traces.findIndex(trace => trace.source === cell.wire.source)
-      if (index < 0) throw new Error('Hybrid return does not cover every active routed trace')
-      const route = returnPath.traces[index]
-      const path = wires.filter(wire => wire.source === route.source)
-      const first = path[0].a
-      const last = path.at(-1)!.b
-      const forward = Math.hypot(first[0] - route.start[0], first[1] - route.start[1]) < 1e-5
-      if (!forward && Math.hypot(last[0] - route.start[0], last[1] - route.start[1]) >= 1e-5) throw new Error('Hybrid return endpoint orientation disagrees with routed geometry')
-      const total = path.reduce((sum, wire) => sum + wire.end - wire.start, 0)
-      const offset = path.slice(0, path.indexOf(cell.wire)).reduce((sum, wire) => sum + wire.end - wire.start, 0)
-      const start = (offset + cell.start) / total
-      const end = (offset + cell.end) / total
-      if (forward) return { index, weight: end - start, sign: 1, start, end }
-      return { index, weight: -(end - start), sign: -1, start: 1 - end, end: 1 - start }
-    })
-    // Congruence of averaged longitudinal currents preserves the positive return energy.
-    for (let i = 0; i < cells.length; i++) for (let j = 0; j < cells.length; j++) {
-      const a = weights[i]
-      const b = weights[j]
-      if (returnPath.model === 'series') {
-        const overlap = Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start)) * a.sign * b.sign
-        R.set({ row: i, column: j, coefficient: overlap * returnPath.R[a.index][b.index] })
-        L.set({ row: i, column: j, coefficient: overlap * returnPath.L[a.index][b.index] })
-        skin.set({ row: i, column: j, coefficient: 0 })
-        continue
-      }
-      const weight = a.weight * b.weight
-      R.set({ row: i, column: j, coefficient: (R.rows[i].get(j) ?? 0) + weight * returnPath.R[a.index][b.index] })
-      L.set({ row: i, column: j, coefficient: (L.rows[i].get(j) ?? 0) + weight * returnPath.L[a.index][b.index] })
-    }
-  }
   const before = cells.map(cell => cell.before)
   const after = cells.map(cell => cell.after)
-  let current = cells.map((_, i) => `ARCd${i}`)
-  let cappedSkinCells = 0
+  const current = cells.map((_, i) => `ARCd${i}`)
   seriesEnergy({ lines, tag: 'ARCD', before, after: current, matrix: R, kind: 'R' })
-  if (returnPath?.model !== 'series') {
-    const stripStages = causalLossPoles().map((_, p) => cells.map((_, i) => `ARCq${p}n${i}`))
-    const stages = causalLossPoles().map((_, p) => cells.map((_, i) => `ARCp${p}n${i}`))
-    cappedSkinCells = skinEnergy({ lines, tag: 'ARC', before: current, stripStages, stages, matrix: skin, poles: causalLossPoles(), dc, strip })
-    current = stages.at(-1)!
-  }
-  seriesEnergy({ lines, tag: 'ARCL', before: current, after, matrix: L, kind: 'L' })
+  const stages = causalLossPoles().map((_, p) => cells.map((_, i) => `ARCp${p}n${i}`))
+  const stripStages = causalLossPoles().map((_, p) => cells.map((_, i) => `ARCq${p}n${i}`))
+  const cappedSkinCells = skinEnergy({ lines, tag: 'ARC', before: current, stripStages, stages, matrix: skin, poles: causalLossPoles(), dc, strip })
+  seriesEnergy({ lines, tag: 'ARCL', before: stages.at(-1)!, after, matrix: L, kind: 'L' })
   const dielectricAtReference = causalLossResponse(1e9).dielectricCapacitance
   const capacitance = C.scaled(1)
   for (const [i, row] of D.rows.entries()) for (const [j, loss] of row) capacitance.rows[i].set(j, (C.rows[i].get(j) ?? 0) - dielectricAtReference * loss)

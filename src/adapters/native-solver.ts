@@ -34,7 +34,7 @@ export function createNativeSolver({ tools = {}, timeoutMs = 900000 }: NativeSol
 
 /** Execute one request after the shared native queue grants its slot. */
 async function runNativeRequest(request: SolverRequest, { tools, timeoutMs }: Required<NativeSolverOptions>): Promise<SolverResult> {
-  if (!['fasthenry', 'fastercap', 'ngspice'].includes(request.solver)) fail('native_solver', 'Unknown solver')
+  if (request.solver !== 'ngspice') fail('native_solver', 'Unknown solver')
   for (const path of [...Object.keys(request.files), ...request.outputFiles]) relativeFile(path)
   const directory = await mkdtemp(join(tmpdir(), 'pcb-spice-'))
   try {
@@ -45,9 +45,7 @@ async function runNativeRequest(request: SolverRequest, { tools, timeoutMs }: Re
     }
     let run: { stdout: string; stderr: string }
     try {
-      let command: string = request.solver
-      if (request.solver === 'fastercap') command = 'FasterCap'
-      run = await exec(tools[request.solver] ?? command, request.args,
+      run = await exec(tools.ngspice ?? 'ngspice', request.args,
         { cwd: directory, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, OMP_NUM_THREADS: '1', SPICE_ASCIIRAWFILE: '1' } })
     } catch (error) {
       const detail = error as Error & { code?: string | number | null; killed?: boolean; signal?: string; stdout?: string; stderr?: string }

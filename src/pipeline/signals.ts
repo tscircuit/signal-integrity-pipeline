@@ -11,7 +11,6 @@ type SourceNetKey = string
 
 export interface PreparedBlock {
   duration: number
-  topology: Map<SourcePortId, Set<ConnectedSourceId>>
   block: SimulationPcbTransientChannelSimulation
   signals: SimulationPcbDriverReceiverChannel[]
   circuit: CircuitJson
@@ -74,29 +73,6 @@ export function routedLanes({ circuit, scope, topology, driven, rails }: {
   }
   return { lanes, rejections }
 }
-interface BlockPreparationOptions {
-  circuitJson: CircuitJson
-  sources: IbisSources
-  extraction?: '3d' | '2d'
-  distanceMm?: number
-}
-
-/** Default and validate the scope distance for the requested extraction mode. */
-function scopeDistance(extraction: BlockPreparationOptions['extraction'], distanceMm?: number): number {
-  if (distanceMm === undefined && extraction === '2d') return 32
-  if (distanceMm === undefined) return 1
-  if (!Number.isFinite(distanceMm) || distanceMm <= 0 || distanceMm > 32) throw new Error('Copper scope distance must be in (0,32] mm')
-  return distanceMm
-}
-
-/** Validate blocks and lower test intent to the private native-solver declarations. */
-export function prepareBlocks(options: BlockPreparationOptions): PreparedBlock[] {
-  const { circuitJson, extraction, distanceMm } = options
-  const distance = scopeDistance(extraction, distanceMm)
-  return signalBlocks(circuitJson).map(block => prepareBlockById({
-    ...options, blockId: block.simulation_pcb_transient_channel_simulation_id, distanceMm: distance,
-  }))
-}
 /** Validate the shared block namespace before any independent block work. */
 export function signalBlocks(circuitJson: CircuitJson): SimulationPcbTransientChannelSimulation[] {
   const blocks = circuitJson.filter(r => r.type === 'simulation_pcb_transient_channel_simulation')
@@ -106,14 +82,19 @@ export function signalBlocks(circuitJson: CircuitJson): SimulationPcbTransientCh
   for (const signal of circuitJson.filter(r => r.type === 'simulation_pcb_driver_receiver_channel')) if (!ids.has(signal.simulation_pcb_transient_channel_simulation_id)) throw new Error(`${signal.name}: unknown signal-integrity block`)
   return blocks
 }
-/** Admit exactly one block through the same lowering used by prepareBlocks. */
-export function prepareBlockById({ circuitJson, sources, blockId, extraction = '3d', distanceMm }: BlockPreparationOptions & { blockId: string }): PreparedBlock {
-  const distance = scopeDistance(extraction, distanceMm)
-  const matches = signalBlocks(circuitJson).filter(block => block.simulation_pcb_transient_channel_simulation_id === blockId)
+/** Validate one block and lower its test intent to the private routed declarations. */
+export function prepareBlockById({ circuit, sources, blockId, distanceMm = 32 }: {
+  circuit: CircuitJson
+  sources: IbisSources
+  blockId: string
+  distanceMm?: number
+}): PreparedBlock {
+  if (!Number.isFinite(distanceMm) || distanceMm <= 0 || distanceMm > 32) throw new Error('Copper scope distance must be in (0,32] mm')
+  const matches = signalBlocks(circuit).filter(block => block.simulation_pcb_transient_channel_simulation_id === blockId)
   if (matches.length !== 1) throw new Error(`Expected exactly one signal-integrity block ${blockId}`)
   const warnings: string[] = []
   try {
-    return prepareBlock({ input: circuitJson, block: matches[0], sources, warnings, extraction, distanceMm: distance })
+    return prepareBlock({ input: circuit, block: matches[0], sources, warnings, distanceMm })
   } catch (error) {
     throw Object.assign(error as Error, { warnings })
   }
@@ -131,21 +112,24 @@ export function probeEndpoints(signal: SimulationPcbDriverReceiverChannel): Sign
   return signal.receivers
 }
 
+/** Use the explicit block duration when present, in seconds. */
+function blockDurationSeconds(block: SimulationPcbTransientChannelSimulation, signals: SimulationPcbDriverReceiverChannel[]): number {
+  if (block.duration_ms !== undefined) return block.duration_ms / 1000
+  return recordingTime(signals).duration
+}
+
 /** Independent block: model overrides, copper, pin states, references and stimuli. */
-function prepareBlock({ input, block, sources, warnings, extraction, distanceMm }: {
+function prepareBlock({ input, block, sources, warnings, distanceMm }: {
   input: CircuitJson
   block: SimulationPcbTransientChannelSimulation
   sources: IbisSources
   warnings: string[]
-  extraction: NonNullable<BlockPreparationOptions['extraction']>
   distanceMm: number
 }): PreparedBlock {
   const id = safeId(block.simulation_pcb_transient_channel_simulation_id, 'simulationPcbTransientChannelSimulationId')
   const signals = input.filter(r => r.type === 'simulation_pcb_driver_receiver_channel').filter(r => r.simulation_pcb_transient_channel_simulation_id === id).sort((a, b) => compareNames(a.name, b.name))
   if (!signals.length || new Set(signals.map(s => s.name)).size !== signals.length || new Set(signals.map(s => s.simulation_pcb_driver_receiver_channel_id)).size !== signals.length) throw new Error(`${block.name ?? id}: require distinct named signals`)
-  const timing = recordingTime(signals)
-  let duration = timing.duration
-  if (block.duration_ms !== undefined) duration = block.duration_ms / 1000
+  const duration = blockDurationSeconds(block, signals)
   const circuit = structuredClone([
     ...input.filter(r => !r.type.startsWith('simulation_') || ['simulation_ibis_model', 'simulation_voltage_source', 'simulation_spice_subcircuit'].includes(r.type)),
     block, ...signals,
@@ -233,8 +217,7 @@ function prepareBlock({ input, block, sources, warnings, extraction, distanceMm 
     const component = circuit.filter(r => r.type === 'source_component').find(component => component.source_component_id === port.source_component_id)
     if (!component || (!['simple_resistor', 'simple_capacitor', 'simple_inductor'].includes(component.ftype) && !circuit.some(r => r.type === 'simulation_spice_subcircuit' && r.source_component_id === component.source_component_id))) throw new Error(`${component?.name ?? port.source_port_id} is on the signal and has no supported SPICE or IBIS model.`)
   }
-  let scopeForLanes = copperScope
-  if (extraction === '2d') scopeForLanes = { ...copperScope, pcbTraceIds: copperScope.selectedPcbTraceIds }
+  const scopeForLanes = { ...copperScope, pcbTraceIds: copperScope.selectedPcbTraceIds }
   const { lanes, rejections } = routedLanes({ circuit, scope: scopeForLanes, topology, driven: new Set(driven.keys()), rails })
   if (rejections.length) throw Object.assign(new Error(rejections[0]), { rejections, copperScope })
   if (!block.allow_unrouted_traces) {
@@ -242,12 +225,12 @@ function prepareBlock({ input, block, sources, warnings, extraction, distanceMm 
       if (lanes.some(lane => lane.from.sourcePortId === port || lane.to.sourcePortId === port)) continue
       throw new Error(`Signal "${signal.name}" is not routed from ${port}.`)
     }
-    if (!lanes.length) throw new Error('At least one routed conductor is required for native extraction')
+    if (!lanes.length) throw new Error('At least one routed conductor is required for routed extraction')
   }
   // Stable physical endpoint identities order the matrix; route coordinates set coupling.
   lanes.sort((a, b) => a.from.sourcePortId!.localeCompare(b.from.sourcePortId!))
   const retained = new Set(topology.keys())
-  if (extraction === '2d') for (const trace of circuit.filter(record => record.type === 'source_trace')) {
+  for (const trace of circuit.filter(record => record.type === 'source_trace')) {
     if (!circuit.some(record => record.type === 'pcb_trace' && record.source_trace_id === trace.source_trace_id && copperScope.pcbTraceIds.includes(record.pcb_trace_id))) continue
     for (const port of trace.connected_source_port_ids) for (const id of connectedSourceIds(circuit, port)) retained.add(id)
   }
@@ -261,37 +244,11 @@ function prepareBlock({ input, block, sources, warnings, extraction, distanceMm 
   }
   const stack = stackupFromCircuitJson(circuit)
   if (!stack.relativePermittivity) throw new Error('<simulation.pcbtransientchannelsimulation> needs explicit stackup dielectric constants.')
-  const routes = circuit.filter(r => r.type === 'pcb_trace').filter(r => lanes.some(l => l.sourceTraceId === r.source_trace_id))
-  const length = Math.max(...routes.map(({ route }) => route.slice(1).reduce((sum, point, index) => {
-    const previous = route[index]
-    if (!('x' in point) || !('x' in previous)) return sum
-    return sum + Math.hypot(point.x - previous.x, point.y - previous.y)
-  }, 0)))
-  const gap = Math.min(...stack.dielectrics.map(layer => layer.zMaxMm - layer.zMinMm))
-  const wireWidths = routes.flatMap(route => route.route.filter(point => point.route_type === 'wire').map(point => point.width))
-  if (!routes.length) wireWidths.push(...stack.copperLayers.map(layer => layer.zMaxMm - layer.zMinMm))
-  const wireWidth = Math.min(...wireWidths)
-  const mesh = Math.max(gap, wireWidth * 2)
-  const modelHz = Number(Math.max(rate / 2, .5 / edge).toPrecision(3))
-  const decade = Math.ceil(Math.log10(modelHz))
-  // Deck generation sizes width and thickness independently from skin depth.
-  const filaments = 3
-  const groundCandidates = [...new Set(signals.flatMap(signal => signal.receivers.flatMap(endpointPorts)).map(port => pins.get(port)!.ground))].sort()
   const settings: NumericalSettings = {
-    measurementGate: Math.min(timing.gate, duration / 2), reduction: 'routed-copper', allowIdeal: block.allow_unrouted_traces, simplifyParallel: true, sections: Math.max(2, Math.ceil(length / 1000 * Math.sqrt(stack.relativePermittivity) / 299792458 / edge * 10)),
-    lanes, copperScope, channelReference: { sourcePortId: reference }, groundReturn: { sourcePortId: groundCandidates[0] },
-    relativePermittivity: stack.relativePermittivity,
-    extraction: { minimumHz: modelHz / 10 ** decade, modelHz, maximumHz: modelHz, filaments, refinementFilaments: filaments + 4,
-      convergenceTolerance: .05, capTolerance: .02, reciprocityTolerance: .025, dcResistanceTolerance: .002,
-      maxPanelLengthMm: mesh * 2, groundMeshMm: mesh },
+    lanes, copperScope, channelReference: { sourcePortId: reference },
     passiveComponents: circuit.filter(r => r.type === 'source_component').filter(r => (['simple_resistor', 'simple_capacitor', 'simple_inductor'].includes(r.ftype) || circuit.some(model => model.type === 'simulation_spice_subcircuit' && model.source_component_id === r.source_component_id)) && circuit.some(port => port.type === 'source_port' && port.source_component_id === r.source_component_id && !rails.has(port.source_port_id) && lanes.some(lane => connectedSourceIds(circuit, lane.from.sourcePortId!).has(port.source_port_id) || connectedSourceIds(circuit, lane.to.sourcePortId!).has(port.source_port_id)))).map(r => ({ sourceComponentId: r.source_component_id })),
   }
-  if (copperScope.pcbViaIds.length) {
-    if (!stack.viaPlatingMm) throw new Error('pcb_stackup must specify plated_hole_copper_thickness for routed vias')
-    settings.viaPlatingMm = stack.viaPlatingMm
-    settings.viaEquivalentWidthMm = Math.min(...circuit.filter(r => r.type === 'pcb_via').filter(r => copperScope.pcbViaIds.includes(r.pcb_via_id)).map(v => v.hole_diameter + 2 * stack.viaPlatingMm!))
-    settings.omitThroughViaStubs = true
-  }
+  if (copperScope.pcbViaIds.length && !stack.viaPlatingMm) throw new Error('pcb_stackup must specify plated_hole_copper_thickness for routed vias')
   const netVoltages = new Map<SourceNetKey, number>()
   for (const pin of pins.values()) {
     const voltages = referenceVoltages(pin.buffer)
@@ -341,5 +298,5 @@ function prepareBlock({ input, block, sources, warnings, extraction, distanceMm 
     if (!('p_source_port_id' in endpoint)) ref = pins.get(ports[0])!.ground
     circuit.push({ type: 'simulation_voltage_probe', simulation_voltage_probe_id: `${signal.simulation_pcb_driver_receiver_channel_id}_${index}`, name: `${signal.name}_${index}`, signal_input_source_port_id: ports[0], reference_input_source_port_id: ref, subcircuit_id: scope })
   }
-  return { block, signals, circuit, controls: { [id]: controls }, pins, settings, warnings, duration, topology: new Map([...driven].map(([port, signal]) => [port, signalTopology({ circuit, seed: port, rails, stops: new Set(endpointPorts(signal.driver).filter(other => other !== port)) })])) }
+  return { block, signals, circuit, controls: { [id]: controls }, pins, settings, warnings, duration }
 }

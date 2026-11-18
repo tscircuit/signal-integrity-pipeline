@@ -1,6 +1,5 @@
 export type { SimulationPcbDriverReceiverChannel, SimulationPcbTransientChannelSimulation, SignalEndpoint } from 'circuit-json'
-import type { SignalEndpoint, SimulationPcbDriverReceiverChannel, SimulationSignalWaveformResult, SimulationPcbTransientChannelResult } from 'circuit-json'
-export type SignalResult = SimulationSignalWaveformResult | SimulationPcbTransientChannelResult
+import type { SignalEndpoint, SimulationPcbDriverReceiverChannel } from 'circuit-json'
 
 /** Constant literal patterns and disabled drivers record quiet-channel idle voltages. */
 export function isQuiet(signal: SimulationPcbDriverReceiverChannel): boolean {

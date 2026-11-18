@@ -23,19 +23,19 @@ export interface RoutedBlockPlan {
 /** Lower one admitted SI block into the routed stage inputs. */
 function planRoutedBlock(input: RoutedProblem, id: string): RoutedBlockPlan {
   const block = prepareBlockById({
-    circuitJson: input.circuitJson, sources: input.ibisSources, blockId: id, extraction: '2d', distanceMm: input.scopeDistanceMm ?? 32,
+    circuit: input.circuitJson, sources: input.ibisSources, blockId: id, distanceMm: input.scopeDistanceMm ?? 32,
   })
   const mappings: LaneMapping[] = block.signals.flatMap(signal => signal.receivers.flatMap(receiver => endpointPorts(receiver).map((to, i) => {
     const from = endpointPorts(signal.driver)[i]
     const lane = block.settings.lanes.find(lane => lane.from.sourcePortId === from || lane.to.sourcePortId === from)!
-    return { port: signal.name, from, to, sourceTraceId: lane.sourceTraceId!, pcbTraceId: '', pcbPorts: [], stages: [], originalRoute: [] }
+    return { port: signal.name, from, to, sourceTraceId: lane.sourceTraceId! }
   })))
   const experiment = block.circuit.find(record => record.type === 'simulation_experiment')!
   if (experiment.type !== 'simulation_experiment') throw new Error('Missing admitted experiment')
   const options: RoutedCompileOptions = { riseSeconds: Math.min(...block.signals.flatMap(signal => endpointPorts(signal.driver)).map(id => edgeSeconds(block.pins.get(id)!))), refinement: 1, stepSeconds: experiment.time_per_step! / 1000, durationSeconds: block.duration, materials: input.materials }
   const artifactPrefix = `blocks/${id}`
   return snapshot({ id, name: block.block.name ?? id, warnings: block.warnings,
-    sections: { circuitJson: block.circuit, scope: block.settings.copperScope!, requiredSourcePortIds: block.settings.lanes.flatMap(lane => [lane.from.sourcePortId!, lane.to.sourcePortId!]), referenceSourcePortId: block.settings.channelReference!.sourcePortId!, artifactPrefix },
+    sections: { circuitJson: block.circuit, scope: block.settings.copperScope, requiredSourcePortIds: block.settings.lanes.flatMap(lane => [lane.from.sourcePortId!, lane.to.sourcePortId!]), referenceSourcePortId: block.settings.channelReference!.sourcePortId!, artifactPrefix },
     bindings: { circuitJson: block.circuit, mappings, modeling: block.settings, controls: block.controls, ibisSources: input.ibisSources, options, artifactPrefix } })
 }
 

@@ -9,11 +9,10 @@ type PcbTrace = Extract<CircuitJson[number], { type: 'pcb_trace' }>
 type RoutePoint = Exclude<PcbTrace['route'][number], { route_type: 'through_pad' }>
 
 /** Copper reachable through two-terminal passives, excluding power and ground branches. */
-export function signalTopology({ circuit, seed, rails, stops = new Set() }: {
+export function signalTopology({ circuit, seed, rails }: {
   circuit: CircuitJson
   seed: ConnectedSourceId
   rails: Set<ConnectedSourceId>
-  stops?: Set<ConnectedSourceId>
 }): Set<ConnectedSourceId> {
   const found = connectedSourceIds(circuit, seed)
   const ports = circuit.filter(r => r.type === 'source_port')
@@ -23,7 +22,7 @@ export function signalTopology({ circuit, seed, rails, stops = new Set() }: {
     changed = false
     for (const component of passives) {
       const pins = ports.filter(port => port.source_component_id === component.source_component_id).map(port => port.source_port_id)
-      if (pins.length !== 2 || pins.some(pin => rails.has(pin)) || !pins.some(pin => found.has(pin)) || (stops.size && pins.some(pin => [...connectedSourceIds(circuit, pin)].some(id => stops.has(id))))) continue
+      if (pins.length !== 2 || pins.some(pin => rails.has(pin)) || !pins.some(pin => found.has(pin))) continue
       for (const pin of pins) for (const id of connectedSourceIds(circuit, pin)) {
         if (found.has(id)) continue
         found.add(id)

@@ -157,25 +157,13 @@ The pipeline reads the assets and validates model roles, disabled-driver support
 differential pin identity and coupled package matrices. It uses channel receiver
 model overrides when checking the selected pins.
 
-```sh
-IBIS_MODEL_DIR=models TSX_TSCONFIG_PATH=examples/tsconfig.json \
-node --import tsx scripts/check-ddr3.tsx
-```
-
 The unchanged, routed DDR3 TSX renders through real core: nine signals,
-14 traces, 16 vias and two pours. Original vendor package bytes now pass
-preflight with the production warning. TSX buffer-conversion tests cover package
+14 traces, 16 vias and two pours. Original vendor package bytes pass admission
+with the production warning. TSX buffer-conversion tests cover package
 realization and checked [inactive-tail scheduling](ibis-switching.md).
-`scripts/check-ddr3.tsx` records source hashes, waveform inspection, correction
-warnings and actual stage/error evidence in ignored `runs/ddr3-boundary.json`.
 The old source rewrite and `SI_DIAGNOSTIC_MAXWELL_SIGNS` option are deleted.
-With the new copper scope, this cropped example's nearby VDDQ rail copper
-and plane are explicit multi-net extraction limits at declare (the first error
-is two routed rail traces); the diagnostic records the boundary instead
-of claiming bind passed. No native solver is invoked.
-
-The full source board, DQM0 addition, spatial neighbour scope, geometry inventory
-and ordered remaining admission gates are documented in [full-board-ddr3.md](full-board-ddr3.md).
+The routed DDR3 runner and its current measured boundary are described in
+[the level-4 DDR3 example](../examples/level4-ddr3-write/README.md).
 
 Inline TSX tests use original small fixtures. The opt-in package-only ngspice
 AC oracles check full R, signed mutual L and Maxwell C against their equations,

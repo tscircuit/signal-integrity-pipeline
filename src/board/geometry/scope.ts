@@ -18,16 +18,6 @@ export interface CopperScope {
   approximation: string
 }
 
-/** Unsupported retained copper is an explicit admission limit, never quietly discarded. */
-export function copperScopeRejections(scope: CopperScope): string[] {
-  const rejections: string[] = []
-  if (scope.unassociatedCopper.length) rejections.push(`Channel scope contains ${scope.unassociatedCopper.length} copper records without electrical association`)
-  if (scope.nonReferenceRailTraceIds.length) rejections.push(`Channel scope requires multi-net rail copper extraction for ${scope.nonReferenceRailTraceIds.length} routed rail traces`)
-  if (scope.nearbyNonReferencePourIds.length) rejections.push(`Channel scope requires multi-net plane extraction for ${scope.nearbyNonReferencePourIds.length} nearby non-reference pours`)
-  if (scope.padOnlySourcePortIds.length) rejections.push(`Channel scope requires pad-only neighbour extraction for ${scope.padOnlySourcePortIds.length} physical ports`)
-  return rejections
-}
-
 interface Box { x0: number; x1: number; y0: number; y1: number; lo: number; hi: number }
 type SourceTrace = Extract<CircuitJson[number], { type: 'source_trace' }>
 type SourceTraceId = SourceTrace['source_trace_id']
@@ -132,7 +122,7 @@ function retain({ ids, label }: { ids: string[]; label: string }, { circuit, ret
  * Board-world XY in mm (+X right, +Y top); layers ordered top to bottom.
  * Conservative segment bounding boxes retain copper on the same/adjacent layers
  * within the caller's admission cap in XY. Entire electrically connected nets are retained.
- * The 3D default is 1 mm; routed 2D uses 32 mm before its solved pair screen.
+ * Routed admission uses 32 mm unless the caller narrows it, before its solved pair screen.
  * The cap is not an electromagnetic error bound.
  */
 export function channelCopperScope({ circuit, selected, reference, rails = new Set(), distanceMm = 1 }: {
