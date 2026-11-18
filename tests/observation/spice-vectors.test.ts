@@ -15,22 +15,20 @@ const vectors = [
 test("ASCII native and engine vector transport preserves ordering, precision and differential probes", () => {
   const raw = formatSpiceVectors(vectors)
   assert.deepEqual(parseSpiceVectors(raw), vectors)
-  assert.deepEqual(
-    spiceProbeRows(raw, [
-      { signalNode: "N1", referenceNode: "n2" },
-      { signalNode: "n2", referenceNode: "0" },
-    ]),
-    [
-      [0, 2, 1],
-      [1e-9, 3, 2],
-      [2e-9, 4, 3],
-    ],
-  )
+  const probes = [
+    { signalNode: "N1", referenceNode: "n2" },
+    { signalNode: "n2", referenceNode: "0" },
+  ]
+  assert.deepEqual(spiceProbeRows(raw, probes), [
+    [0, 2, 1],
+    [1e-9, 3, 2],
+    [2e-9, 4, 3],
+  ])
 })
 
 test("malformed, complex, truncated, duplicate and nonfinite raw vectors are rejected", () => {
   const raw = formatSpiceVectors(vectors)
-  for (const text of [
+  const invalidWaveforms = [
     "",
     raw.replace("Flags: real", "Flags: complex"),
     raw.replace("No. Points: 3", "No. Points: 4"),
@@ -38,8 +36,10 @@ test("malformed, complex, truncated, duplicate and nonfinite raw vectors are rej
     raw.replace("0\t1", "0\tNaN"),
     raw.replace("0\t1", "7\t1"),
     raw.replace("2\tv(n1)", "7\tv(n1)"),
-  ])
+  ]
+  for (const text of invalidWaveforms) {
     assert.throws(() => parseSpiceVectors(text), { code: "waveform" })
+  }
   assert.throws(
     () => spiceProbeRows(raw, [{ signalNode: "absent", referenceNode: "0" }]),
     /Missing ngspice vector/,
@@ -67,15 +67,9 @@ test("duplicate breakpoints retain the final sample and decreasing timestamps fa
       [2, 3],
     ],
   )
-  assert.throws(
-    () =>
-      spiceProbeRows(
-        formatSpiceVectors([
-          { name: "time", type: "time", values: [1, 0] },
-          { name: "v(n)", type: "voltage", values: [0, 0] },
-        ]),
-        [],
-      ),
-    /increasing/,
-  )
+  const decreasing = formatSpiceVectors([
+    { name: "time", type: "time", values: [1, 0] },
+    { name: "v(n)", type: "voltage", values: [0, 0] },
+  ])
+  assert.throws(() => spiceProbeRows(decreasing, []), /increasing/)
 })

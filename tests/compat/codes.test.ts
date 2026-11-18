@@ -179,8 +179,10 @@ test("every literal code raised in non-legacy src/ is in the pinned set", () => 
     .filter(([code]) => !pinned.has(code))
     .map(([code, files]) => `${code} (${[...new Set(files)].join(", ")})`)
   assert.deepEqual(unknown, [])
+  const coverageMessage =
+    "removed legacy API paths must still leave the active diagnostics scanned"
   assert.ok(
     raised.size >= 54,
-    `scanner found ${raised.size} codes; removed legacy API paths must still leave the active diagnostics scanned`,
+    `scanner found ${raised.size} codes; ${coverageMessage}`,
   )
 })

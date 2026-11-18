@@ -25,23 +25,26 @@ const compiled: RoutedDeck = {
     },
   ],
 }
-/** Synthetic protocol fixture, never native waveform evidence. */
-function response(
-  times: number[] = [0, 2e-10, 1e-9],
-  values: number[] = [0, 0.3, 0.1],
-  stdout = "",
-): SolverResult {
-  return {
-    stdout,
-    stderr: "",
-    files: {
-      "waveform.raw": formatSpiceVectors([
-        { name: "time", type: "time", values: times },
-        { name: "v(n1)", type: "voltage", values },
-      ]),
-    },
-  }
+
+interface ResponseOptions {
+  times?: number[]
+  values?: number[]
+  stdout?: string
 }
+
+/** Synthetic protocol fixture with nonuniform timestamps. */
+function response({
+  times = [0, 2e-10, 1e-9],
+  values = [0, 0.3, 0.1],
+  stdout = "",
+}: ResponseOptions = {}): SolverResult {
+  const raw = formatSpiceVectors([
+    { name: "time", type: "time", values: times },
+    { name: "v(n1)", type: "voltage", values },
+  ])
+  return { stdout, stderr: "", files: { "waveform.raw": raw } }
+}
+
 /** Inject one synthetic response for parser and lifecycle checks. */
 function solver(result: SolverResult): RouteTransientSolver {
   return new RouteTransientSolver({
@@ -85,54 +88,34 @@ test("one async step invokes once and keeps adaptive times and candidate labels"
   )
 })
 
+/** Adjust the synthetic waveform while retaining the rest of the response. */
+function replaceWaveform(search: string, replacement: string): SolverResult {
+  const result = response()
+  const raw = result.files["waveform.raw"].replace(search, replacement)
+  return { ...result, files: { "waveform.raw": raw } }
+}
+
+const truncated = response({ times: [0, 5e-10], values: [0, 1] })
+const lateStart = response({ times: [5e-10, 1e-9], values: [0, 1] })
+const fatal = response({ stdout: "fatal: rejected" })
 for (const [label, result, pattern] of [
-  [
-    "truncated",
-    response([0, 5e-10], [0, 1]),
-    /simulation_duration: .*did not complete/,
-  ],
-  [
-    "beginning",
-    response([5e-10, 1e-9], [0, 1]),
-    /simulation_start: .*omits the beginning/,
-  ],
-  [
-    "fatal",
-    response(undefined, undefined, "fatal: rejected"),
-    /native_solver: .*fatal/,
-  ],
+  ["truncated", truncated, /simulation_duration: .*did not complete/],
+  ["beginning", lateStart, /simulation_start: .*omits the beginning/],
+  ["fatal", fatal, /native_solver: .*fatal/],
   [
     "missing vector",
-    {
-      stdout: "",
-      stderr: "",
-      files: {
-        "waveform.raw": response().files["waveform.raw"].replace(
-          "v(n1)",
-          "v(other)",
-        ),
-      },
-    },
+    replaceWaveform("v(n1)", "v(other)"),
     /Missing ngspice vector/,
   ],
-  [
-    "nonfinite",
-    {
-      stdout: "",
-      stderr: "",
-      files: {
-        "waveform.raw": response().files["waveform.raw"].replace("0.3", "NaN"),
-      },
-    },
-    /finite/,
-  ],
-] as const)
+  ["nonfinite", replaceWaveform("0.3", "NaN"), /finite/],
+] as const) {
   test(`live transient rejects ${label} without exposing partial success`, async () => {
     const stage = solver(result)
     await assert.rejects(stage.solveAsync(), pattern)
     assert.equal(stage.failed, true)
     assert.throws(() => stage.getOutput(), /incomplete/)
   })
+}
 
 test("engine rejection is a failed async stage without a capture", async () => {
   const stage = new RouteTransientSolver({
