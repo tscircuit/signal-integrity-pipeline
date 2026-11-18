@@ -1,10 +1,13 @@
 import type { SolverRequest } from "../solver"
 import type { RoutedDeck } from "./routed-types"
 
+/** A solver request with the routed transient's single raw waveform output. */
+type RoutedSolverRequest = SolverRequest & { outputFiles: ["waveform.raw"] }
+
 /** Native batch writes complete ASCII raw vectors for the declarative transient deck. */
 export function routedRequest(
   compiled: Pick<RoutedDeck, "deck">,
-): SolverRequest & { outputFiles: ["waveform.raw"] } {
+): RoutedSolverRequest {
   return {
     solver: "ngspice",
     files: { "simulation.cir": compiled.deck },

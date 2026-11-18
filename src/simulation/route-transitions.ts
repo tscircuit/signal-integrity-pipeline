@@ -1,3 +1,4 @@
+import type { LayerRef, PcbSmtPad, Point } from "circuit-json"
 import {
   type CircuitJson,
   type CopperScope,
@@ -12,6 +13,7 @@ import {
   sourceNetMembers,
 } from "../board"
 import { type Matrix, validateMatrix } from "../extraction"
+import type { RouteEndpoint } from "./route-network"
 
 export interface RouteTransition {
   kind: string
@@ -114,9 +116,7 @@ export function barrelCapacitance({
 }
 
 /** Actual pad copper area; unsupported custom polygons fail instead of disappearing. */
-function padArea(
-  pad: Extract<CircuitJson[number], { type: "pcb_smtpad" }>,
-): number {
+function padArea(pad: PcbSmtPad): number {
   if (pad.shape === "circle") return Math.PI * pad.radius ** 2
   if (pad.shape === "rect") return pad.width * pad.height
   if (pad.shape === "polygon")
@@ -154,11 +154,7 @@ function referenceHeight(
 
 /** Reference immediately adjacent to this via, rather than the first section on its layer. */
 function adjacentReferences(
-  {
-    wire,
-    layer,
-    via,
-  }: { wire: RouteWire; layer: string; via: { x: number; y: number } },
+  { wire, layer, via }: { wire: RouteWire; layer: LayerRef; via: Point },
   geometry: SectionGeometry,
 ): RouteReference[] {
   return (
@@ -205,7 +201,7 @@ export function routeTransitions({
   circuit: CircuitJson
   scope: CopperScope
   geometry: SectionGeometry
-  endpoint: (wire: RouteWire, point: RouteXY) => string
+  endpoint: RouteEndpoint
   groundPort: string
 }): RouteTransitions {
   const output: RouteTransitions = { lines: [], records: [], warnings: [] }

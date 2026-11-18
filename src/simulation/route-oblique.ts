@@ -10,16 +10,27 @@ import type { RouteLadder } from "./route-ladder"
 
 type CrossSectionKey = string
 
+/** An electrical ladder node and its distance from the requested position in millimetres. */
+type NearestRouteNode = { node: string; errorMm: number }
+
 /** Nearest existing electrical ladder node; the spatial-error distance is recorded per encounter. */
 function nearestRouteNode(
   { wire, point }: { wire: RouteWire; point: RouteXY },
   wireNodes: RouteLadder["wireNodes"],
-): { node: string; errorMm: number } {
+): NearestRouteNode {
   const position = point[0] * wire.u[0] + point[1] * wire.u[1]
   const node = [...wireNodes.get(wire.id)!].sort(
     (a, b) => Math.abs(a.position - position) - Math.abs(b.position - position),
   )[0]
   return { node: node.node, errorMm: Math.abs(node.position - position) }
+}
+
+/** SPICE lines, encounter records and solve statistics for oblique route coupling. */
+type ObliqueRouteCorrection = {
+  lines: string[]
+  records: Record<string, unknown>[]
+  solveMilliseconds: number
+  solves: number
 }
 
 /** Bounded weak-coupling electrostatic correction for oblique encounters; no silent angular rejection. */
@@ -37,12 +48,7 @@ export function routeOblique({
   scope: CopperScope
   materials: RouteMaterials
   panels?: number
-}): {
-  lines: string[]
-  records: Record<string, unknown>[]
-  solveMilliseconds: number
-  solves: number
-} {
+}): ObliqueRouteCorrection {
   const lines: string[] = []
   const records: Record<string, unknown>[] = []
   const cache = new Map<CrossSectionKey, number>()

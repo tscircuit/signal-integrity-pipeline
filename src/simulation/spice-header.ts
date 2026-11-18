@@ -1,3 +1,5 @@
+import type { TextRange } from "../buffers"
+
 const subcircuitDirective = ".subckt"
 
 /** Read the subcircuit name from a single unindented SPICE declaration. */
@@ -6,10 +8,13 @@ export function spiceSubcircuitName(line: string): string | undefined {
   return name && line.slice(name.start, name.end)
 }
 
+/** A SPICE subcircuit name and its unparsed terminal field. */
+type SpiceSubcircuitHeader = [name: string, terminals: string]
+
 /** Find the first unindented subcircuit declaration with a terminal field. */
 export function spiceSubcircuitHeader(
   source: string,
-): [name: string, terminals: string] | null {
+): SpiceSubcircuitHeader | null {
   for (let start = 0; start < source.length; start++) {
     if (start > 0 && !isLineBreak(source[start - 1])) continue
     const name = subcircuitNameRange(source, start)
@@ -48,7 +53,7 @@ export function spiceWords(text: string): string[] {
 function subcircuitNameRange(
   text: string,
   start: number,
-): { start: number; end: number } | undefined {
+): TextRange | undefined {
   const directiveEnd = start + subcircuitDirective.length
   if (text[directiveEnd]?.trim() !== "") return
   for (let i = 0; i < subcircuitDirective.length; i++) {

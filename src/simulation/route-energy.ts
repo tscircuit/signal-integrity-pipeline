@@ -1,5 +1,8 @@
 import { crossoverPoles, type LossPole, skinCrossover } from "../extraction"
 
+/** A stored column and its coefficient in a sparse route energy row. */
+type RouteEnergyEntry = [column: number, coefficient: number]
+
 /** Sparse energy rows retain only terms integrated from a common physical slice. */
 export class RouteEnergy {
   readonly rows: Map<number, number>[]
@@ -54,7 +57,7 @@ export class RouteEnergy {
     entries.set(column, coefficient)
   }
   /** Stable column order preserves the dense deck's text and floating-point summation. */
-  entries(i: number): [number, number][] {
+  entries(i: number): RouteEnergyEntry[] {
     return [...this.rows[i]].sort(([a], [b]) => a - b)
   }
   /** Temporary scaled matrices share the assembled sparsity, without dense allocation. */

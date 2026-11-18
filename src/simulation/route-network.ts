@@ -335,7 +335,9 @@ export class RouteNetworkSolver extends BaseSolver {
     return this.output
   }
   /** Input snapshots only. */
-  override getConstructorParams(): [RouteNetworkInput] {
+  override getConstructorParams(): ConstructorParameters<
+    typeof RouteNetworkSolver
+  > {
     return [this.input]
   }
 }
@@ -358,11 +360,14 @@ function junctionKey(layer: string, point: RouteXY): RouteJunctionKey {
   return `${layer}:${point.map((n) => n.toFixed(6)).join(",")}`
 }
 
+/** Resolves a physical point on a routed wire to its electrical node. */
+export type RouteEndpoint = (wire: RouteWire, point: RouteXY) => string
+
 /** Rail wires are explicit ideal AC electrodes; all other route junctions share physical coordinates. */
 function createRouteEndpoint(
   scope: RouteNetworkInput["bindings"]["scope"],
   known: Map<RouteJunctionKey, string>,
-): (wire: RouteWire, point: RouteXY) => string {
+): RouteEndpoint {
   return (wire, point) => {
     if (scope.nonReferenceRailTraceIds.includes(wire.trace)) return "0"
     const id = junctionKey(wire.layer, point)

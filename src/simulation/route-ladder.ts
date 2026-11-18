@@ -12,6 +12,7 @@ import {
   shuntEnergy,
   skinEnergy,
 } from "./route-energy"
+import type { RouteEndpoint } from "./route-network"
 
 export interface RouteLadder {
   lines: string[]
@@ -51,11 +52,14 @@ interface ArcWire {
   sign: number
 }
 
+/** A wire and the board coordinates of a point on its route arc. */
+type ArcPoint = { wire: RouteWire; position: RouteXY }
+
 /** Locate a physical point along the original (simplified) polyline, including its bends. */
 function arcPoint(
   distance: number,
   { run, arc }: { run: RouteWire[]; arc: ReadonlyMap<number, ArcWire> },
-): { wire: RouteWire; position: RouteXY } {
+): ArcPoint {
   const wire =
     run.find(
       (wire) =>
@@ -93,7 +97,7 @@ type RouteContactKey = string
 
 interface RouteLadderInput {
   extracted: ExtractedRoutes
-  endpoint: (wire: RouteWire, point: RouteXY) => string
+  endpoint: RouteEndpoint
   riseSeconds: number
   refinement?: number
   cellsPerRise?: number

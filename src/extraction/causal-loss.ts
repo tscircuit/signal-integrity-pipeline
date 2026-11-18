@@ -53,16 +53,19 @@ export function crossoverPoles(poles: LossPole[], shift: number): LossPole[] {
   }))
 }
 
-/** AC response of the implemented unit skin impedance (shifted by `shift`) / unit dielectric admittance, for fit evidence. */
-export function causalLossResponse(
-  frequency: number,
-  shift = 0,
-): {
+/** The real and imaginary skin impedance and the dielectric conductance and capacitance. */
+type CausalLossResponse = {
   skinReal: number
   skinImaginary: number
   dielectricReal: number
   dielectricCapacitance: number
-} {
+}
+
+/** AC response of the implemented unit skin impedance (shifted by `shift`) / unit dielectric admittance, for fit evidence. */
+export function causalLossResponse(
+  frequency: number,
+  shift = 0,
+): CausalLossResponse {
   const omega = 2 * Math.PI * frequency
   const poles = causalLossPoles()
   const skin = crossoverPoles(poles, shift)
