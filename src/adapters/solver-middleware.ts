@@ -51,6 +51,22 @@ async function findNgspice(): Promise<string | undefined> {
   }
 }
 
+/** Remove the whitespace and asterisks framing the version banner. */
+function trimVersionBanner(line: string): string {
+  let start = 0
+  let end = line.length
+  while (start < end && (line[start] === '*' || line[start].trim() === '')) start++
+  while (end > start && (line[end - 1] === '*' || line[end - 1].trim() === '')) end--
+  return line.slice(start, end)
+}
+
+/** Read the first ngspice version line from LF or CRLF probe output. */
+function ngspiceVersion(output: string): string {
+  const banner = output.replaceAll('\r\n', '\n').split('\n').find(line => line.toLowerCase().includes('ngspice-'))
+  if (banner === undefined) return 'version unavailable'
+  return trimVersionBanner(banner)
+}
+
 /** Probe the fixed ngspice executable on the server's PATH. */
 export async function detectLocalSolvers(): Promise<LocalSolvers> {
   const executable = await findNgspice()
@@ -67,11 +83,43 @@ export async function detectLocalSolvers(): Promise<LocalSolvers> {
     const probe = error as { stdout?: string; stderr?: string }
     output = (probe.stdout ?? '') + (probe.stderr ?? '')
   }
-  const version = output
-    .split(/\r?\n/)
-    .find((line) => /ngspice-/i.test(line))
-    ?.replace(/^[*\s]+|[*\s]+$/g, '') ?? 'version unavailable'
+  const version = ngspiceVersion(output)
   return { ngspice: { available: true, version } }
+}
+
+/** Test for a single ASCII digit. */
+function isDigit(character: string): boolean {
+  return character >= '0' && character <= '9'
+}
+
+/** ASCII letters, digits and underscore can extend a directive name. */
+function isDirectiveWordCharacter(character: string = ''): boolean {
+  return (character >= 'A' && character <= 'Z') ||
+    (character >= 'a' && character <= 'z') ||
+    isDigit(character) ||
+    character === '_'
+}
+
+/** Recognize external directives at the start of a deck line, after optional indentation. */
+function hasExternalDirective(deck: string): boolean {
+  const directives = ['control', 'include', 'inc', 'lib', 'sp', 'hdl', 'osdi', 'pre_osdi']
+  let atLineStart = true
+  for (let index = 0; index < deck.length; index++) {
+    const character = deck[index]
+    if (character === '\n' || character === '\r' || character === '\u2028' || character === '\u2029') {
+      atLineStart = true
+      continue
+    }
+    if (!atLineStart || character.trim() === '') continue
+    atLineStart = false
+    if (character !== '.') continue
+    const start = index + 1
+    for (const directive of directives) {
+      const end = start + directive.length
+      if (deck.slice(start, end).toLowerCase() === directive && !isDirectiveWordCharacter(deck[end])) return true
+    }
+  }
+  return false
 }
 
 /** Admit the pipeline's fixed batch arguments and contained file references, never arbitrary CLI flags. */
@@ -88,7 +136,7 @@ function solverRequest(body: unknown): SolverRequest {
     throw new Error('Expected a self-contained routed ngspice batch request')
   // The routed compiler emits an inlined .save/.tran deck. Control scripts can
   // invoke shells, change cwd or load external modules, so they are never IO.
-  if (/^\s*\.(?:control|include|inc|lib|sp|hdl|osdi|pre_osdi)\b/im.test(request.files['simulation.cir']))
+  if (hasExternalDirective(request.files['simulation.cir']))
     throw new Error('External ngspice files, modules and control scripts are disabled')
 
   return request
@@ -192,13 +240,23 @@ async function runSolverRequest(
   }
 }
 
+/** Require the IPv4 loopback literal followed by a nonempty decimal port. */
+function isLoopbackHost(host: string = ''): boolean {
+  const prefix = '127.0.0.1:'
+  if (!host.startsWith(prefix) || host.length === prefix.length) return false
+  for (let index = prefix.length; index < host.length; index++) {
+    if (!isDigit(host[index])) return false
+  }
+  return true
+}
+
 /** Dispatch the three local API routes after the same-origin check. */
 async function routeHttpRequest(
   { request, response, path }: { request: IncomingMessage; response: ServerResponse; path: string },
   context: SolverMiddlewareContext,
 ): Promise<void> {
   if (
-    !/^127\.0\.0\.1:\d+$/.test(request.headers.host ?? '') ||
+    !isLoopbackHost(request.headers.host) ||
     (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`)
   )
     return writeErrorResponse(response, { status: 403, message: 'Expected same-origin 127.0.0.1 request' })
