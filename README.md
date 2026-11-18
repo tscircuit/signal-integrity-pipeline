@@ -87,6 +87,10 @@ flowchart TD
   s1 -->|"no channel simulations"| out
 ```
 
+The pipeline is inspectable with solver-utils. All six stage rows exist before the
+first step; each stage processes all admitted blocks in order, with no nested block
+pipelines.
+
 <!-- routed-stages:start -->
 | # | Stage solver |
 |---|---|
