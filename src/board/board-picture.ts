@@ -9,7 +9,7 @@ import {
   type Viewbox,
 } from "graphics-debug"
 import { routeBoardBox, routeBounds } from "./route-visual"
-import type { CircuitJson } from "./schema"
+import type { CircuitJson, Point } from "./schema"
 
 /** Dark, desaturated board colours so bright stage overlays stand out on a realistic top view. */
 export const boardColors = {
@@ -67,7 +67,7 @@ function drawingBounds(circuit: CircuitJson, drawing: GraphicsObject): Viewbox {
 }
 
 /** A point with numeric x and y. */
-function isPoint(item: unknown): item is { x: number; y: number } {
+function isPoint(item: unknown): item is Point {
   return (
     typeof item === "object" &&
     item !== null &&
@@ -77,7 +77,7 @@ function isPoint(item: unknown): item is { x: number; y: number } {
 }
 
 /** Every coordinate a record carries, whatever its shape. */
-function recordPoints(record: object): { x: number; y: number }[] {
+function recordPoints(record: object): Point[] {
   const { center, anchor_position, route, points, outline } = record as Record<
     string,
     unknown

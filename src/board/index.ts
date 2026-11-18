@@ -73,6 +73,7 @@ export {
 } from "./plan-visual-types"
 export type {
   CircuitJson,
+  Point,
   SimulationExperiment,
   SimulationIbisModel,
 } from "./schema"

@@ -13,7 +13,7 @@ import {
   routeTones,
   routeView,
 } from "../board"
-import type { IbisSources } from "../buffers"
+import type { IbisSources, TextRange } from "../buffers"
 import { sha256 } from "../kernel"
 import type { RouteBuffer, RoutedCapture } from "./routed-types"
 
@@ -101,7 +101,7 @@ function ibisLinePrefix({
   text: string
   prefix: string
   from: number
-}): { start: number; end: number } | undefined {
+}): TextRange | undefined {
   for (let start = from; start < text.length; start++) {
     if (start > 0 && !"\r\n\u2028\u2029".includes(text[start - 1])) continue
     const keyword = skipWhitespace(text, start)
@@ -191,6 +191,9 @@ export function roundStep(range: number, count: number): number {
     .find((step) => step >= raw)!
 }
 
+/** A plot-axis tick's numeric position and display label. */
+type AxisTick = { value: number; text: string }
+
 /** Ticks as integer multiples of a round step, so labels never show floating-point noise. */
 export function roundTicks({
   low,
@@ -200,7 +203,7 @@ export function roundTicks({
   low: number
   high: number
   count: number
-}): { value: number; text: string }[] {
+}): AxisTick[] {
   const step = roundStep(high - low, count)
   const digits = Math.max(0, -Math.floor(Math.log10(step) + 1e-9))
   const first = Math.ceil(low / step - 1e-9)
@@ -243,8 +246,11 @@ function waveformSampleIndices({
   return kept
 }
 
+/** The minimum and maximum voltages among a set of samples. */
+type SampleExtent = [low: number, high: number]
+
 /** Lowest and highest of many samples, without spreading them onto the call stack. */
-function extent(levels: readonly number[]): [number, number] {
+function extent(levels: readonly number[]): SampleExtent {
   let low = Infinity
   let high = -Infinity
   for (const level of levels) {
@@ -666,6 +672,9 @@ function drawTimeAxis(
   }
 }
 
+/** Points in one continuous segment of a plotted waveform. */
+type WaveformRun = Point[]
+
 /** One probe's curve, cut at every fold of the eye. */
 function waveformCurve(
   { curveLevels, period }: { curveLevels: readonly number[]; period: number },
@@ -680,7 +689,7 @@ function waveformCurve(
     from: number
     eye: boolean
   },
-): Point[][] {
+): WaveformRun[] {
   if (!eye)
     return [
       waveformSampleIndices({
@@ -700,7 +709,7 @@ function waveformCurve(
   let origin = 0
   if (crossing > 0) origin = times[crossing]
   origin -= period / 2
-  const runs: Point[][] = [[]]
+  const runs: WaveformRun[] = [[]]
   let last = -1
   for (const j of waveformSampleIndices({
     times,

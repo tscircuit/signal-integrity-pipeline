@@ -10,9 +10,12 @@ import {
   sourceNetMembers,
 } from "./connectivity"
 import type { CopperScope } from "./geometry/scope"
-import type { SourcePort } from "./geometry/types"
+import type { SourcePortId, SourceTraceId } from "./ids"
 import type { CircuitJson } from "./schema"
-import { signalEndpointPortIds } from "./signals"
+import {
+  type SimulationPcbDriverReceiverChannel,
+  signalEndpointPortIds,
+} from "./signals"
 
 /** Fixed roles over the dark board; nets get their own bright hues. */
 export const routeTones = {
@@ -51,15 +54,7 @@ export interface RouteFrame {
   unit: number
 }
 
-type SourceTraceId = Extract<
-  CircuitJson[number],
-  { type: "source_trace" }
->["source_trace_id"]
-type SourcePortId = SourcePort["source_port_id"]
-type SignalName = Extract<
-  CircuitJson[number],
-  { type: "simulation_pcb_driver_receiver_channel" }
->["name"]
+type SignalName = SimulationPcbDriverReceiverChannel["name"]
 
 /** A problem's framing plus its nets, shared by every stage so the camera and colours never move. */
 export interface RouteView extends RouteFrame {
@@ -960,6 +955,15 @@ export function routeLengths(
   return [...lengths].map(([net, length]) => ({ net, length }))
 }
 
+/** A net and the distance along it from the start of its unrolled copper. */
+type UnrolledRoutePosition = { net: RouteNet; distance: number }
+
+/** The length of each unrolled net and a lookup from a wire position to a net distance. */
+type UnrolledRoutes = {
+  lengths: Map<RouteNet, number>
+  along: (id: number, position: number) => UnrolledRoutePosition | undefined
+}
+
 /** Selected section wires laid end to end per net, so a position on a wire becomes a distance along its net. */
 export function routeUnrolled(
   view: RouteView,
@@ -970,13 +974,7 @@ export function routeUnrolled(
     start: number
     end: number
   }[],
-): {
-  lengths: Map<RouteNet, number>
-  along: (
-    id: number,
-    position: number,
-  ) => { net: RouteNet; distance: number } | undefined
-} {
+): UnrolledRoutes {
   const lengths = new Map<RouteNet, number>()
   const offsets = new Map<
     number,
@@ -995,7 +993,7 @@ export function routeUnrolled(
   }
   return {
     lengths,
-    along: (id, position) => {
+    along: (id, position): UnrolledRoutePosition | undefined => {
       const entry = offsets.get(id)
       return (
         entry && {
