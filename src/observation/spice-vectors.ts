@@ -8,12 +8,12 @@ export interface SpiceVector {
 
 /** Read real, ASCII ngspice batch vectors without assuming the engine's variable order. */
 export function parseSpiceVectors(text: string): SpiceVector[] {
-  const header = text.split(/^Values:\s*$/m)
-  const count = Number(/^No\. Variables:\s*(\d+)\s*$/m.exec(header[0])?.[1])
-  const points = Number(/^No\. Points:\s*(\d+)\s*$/m.exec(header[0])?.[1])
+  const header = splitSpiceSection(text, "Values:")
+  const count = spiceCount(header[0], "No. Variables:")
+  const points = spiceCount(header[0], "No. Points:")
   if (
     header.length !== 2 ||
-    !/^Flags:\s*real\s*$/m.test(header[0]) ||
+    !hasRealFlags(header[0]) ||
     !Number.isSafeInteger(count) ||
     count < 2 ||
     !Number.isSafeInteger(points) ||
@@ -24,12 +24,9 @@ export function parseSpiceVectors(text: string): SpiceVector[] {
       "Expected real ASCII ngspice vectors with at least two samples",
     )
   const variables =
-    header[0]
-      .split(/^Variables:\s*$/m)[1]
-      ?.trim()
-      .split(/\r?\n/) ?? []
+    splitSpiceSection(header[0], "Variables:")[1]?.trim().split("\n") ?? []
   const vectors = variables.map((line, i) => {
-    const [index, name, type, ...extra] = line.trim().split(/\s+/)
+    const [index, name, type, ...extra] = spiceWords(line)
     if (Number(index) !== i || !name || !type || extra.length)
       fail("waveform", "Invalid ngspice variable declaration")
     return { name: name.toLowerCase(), type, values: [] as number[] }
@@ -39,7 +36,7 @@ export function parseSpiceVectors(text: string): SpiceVector[] {
     new Set(vectors.map((vector) => vector.name)).size !== count
   )
     fail("waveform", "Invalid ngspice variable count or duplicate name")
-  const samples = header[1].trim().split(/\s+/).map(Number)
+  const samples = spiceWords(header[1]).map(Number)
   if (
     samples.length !== points * (count + 1) ||
     samples.some((sample) => !Number.isFinite(sample))
@@ -65,8 +62,8 @@ export function formatSpiceVectors(vectors: SpiceVector[]): string {
       (vector) =>
         vector.values.length !== points ||
         vector.values.some((sample) => !Number.isFinite(sample)) ||
-        !/^\S+$/.test(vector.name) ||
-        !/^\S+$/.test(vector.type),
+        !isSpiceWord(vector.name) ||
+        !isSpiceWord(vector.type),
     )
   )
     fail("waveform", "Expected complete finite real engine vectors")
@@ -123,4 +120,103 @@ function nodeVoltage(
   const voltage = vectors.get(`v(${name.toLowerCase()})`)
   if (!voltage) return fail("waveform", `Missing ngspice vector v(${name})`)
   return voltage[sample]
+}
+
+/** Split on standalone section labels, leaving any line break after each label in the next section. */
+function splitSpiceSection(text: string, label: string): string[] {
+  const sections: string[] = []
+  let sectionStart = 0
+  for (const start of spiceFieldStarts(text, label)) {
+    const end = whitespaceLineEnd(text, start + label.length)
+    if (end === undefined) continue
+    sections.push(text.slice(sectionStart, start))
+    sectionStart = end
+  }
+  sections.push(text.slice(sectionStart))
+  return sections
+}
+
+/** Read the first line for this count that contains only an unsigned integer and whitespace. */
+function spiceCount(text: string, label: string): number {
+  for (const field of spiceFieldStarts(text, label)) {
+    const start = skipWhitespace(text, field + label.length)
+    let end = start
+    while (text[end] >= "0" && text[end] <= "9") end++
+    if (end > start && whitespaceLineEnd(text, end) !== undefined)
+      return Number(text.slice(start, end))
+  }
+  return NaN
+}
+
+/** Check for a real-valued ASCII waveform header. */
+function hasRealFlags(text: string): boolean {
+  for (const field of spiceFieldStarts(text, "Flags:")) {
+    const start = skipWhitespace(text, field + "Flags:".length)
+    if (
+      text.startsWith("real", start) &&
+      whitespaceLineEnd(text, start + "real".length) !== undefined
+    )
+      return true
+  }
+  return false
+}
+
+/** Find exact labels at the start of any JavaScript line. */
+function* spiceFieldStarts(text: string, label: string): Generator<number> {
+  for (
+    let start = text.indexOf(label);
+    start !== -1;
+    start = text.indexOf(label, start + label.length)
+  ) {
+    if (start === 0 || isLineBreak(text[start - 1])) yield start
+  }
+}
+
+/** Find the last line boundary in the whitespace after a field. */
+function whitespaceLineEnd(text: string, start: number): number | undefined {
+  let end: number | undefined
+  for (let i = start; i < text.length; i++) {
+    if (text[i].trim() !== "") return end
+    if (isLineBreak(text[i])) end = i
+  }
+  return text.length
+}
+
+/** Recognize all JavaScript line terminators. */
+function isLineBreak(character: string): boolean {
+  return (
+    character === "\n" ||
+    character === "\r" ||
+    character === "\u2028" ||
+    character === "\u2029"
+  )
+}
+
+/** Read whitespace-delimited fields, returning one empty field for blank input. */
+function spiceWords(text: string): string[] {
+  const words: string[] = []
+  let start = skipWhitespace(text, 0)
+  while (start < text.length) {
+    const end = skipWord(text, start)
+    words.push(text.slice(start, end))
+    start = skipWhitespace(text, end)
+  }
+  return words.length ? words : [""]
+}
+
+/** Check that a name or type contains exactly one nonempty field. */
+function isSpiceWord(text: string): boolean {
+  return text.length > 0 && skipWord(text, 0) === text.length
+}
+
+/** Advance to the next non-whitespace character or the end of the string. */
+function skipWhitespace(text: string, start: number): number {
+  while (start < text.length && text[start].trim() === "") start++
+  return start
+}
+
+/** Advance past a field's non-whitespace characters. */
+function skipWord(text: string, start: number): number {
+  while (start < text.length && text[start].trim() !== "") start++
+  return start
 }
