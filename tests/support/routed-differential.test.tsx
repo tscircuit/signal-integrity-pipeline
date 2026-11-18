@@ -7,13 +7,12 @@ import { RoutedPipelineSolver } from "../../src/pipeline"
 import { renderCoreSignals } from "./core-render"
 import { prepareBlocks } from "./signal-render"
 
+const modelRequired =
+  "Set IBIS_MODEL_DIR to local vendor sn65hvd72.ibs; vendor bytes are not committed"
+const options = { skip: !process.env.IBIS_MODEL_DIR && modelRequired }
 test(
   "TSX differential receiver can share its physical pin with a routed termination stub",
-  {
-    skip:
-      !process.env.IBIS_MODEL_DIR &&
-      "Set IBIS_MODEL_DIR to local vendor sn65hvd72.ibs; vendor bytes are not committed",
-  },
+  options,
   async () => {
     const circuit = await renderCoreSignals(<Differential />)
     const sources = {

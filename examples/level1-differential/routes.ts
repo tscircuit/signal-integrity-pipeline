@@ -1,6 +1,11 @@
 // Preplaced copper. Numeric points use the anchor footprint frame; the
 // 0.25 mm pitch trunks fan out around RX.
-type PathPoint = string | { x: number; y: number }
+type PathPoint =
+  | string
+  | {
+      x: number
+      y: number
+    }
 
 export const routes: Record<string, PathPoint[]> = {
   TX_GND: [".TX > .GND", ".GND_TX > .top"],

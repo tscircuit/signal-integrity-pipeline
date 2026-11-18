@@ -45,7 +45,12 @@ const references = (
   Object.fromEntries(
     balls.map((ball) => [
       ball,
-      { pullup: high, pulldown: low, powerClamp: high, groundClamp: low },
+      {
+        pullup: high,
+        pulldown: low,
+        powerClamp: high,
+        groundClamp: low,
+      },
     ]),
   )
 
@@ -58,9 +63,16 @@ const route = (key: string): SavedRouteProps => ({
   pcbPathRelativeTo: routes[key].anchor,
   thickness: routes[key].width,
   pcbPaths: routes[key].paths.map((path) =>
-    path.map(([x, y, fromLayer, toLayer]) =>
-      toLayer ? { x, y, via: true, fromLayer, toLayer } : { x, y },
-    ),
+    path.map(([x, y, fromLayer, toLayer]) => {
+      if (!toLayer) return { x, y }
+      return {
+        x,
+        y,
+        via: true,
+        fromLayer,
+        toLayer,
+      }
+    }),
   ),
 })
 

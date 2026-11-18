@@ -45,24 +45,242 @@ export interface Ddr3Options {
   activeNets?: readonly string[]
 }
 
-/** Only declarations are retained from this TSX; every physical record comes from the full board. */
-export function Ddr3Signals({
-  "addr-cmd": addrCmd,
-  pattern = "prbs7",
-  "duration-seconds": duration = 8e-9,
-  "driver-model": driverModel = "Model_352",
-  nets,
-  "active-nets": activeNets,
-}: {
+/** Props for the declaration-only DDR3 board. */
+interface Ddr3SignalsProps {
   "addr-cmd": boolean
   pattern?: Ddr3Options["pattern"]
   "duration-seconds"?: number
   "driver-model"?: Ddr3Options["driverModel"]
   nets?: readonly string[]
   "active-nets"?: readonly string[]
-}): React.JSX.Element {
+}
+
+/** Duration of the address and command simulation when the caller supplies none. */
+const DEFAULT_DURATION_SECONDS = 8e-9
+/** The two clock lanes follow the 22 address and command lanes in the pin table. */
+const FIRST_CLOCK_LANE = 22
+/** The lower write byte has eight data lanes, followed by the data mask and two strobe legs. */
+const DATA_MASK_LANE = 8
+const POSITIVE_STROBE_LANE = DATA_MASK_LANE + 1
+const NEGATIVE_STROBE_LANE = DATA_MASK_LANE + 2
+/** The active clock leg switches after three bits; the other leg uses its complement. */
+const CLOCK_PATTERN = "0001111111111111"
+const COMPLEMENTARY_CLOCK_PATTERN = "1110000000000000"
+/** Seed the address and command lanes differently while keeping the seeds in the same range. */
+const SEED_BASE = 32
+const SEED_STRIDE = 7
+
+/** Choose the SoC output buffer for an address, data or strobe lane. */
+function cpuModel(lane: number, options: Ddr3SignalsProps): string {
+  if (options["addr-cmd"]) {
+    if (lane >= FIRST_CLOCK_LANE) return "Model_343"
+    return options["driver-model"] ?? "Model_352"
+  }
+  if (lane === POSITIVE_STROBE_LANE) return "Model_655"
+  if (lane === NEGATIVE_STROBE_LANE) return "Model_847"
+  return "Model_336"
+}
+
+/** The channel name and its position in the address and command pin table. */
+interface AddressLane {
+  name: string
+  lane: number
+}
+
+/** Pick the waveform for one address, command or clock lane. */
+function addressPattern(
+  { name, lane }: AddressLane,
+  { pattern, "active-nets": activeNets }: Ddr3SignalsProps,
+): string {
+  if (activeNets && !activeNets.includes(name)) return "0"
+  if (pattern === "isolated-a4") {
+    if (name === "A4") return "prbs7"
+    return "0"
+  }
+  if (lane === FIRST_CLOCK_LANE) return CLOCK_PATTERN
+  if (lane > FIRST_CLOCK_LANE) return COMPLEMENTARY_CLOCK_PATTERN
+  if (pattern === "quiet") return "0"
+  if (pattern === "victim-even" && lane % 2 === 0) return "0"
+  if (pattern === "victim-odd" && lane % 2 === 1) return "0"
+  if (pattern === "simultaneous") return "01"
+  return "prbs7"
+}
+
+/** List the SoC and DRAM with their respective IBIS files and reference pins. */
+function ddrChips(cpuPins: string[], dramPins: string[]): readonly DdrChip[] {
+  return [
+    {
+      name: "U1",
+      pins: cpuPins,
+      power: "E5",
+      ground: "A1",
+      file: "sprm552c.ibs",
+      component: "am335x_zcz",
+    },
+    {
+      name: "U3",
+      pins: dramPins,
+      power: "A1",
+      ground: "B1",
+      file: "W631GG6MB-12.ibs",
+      component: "W631GG6MB-12",
+    },
+  ]
+}
+
+/** The declaration-only component and its IBIS pin names. */
+interface DdrChip {
+  name: "U1" | "U3"
+  pins: string[]
+  power: string
+  ground: string
+  file: string
+  component: string
+}
+
+/** Render one component, its reference connections and its IBIS model. */
+function chipDeclarations(
+  chip: DdrChip,
+  options: Ddr3SignalsProps,
+): React.JSX.Element {
+  const { name, pins, power, ground, file, component } = chip
+  const allPins = [...pins, power, ground]
+  const pinLabels = Object.fromEntries(allPins.map((pin) => [pin, pin]))
+  const dramModel = options["addr-cmd"] ? "CMD" : "ODT_60"
+  const models = Object.fromEntries(
+    pins.map((pin, lane) => [
+      pin,
+      name === "U3" ? dramModel : cpuModel(lane, options),
+    ]),
+  )
+  const referenceLabels = Object.fromEntries(
+    pins.map((pin) => [
+      pin,
+      {
+        pullup: power,
+        pulldown: ground,
+        powerClamp: power,
+        groundClamp: ground,
+      },
+    ]),
+  )
+  return (
+    <React.Fragment key={name}>
+      <chip
+        name={name}
+        pinLabels={pinLabels}
+        footprint={
+          <footprint>
+            {allPins.map((pin, i) => (
+              <React.Fragment key={pin}>
+                <smtpad
+                  portHints={[pin]}
+                  pcbX={i / 2}
+                  pcbY={0}
+                  width={0.2}
+                  height={0.2}
+                  shape="rect"
+                />
+              </React.Fragment>
+            ))}
+          </footprint>
+        }
+      />
+      <trace from={`.${name} > .${power}`} to="net.VDDQ" />
+      <trace from={`.${name} > .${ground}`} to="net.GND" />
+      <simulation.ibismodel
+        componentRef={`.${name}`}
+        ibisModelAsset={{
+          project_relative_path: `models/${file}`,
+          url: `./models/${file}`,
+          mimetype: "text/plain",
+        }}
+        ibisComponentName={component}
+        ibisPinNameToPortLabel={pinLabels}
+        ibisPinNameToModelName={models}
+        ibisPinNameToReferencePortLabels={referenceLabels}
+      />
+    </React.Fragment>
+  )
+}
+
+/** Render the address, command and clock channel declarations. */
+function addressChannels(
+  options: Ddr3SignalsProps,
+  duration: number,
+): React.JSX.Element {
+  const { nets } = options
+  return (
+    <simulation.pcbtransientchannelsimulation
+      name="DDR3_ADDR_CMD"
+      bitRate="400Mbps"
+      duration={duration}
+      allowUnroutedTraces
+    >
+      {addrCmdPins.map(([name, from, to], lane) => {
+        if (nets && !nets.includes(name)) return null
+        return (
+          <simulation.pcbdriverreceiverchannel
+            key={name}
+            name={name}
+            driverRef={{
+              pin: `.U1 > .${from}`,
+              model: cpuModel(lane, options),
+            }}
+            receiverRef={{ pin: `.U3 > .${to}`, model: "CMD" }}
+            bitRate={lane >= FIRST_CLOCK_LANE ? "800Mbps" : "400Mbps"}
+            pattern={addressPattern({ name, lane }, options)}
+            seed={SEED_BASE + ((lane * SEED_STRIDE) % SEED_BASE)}
+          />
+        )
+      })}
+    </simulation.pcbtransientchannelsimulation>
+  )
+}
+
+/** Render the lower data byte, data mask and differential data strobe. */
+function writeChannels(): React.JSX.Element {
+  return (
+    <simulation.pcbtransientchannelsimulation
+      name="DDR3_LOWER_WRITE"
+      bitRate="800Mbps"
+      allowUnroutedTraces
+    >
+      {cpu.slice(0, POSITIVE_STROBE_LANE).map((pin, lane) => (
+        <React.Fragment key={pin}>
+          <simulation.pcbdriverreceiverchannel
+            name={lane === DATA_MASK_LANE ? "DQM0" : `DQ${lane}`}
+            driverRef={{ pin: `.U1 > .${pin}`, model: "Model_336" }}
+            receiverRef={{ pin: `.U3 > .${dram[lane]}`, model: "ODT_60" }}
+          />
+        </React.Fragment>
+      ))}
+      <simulation.pcbdriverreceiverchannel
+        name="DQS0"
+        driverRef={{
+          pin: { p: ".U1 > .P1", n: ".U1 > .P2" },
+          model: { p: "Model_655", n: "Model_847" },
+        }}
+        receiverRef={{
+          pin: { p: ".U3 > .F3", n: ".U3 > .G3" },
+          model: { p: "ODT_60", n: "ODT_60" },
+        }}
+        pattern="clock"
+        offset="0.5UI"
+      />
+    </simulation.pcbtransientchannelsimulation>
+  )
+}
+
+/** Only declarations are retained from this TSX; every physical record comes from the full board. */
+export function Ddr3Signals(options: Ddr3SignalsProps): React.JSX.Element {
+  const {
+    "addr-cmd": addrCmd,
+    "duration-seconds": duration = DEFAULT_DURATION_SECONDS,
+  } = options
   const cpuPins = addrCmd ? addrCmdPins.map(([, pin]) => pin) : cpu
   const dramPins = addrCmd ? addrCmdPins.map(([, , pin]) => pin) : dram
+  const chips = ddrChips(cpuPins, dramPins)
   return (
     <board
       width={30}
@@ -73,80 +291,7 @@ export function Ddr3Signals({
       routingDisabled
       schematicDisabled
     >
-      {(
-        [
-          ["U1", cpuPins, "E5", "A1", "sprm552c.ibs", "am335x_zcz"],
-          ["U3", dramPins, "A1", "B1", "W631GG6MB-12.ibs", "W631GG6MB-12"],
-        ] as const
-      ).map(([name, pins, power, ground, file, component]) => (
-        <React.Fragment key={name}>
-          <chip
-            name={name}
-            pinLabels={Object.fromEntries(
-              [...pins, power, ground].map((pin) => [pin, pin]),
-            )}
-            footprint={
-              <footprint>
-                {[...pins, power, ground].map((pin, i) => (
-                  <React.Fragment key={pin}>
-                    <smtpad
-                      portHints={[pin]}
-                      pcbX={i / 2}
-                      pcbY={0}
-                      width={0.2}
-                      height={0.2}
-                      shape="rect"
-                    />
-                  </React.Fragment>
-                ))}
-              </footprint>
-            }
-          />
-          <trace from={`.${name} > .${power}`} to="net.VDDQ" />
-          <trace from={`.${name} > .${ground}`} to="net.GND" />
-          <simulation.ibismodel
-            componentRef={`.${name}`}
-            ibisModelAsset={{
-              project_relative_path: `models/${file}`,
-              url: `./models/${file}`,
-              mimetype: "text/plain",
-            }}
-            ibisComponentName={component}
-            ibisPinNameToPortLabel={Object.fromEntries(
-              [...pins, power, ground].map((pin) => [pin, pin]),
-            )}
-            ibisPinNameToModelName={Object.fromEntries(
-              pins.map((pin, i) => [
-                pin,
-                name === "U3"
-                  ? addrCmd
-                    ? "CMD"
-                    : "ODT_60"
-                  : addrCmd
-                    ? i >= 22
-                      ? "Model_343"
-                      : driverModel
-                    : i === 9
-                      ? "Model_655"
-                      : i === 10
-                        ? "Model_847"
-                        : "Model_336",
-              ]),
-            )}
-            ibisPinNameToReferencePortLabels={Object.fromEntries(
-              pins.map((pin) => [
-                pin,
-                {
-                  pullup: power,
-                  pulldown: ground,
-                  powerClamp: power,
-                  groundClamp: ground,
-                },
-              ]),
-            )}
-          />
-        </React.Fragment>
-      ))}
+      {chips.map((chip) => chipDeclarations(chip, options))}
       {cpuPins.map((pin, i) => (
         <React.Fragment key={pin}>
           <trace from={`.U1 > .${pin}`} to={`.U3 > .${dramPins[i]}`} />
@@ -158,81 +303,72 @@ export function Ddr3Signals({
           negativeConnection=".U1 > .P2"
         />
       )}
-      {addrCmd ? (
-        <simulation.pcbtransientchannelsimulation
-          name="DDR3_ADDR_CMD"
-          bitRate="400Mbps"
-          duration={duration}
-          allowUnroutedTraces
-        >
-          {addrCmdPins.map(([name, from, to], i) =>
-            nets && !nets.includes(name) ? null : (
-              <simulation.pcbdriverreceiverchannel
-                key={name}
-                name={name}
-                driverRef={{
-                  pin: `.U1 > .${from}`,
-                  model: i >= 22 ? "Model_343" : driverModel,
-                }}
-                receiverRef={{ pin: `.U3 > .${to}`, model: "CMD" }}
-                bitRate={i >= 22 ? "800Mbps" : "400Mbps"}
-                pattern={
-                  activeNets && !activeNets.includes(name)
-                    ? "0"
-                    : pattern === "isolated-a4"
-                      ? name === "A4"
-                        ? "prbs7"
-                        : "0"
-                      : i >= 22
-                        ? i === 22
-                          ? "0001111111111111"
-                          : "1110000000000000"
-                        : pattern === "quiet" ||
-                            (pattern === "victim-even" && i % 2 === 0) ||
-                            (pattern === "victim-odd" && i % 2 === 1)
-                          ? "0"
-                          : pattern === "simultaneous"
-                            ? "01"
-                            : "prbs7"
-                }
-                seed={32 + ((i * 7) % 32)}
-              />
-            ),
-          )}
-        </simulation.pcbtransientchannelsimulation>
-      ) : (
-        <simulation.pcbtransientchannelsimulation
-          name="DDR3_LOWER_WRITE"
-          bitRate="800Mbps"
-          allowUnroutedTraces
-        >
-          {cpu.slice(0, 9).map((pin, i) => (
-            <React.Fragment key={pin}>
-              <simulation.pcbdriverreceiverchannel
-                name={i === 8 ? "DQM0" : `DQ${i}`}
-                driverRef={{ pin: `.U1 > .${pin}`, model: "Model_336" }}
-                receiverRef={{ pin: `.U3 > .${dram[i]}`, model: "ODT_60" }}
-              />
-            </React.Fragment>
-          ))}
-          <simulation.pcbdriverreceiverchannel
-            name="DQS0"
-            driverRef={{
-              pin: { p: ".U1 > .P1", n: ".U1 > .P2" },
-              model: { p: "Model_655", n: "Model_847" },
-            }}
-            receiverRef={{
-              pin: { p: ".U3 > .F3", n: ".U3 > .G3" },
-              model: { p: "ODT_60", n: "ODT_60" },
-            }}
-            pattern="clock"
-            offset="0.5UI"
-          />
-        </simulation.pcbtransientchannelsimulation>
-      )}
+      {addrCmd ? addressChannels(options, duration) : writeChannels()}
     </board>
   )
 }
+
+/** Match rendered source components and their ports to the corresponding records on the board. */
+function declarationIds(
+  board: CircuitJson,
+  declarations: CircuitJson,
+): Map<string, string> {
+  const ids = new Map<string, string>()
+  const components = declarations.filter(
+    (record) => record.type === "source_component",
+  )
+  const ports = declarations.filter((record) => record.type === "source_port")
+  const boardComponents = board.filter(
+    (record) => record.type === "source_component",
+  )
+  const boardPorts = board.filter((record) => record.type === "source_port")
+  for (const component of components) {
+    const actual = boardComponents.find(
+      (record) => record.name === component.name,
+    )
+    if (!actual) throw new Error(`Full board is missing ${component.name}`)
+    ids.set(component.source_component_id, actual.source_component_id)
+    const componentPorts = ports.filter(
+      (record) => record.source_component_id === component.source_component_id,
+    )
+    for (const port of componentPorts) {
+      const target = boardPorts.find(
+        (record) =>
+          record.source_component_id === actual.source_component_id &&
+          record.name === port.name,
+      )
+      if (!target)
+        throw new Error(`Full board is missing ${component.name}.${port.name}`)
+      ids.set(port.source_port_id, target.source_port_id)
+    }
+  }
+  return ids
+}
+
+/** Remap only declaration identities; never synthesize or transform physical copper. */
+function remapDeclaration(
+  value: unknown,
+  ids: ReadonlyMap<string, string>,
+): unknown {
+  if (typeof value === "string") return ids.get(value) ?? value
+  if (Array.isArray(value))
+    return value.map((entry) => remapDeclaration(entry, ids))
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value).map(([key, entry]) => [
+      key,
+      remapDeclaration(entry, ids),
+    ])
+    return Object.fromEntries(entries)
+  }
+  return value
+}
+
+/** The declaration-only records kept from the rendered fixture. */
+const DECLARATION_TYPES = [
+  "simulation_pcb_transient_channel_simulation",
+  "simulation_pcb_driver_receiver_channel",
+  "simulation_ibis_model",
+]
 
 /** Preserve all source-board records; append TSX SI declarations and the requested preset when absent. */
 export async function withDdr3Signals(
@@ -255,51 +391,14 @@ export async function withDdr3Signals(
   const declarations = circuit.getCircuitJson() as CircuitJson
   const errors = declarations.filter((record) => record.type.endsWith("_error"))
   if (errors.length) throw new Error(JSON.stringify(errors))
-  const ids = new Map<string, string>()
-  for (const component of declarations.filter(
-    (record) => record.type === "source_component",
-  )) {
-    const actual = board
-      .filter((record) => record.type === "source_component")
-      .find((record) => record.name === component.name)
-    if (!actual) throw new Error(`Full board is missing ${component.name}`)
-    ids.set(component.source_component_id, actual.source_component_id)
-    for (const port of declarations
-      .filter((record) => record.type === "source_port")
-      .filter(
-        (record) =>
-          record.source_component_id === component.source_component_id,
-      )) {
-      const target = board
-        .filter((record) => record.type === "source_port")
-        .find(
-          (record) =>
-            record.source_component_id === actual.source_component_id &&
-            record.name === port.name,
-        )
-      if (!target)
-        throw new Error(`Full board is missing ${component.name}.${port.name}`)
-      ids.set(port.source_port_id, target.source_port_id)
-    }
-  }
-  /** Remap only declaration identities; never synthesize or transform physical copper. */
-  function remap(value: unknown): unknown {
-    if (typeof value === "string") return ids.get(value) ?? value
-    if (Array.isArray(value)) return value.map(remap)
-    if (value && typeof value === "object")
-      return Object.fromEntries(
-        Object.entries(value).map(([key, entry]) => [key, remap(entry)]),
-      )
-    return value
-  }
-  const scope = board.find(
-    (record) => record.type === "pcb_board",
-  )!.subcircuit_id
+  const ids = declarationIds(board, declarations)
   const physicalBoard = board.find((record) => record.type === "pcb_board")!
-  if (physicalBoard.thickness !== 1.2 || physicalBoard.num_layers !== 8)
+  const scope = physicalBoard.subcircuit_id
+  if (physicalBoard.thickness !== 1.2 || physicalBoard.num_layers !== 8) {
     throw new Error(
       "DDR3 fixture requires the supplied 1.2 mm eight-layer JLC08121H-3313 board",
     )
+  }
   if (!board.some((record) => record.type === "pcb_stackup")) {
     const stackup = declarations.find(
       (record) => record.type === "pcb_stackup",
@@ -310,20 +409,16 @@ export async function withDdr3Signals(
       subcircuit_id: scope,
     })
   }
-  const records = declarations
-    .filter((record) =>
-      [
-        "simulation_pcb_transient_channel_simulation",
-        "simulation_pcb_driver_receiver_channel",
-        "simulation_ibis_model",
-      ].includes(record.type),
-    )
-    .map((record) => ({
-      ...(remap(record) as CircuitJson[number]),
-      ...("subcircuit_id" in record ? { subcircuit_id: scope } : {}),
-    }))
-  for (const record of records)
-    if (record.type === "simulation_pcb_transient_channel_simulation")
-      record.allow_unrouted_traces = false
-  return [...board, ...records]
+  const records = declarations.filter((record) =>
+    DECLARATION_TYPES.includes(record.type),
+  )
+  const remappedRecords = records.map((record) => {
+    const remapped = remapDeclaration(record, ids) as CircuitJson[number]
+    if ("subcircuit_id" in record)
+      Object.assign(remapped, { subcircuit_id: scope })
+    if (remapped.type === "simulation_pcb_transient_channel_simulation")
+      remapped.allow_unrouted_traces = false
+    return remapped
+  })
+  return [...board, ...remappedRecords]
 }

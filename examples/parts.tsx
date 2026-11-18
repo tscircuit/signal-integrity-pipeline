@@ -13,7 +13,13 @@ export const Inverter = (props: {
       footprint="sot23_5"
       pcbX={props.pcbX}
       pcbY={props.pcbY ?? 0}
-      pinLabels={{ pin1: "NC", pin2: "A", pin3: "GND", pin4: "Y", pin5: "VCC" }}
+      pinLabels={{
+        pin1: "NC",
+        pin2: "A",
+        pin3: "GND",
+        pin4: "Y",
+        pin5: "VCC",
+      }}
     />
     <simulation.ibismodel
       componentRef={`.${props.name}`}
@@ -23,7 +29,12 @@ export const Inverter = (props: {
         mimetype: "text/plain",
       }}
       ibisComponentName="LVC1G04_DBV"
-      ibisPinNameToPortLabel={{ "2": "A", "3": "GND", "4": "Y", "5": "VCC" }}
+      ibisPinNameToPortLabel={{
+        "2": "A",
+        "3": "GND",
+        "4": "Y",
+        "5": "VCC",
+      }}
       ibisPinNameToModelName={{ "2": "LVC1G04_IN_33", "4": "LVC1G04_OUT_33" }}
       ibisPinNameToReferencePortLabels={{
         "2": {
