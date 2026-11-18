@@ -11,10 +11,18 @@ import {
 /** Assemble in reverse order to verify dense-compatible column ordering. */
 function energy(values: number[][]): RouteEnergy {
   const result = new RouteEnergy(values.length)
-  for (let i = values.length - 1; i >= 0; i--)
-    for (let j = values.length - 1; j >= 0; j--)
+  for (let i = values.length - 1; i >= 0; i--) {
+    for (let j = values.length - 1; j >= 0; j--) {
       result.add({ row: i, column: j, coefficient: values[i][j] })
+    }
+  }
   return result
+}
+
+/** Read the last field of a stamped SPICE element. */
+function elementValue(lines: string[], name: string): number {
+  const line = lines.find((line) => line.startsWith(`${name} `))!
+  return Number(line.split(" ").at(-1))
 }
 
 test("sparse series realization equals dense self and signed mutual coefficients", () => {
@@ -77,13 +85,17 @@ test("normalized reciprocal resistance obeys V = R I down to tiny Foster voltage
   const residual = new Map<string, number>()
   for (const line of lines) {
     const [name, a, b, c, d, gain] = line.split(" ")
-    assert.ok(
-      /^[RG]/.test(name),
+    assert.match(
+      name,
+      /^[RG]/,
       "no sensor or series CCVS branch unknowns at near-zero Foster voltage",
     )
-    const current = name.startsWith("R")
-      ? (nodes.get(a)! - nodes.get(b)!) / Number(c)
-      : Number(gain) * (nodes.get(c)! - nodes.get(d)!)
+    let current: number
+    if (name.startsWith("R")) {
+      current = (nodes.get(a)! - nodes.get(b)!) / Number(c)
+    } else {
+      current = Number(gain) * (nodes.get(c)! - nodes.get(d)!)
+    }
     residual.set(a, (residual.get(a) ?? 0) + current)
     residual.set(b, (residual.get(b) ?? 0) - current)
   }
@@ -154,20 +166,22 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
   for (const frequency of [1e6, 1e9, 2e10]) {
     const omega = 2 * Math.PI * frequency
     // Complex numbers as [real, imaginary]; z_p = skin jw / (jw + rate).
-    const stage = poles.map((pole) => [
-      (pole.skin * omega ** 2) / (pole.rate ** 2 + omega ** 2),
-      (pole.skin * omega * pole.rate) / (pole.rate ** 2 + omega ** 2),
-    ])
+    const stage = poles.map((pole) => {
+      const denominator = pole.rate ** 2 + omega ** 2
+      return [
+        (pole.skin * omega ** 2) / denominator,
+        (pole.skin * omega * pole.rate) / denominator,
+      ]
+    })
     const z = stage.reduce(([re, im], [a, b]) => [re + a, im + b], [0, 0])
     const nodes = new Map<string, number[]>([["0", [0, 0]]])
     for (const [i, node] of ["a", "b", "c"].entries()) {
       const voltage = matrix[i].reduce((sum, s, j) => sum + s * currents[j], 0)
       const x = Math.sqrt(matrix[i][i]) * currents[i]
-      nodes
-        .set(node, [z[0] * voltage, z[1] * voltage])
-        .set(`${node}8`, [0, 0])
-        .set(`TSx${i}`, [x, 0])
-        .set(`TSu${i}`, [z[0] * x, z[1] * x])
+      nodes.set(node, [z[0] * voltage, z[1] * voltage])
+      nodes.set(`${node}8`, [0, 0])
+      nodes.set(`TSx${i}`, [x, 0])
+      nodes.set(`TSu${i}`, [z[0] * x, z[1] * x])
       let drop = [0, 0]
       for (let p = 0; p < 8; p++) {
         drop = [drop[0] + stage[p][0] * x, drop[1] + stage[p][1] * x]
@@ -181,24 +195,27 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
         nodes.get(a)![0] - nodes.get(b)![0],
         nodes.get(a)![1] - nodes.get(b)![1],
       ]
-      const current = name.startsWith("R")
-        ? [vr / Number(c), vi / Number(c)]
-        : name.startsWith("L")
-          ? [vi / (omega * Number(c)), -vr / (omega * Number(c))]
-          : [
-              Number(gain) * (nodes.get(c)![0] - nodes.get(d)![0]),
-              Number(gain) * (nodes.get(c)![1] - nodes.get(d)![1]),
-            ]
+      let current: number[]
+      if (name.startsWith("R")) {
+        current = [vr / Number(c), vi / Number(c)]
+      } else if (name.startsWith("L")) {
+        current = [vi / (omega * Number(c)), -vr / (omega * Number(c))]
+      } else {
+        const scale = Number(gain)
+        const controlReal = nodes.get(c)![0] - nodes.get(d)![0]
+        const controlImaginary = nodes.get(c)![1] - nodes.get(d)![1]
+        current = [scale * controlReal, scale * controlImaginary]
+      }
       for (const [node, sign] of [
         [a, 1],
         [b, -1],
-      ] as const)
+      ] as const) {
+        const previous = residual.get(node) ?? [0, 0]
         residual.set(
           node,
-          (residual.get(node) ?? [0, 0]).map(
-            (value, k) => value + sign * current[k],
-          ),
+          previous.map((value, k) => value + sign * current[k]),
         )
+      }
     }
     for (const [node, value] of residual) {
       const index = node.length ? "abc".indexOf(node[0]) : -1
@@ -244,9 +261,6 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
     }),
     0,
   )
-  /** Value of the emitted element `name`. */
-  const value = (name: string): number =>
-    Number(diagonal.find((line) => line.startsWith(`${name} `))!.split(" ")[3])
   assert.deepEqual(
     diagonal.map((line) => line.split(" ").slice(0, 3).join(" ")),
     [
@@ -264,7 +278,7 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
       "LDP11 d f",
     ],
   )
-  for (const [name, expected] of [
+  const expectedCoefficients = [
     ["RDQ01", (1.5e-4 * 2 * 10) / 100],
     ["LDQ01", (1.5e-4 * 2 * 10) / 100 / 100],
     ["RDQ11", (1.5e-4 * 3 * 100) / 190],
@@ -274,11 +288,14 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
     ["RDS11", 0.5e-4 * 3],
     ["LDP11", (0.5e-4 * 3) / 100],
     ["RDS00", 1e-4 * 2],
-  ] as const)
+  ] as const
+  for (const [name, expected] of expectedCoefficients) {
+    const actual = elementValue(diagonal, name)
     assert.ok(
-      Math.abs(value(name) / expected - 1) < 1e-9,
-      `${name}: ${value(name)} vs ${expected}`,
+      Math.abs(actual / expected - 1) < 1e-9,
+      `${name}: ${actual} vs ${expected}`,
     )
+  }
   // A coupled pair caps each own share at S_ii - |S_ij| so the shared remainder stays diagonally dominant (passive).
   const capped: string[] = []
   assert.equal(
@@ -304,18 +321,14 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
     }),
     1,
   )
+  const scale = elementValue(capped, "GCSI0")
   assert.ok(
-    Math.abs(
-      Number(capped.find((line) => line.startsWith("GCSI0 "))!.split(" ")[5]) -
-        1 / Math.sqrt(3e-5),
-    ) < 1e-6,
+    Math.abs(scale - 1 / Math.sqrt(3e-5)) < 1e-6,
     "row a keeps a 3e-5 remainder",
   )
+  const mutual = elementValue(capped, "GCS0_1")
   assert.ok(
-    Math.abs(
-      Number(capped.find((line) => line.startsWith("GCS0_1 "))!.split(" ")[5]) -
-        3e-5 / Math.sqrt(3e-5 * 5e-5),
-    ) < 1e-9,
+    Math.abs(mutual - 3e-5 / Math.sqrt(3e-5 * 5e-5)) < 1e-9,
     "normalized mutual over the remainders",
   )
 })

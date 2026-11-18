@@ -9,8 +9,10 @@ import {
 import { routedCopper } from "../support/routed-fixture"
 
 /** Electrical identity follows physical TSX copper endpoints. */
-const endpoint = (wire: RouteWire, point: RouteXY): string =>
-  `${wire.layer}_${point.map((value) => value.toFixed(8)).join("_")}`
+function endpoint(wire: RouteWire, point: RouteXY): string {
+  const coordinates = point.map((value) => value.toFixed(8)).join("_")
+  return `${wire.layer}_${coordinates}`
+}
 
 test("actual routed TSX exceeds the old 1024-cell cap with locally supported coupling", async () => {
   const { circuitJson, scope } = await routedCopper()
@@ -31,10 +33,8 @@ test("actual routed TSX exceeds the old 1024-cell cap with locally supported cou
     couplings.length < result.cells * 30,
     "fixed-width local slices scale with cell count",
   )
-  assert.ok(
-    result.lines.some((line) => line.startsWith("GARCS")),
-    "actual TSX copper exercises coupled Foster resistance",
-  )
+  const coupled = result.lines.some((line) => line.startsWith("GARCS"))
+  assert.ok(coupled, "actual TSX copper exercises coupled Foster resistance")
   assert.equal(
     result.lines.filter(
       (line) => line.startsWith("VARCS") || line.startsWith("HARCS"),
@@ -42,10 +42,11 @@ test("actual routed TSX exceeds the old 1024-cell cap with locally supported cou
     0,
     "tiny Foster voltages must not be differences along sensor/CCVS chains",
   )
+  const resistance = result.lines.filter((line) => line.startsWith("RARCS"))
   assert.ok(
-    result.lines
-      .filter((line) => line.startsWith("RARCS"))
-      .every((line) => line.split(" ")[2] !== "0" || line.endsWith(" 1")),
+    resistance.every(
+      (line) => line.split(" ")[2] !== "0" || line.endsWith(" 1"),
+    ),
     "coupled resistance equations have unit diagonal",
   )
 })

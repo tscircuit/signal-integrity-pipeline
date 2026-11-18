@@ -31,9 +31,11 @@ test("explicit vertical terminal corrections preserve geometry scaling, reciproc
     ],
     perLength: line,
   })
-  for (let i = 0; i < 2; i++)
-    for (let j = 0; j < 2; j++)
+  for (let i = 0; i < 2; i++) {
+    for (let j = 0; j < 2; j++) {
       assert.ok(Math.abs(scaled[i][j] - 2 * matrix[i][j]) < 1e-24)
+    }
+  }
   assert.throws(
     () =>
       terminalInductance({

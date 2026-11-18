@@ -15,6 +15,21 @@ import {
 import { type Matrix, validateMatrix } from "../extraction"
 import type { RouteEndpoint } from "./route-network"
 
+/** Vacuum permittivity in farads per metre. */
+const VACUUM_PERMITTIVITY = 8.8541878128e-12
+/** Copper conductivity in siemens per metre. */
+const COPPER_CONDUCTIVITY = 5.8e7
+/** Millimetres in one metre. */
+const MM_PER_METRE = 1000
+/** Match via centers and layer heights within their respective tolerances (mm). */
+const VIA_POSITION_TOLERANCE = 1e-5
+const LAYER_HEIGHT_TOLERANCE = 1e-6
+/** Default clearance diameter increase over the copper pad (mm). */
+const ANTIPAD_ALLOWANCE_MM = 0.2
+/** Assumed ground stitch geometry when the board does not specify one. */
+const GROUND_VIA_DISTANCE_MM = 10
+const GROUND_VIA_HOLE_MM = 0.15
+
 export interface RouteTransition {
   kind: string
   id: string
@@ -47,20 +62,17 @@ export function terminalInductance({
   positions: RouteXY[]
   perLength: Matrix
 }): Matrix {
-  if (
-    ![height, width, depth].every(
-      (dimension) => Number.isFinite(dimension) && dimension > 0,
-    ) ||
-    !positions.length ||
-    positions.some(
-      (point) =>
-        point.length !== 2 ||
-        point.some((coordinate) => !Number.isFinite(coordinate)),
-    )
+  const validDimensions = [height, width, depth].every(
+    (value) => Number.isFinite(value) && value > 0,
   )
+  const validPositions = positions.every(
+    (point) => point.length === 2 && point.every(Number.isFinite),
+  )
+  if (!validDimensions || !positions.length || !validPositions) {
     throw new Error(
       "Vertical terminal dimensions and positions must be finite and positive",
     )
+  }
   if (perLength.length !== positions.length)
     throw new Error("Terminal and line matrix dimensions disagree")
   validateMatrix(perLength, "Terminal line L", 1e-10)
@@ -109,8 +121,8 @@ export function barrelCapacitance({
   er: number
 }): number {
   return (
-    (2 * Math.PI * 8.8541878128e-12 * er * height) /
-    1000 /
+    (2 * Math.PI * VACUUM_PERMITTIVITY * er * height) /
+    MM_PER_METRE /
     Math.log(antipad / diameter)
   )
 }
@@ -154,40 +166,46 @@ function referenceHeight(
 
 /** Reference immediately adjacent to this via, rather than the first section on its layer. */
 function adjacentReferences(
-  { wire, layer, via }: { wire: RouteWire; layer: LayerRef; via: Point },
+  {
+    wire,
+    layer,
+    via,
+  }: {
+    wire: RouteWire
+    layer: LayerRef
+    via: Point
+  },
   geometry: SectionGeometry,
 ): RouteReference[] {
-  return (
-    geometry.slices
-      .filter((slice) =>
-        slice.wires.some((w) => w.trace === wire.trace && w.layer === layer),
-      )
-      .map((slice) => {
-        const local = slice.wires.find(
-          (w) => w.trace === wire.trace && w.layer === layer,
-        )!
-        const position = via.x * local.u[0] + via.y * local.u[1]
-        const lateral =
-          -via.x * local.u[1] + via.y * local.u[0] - local.transverse
-        return {
-          slice,
-          distance: Math.hypot(
-            lateral,
-            Math.max(slice.start - position, position - slice.end, 0),
-          ),
-        }
-      })
-      .sort((a, b) => a.distance - b.distance)[0]?.slice.references ??
-    routeReferences({
-      geometry,
-      wire: {
-        ...wire,
-        layer,
-        transverse: -via.x * wire.u[1] + via.y * wire.u[0],
-      },
-      position: via.x * wire.u[0] + via.y * wire.u[1],
-    })
-  )
+  const slices = geometry.slices.filter((slice) => {
+    return slice.wires.some(
+      (candidate) =>
+        candidate.trace === wire.trace && candidate.layer === layer,
+    )
+  })
+  const candidates = slices.map((slice) => {
+    const local = slice.wires.find(
+      (candidate) =>
+        candidate.trace === wire.trace && candidate.layer === layer,
+    )!
+    const position = via.x * local.u[0] + via.y * local.u[1]
+    const lateral = -via.x * local.u[1] + via.y * local.u[0] - local.transverse
+    const longitudinal = Math.max(
+      slice.start - position,
+      position - slice.end,
+      0,
+    )
+    return { slice, distance: Math.hypot(lateral, longitudinal) }
+  })
+  const closest = candidates.sort((a, b) => a.distance - b.distance)[0]
+  if (closest?.slice.references != null) return closest.slice.references
+  const transverse = -via.x * wire.u[1] + via.y * wire.u[0]
+  const position = via.x * wire.u[0] + via.y * wire.u[1]
+  return routeReferences({
+    geometry,
+    wire: { ...wire, layer, transverse },
+    position,
+  })
 }
 
 /** Lumped barrels/stubs, actual pad areas and nearest physical GND-via return-loop estimates. */
@@ -209,41 +227,42 @@ export function routeTransitions({
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
   const ground = sourceNetMembers(connectivity, groundPort)
   const sources = circuit.filter((record) => record.type === "source_trace")
-  const groundVias = circuit
-    .filter((record) => record.type === "pcb_via")
-    .filter(
-      (via) =>
-        (via.source_net_id && ground.has(via.source_net_id)) ||
-        sources.some(
-          (source) =>
-            source.source_trace_id === via.source_trace_id &&
-            [
-              ...source.connected_source_port_ids,
-              ...(source.connected_source_net_ids ?? []),
-            ].some((id) => ground.has(id)),
-        ),
+  const vias = circuit.filter((record) => record.type === "pcb_via")
+  const groundVias = vias.filter((via) => {
+    if (via.source_net_id && ground.has(via.source_net_id)) return true
+    return sources.some((source) => {
+      if (source.source_trace_id !== via.source_trace_id) return false
+      const ids = [
+        ...source.connected_source_port_ids,
+        ...(source.connected_source_net_ids ?? []),
+      ]
+      return ids.some((id) => ground.has(id))
+    })
+  })
+  const traces = circuit.filter((record) => record.type === "pcb_trace")
+  for (const trace of traces) {
+    const traceId = trace.pcb_trace_id
+    if (
+      !scope.pcbTraceIds.includes(traceId) ||
+      scope.nonReferenceRailTraceIds.includes(traceId)
     )
-  for (const trace of circuit
-    .filter((record) => record.type === "pcb_trace")
-    .filter(
-      (trace) =>
-        scope.pcbTraceIds.includes(trace.pcb_trace_id) &&
-        !scope.nonReferenceRailTraceIds.includes(trace.pcb_trace_id),
-    )) {
+      continue
     const wire = geometry.wires.find(
       (wire) => wire.trace === trace.pcb_trace_id,
     )
     if (!wire) continue
     const route = resolveRouteVias(circuit, trace)
     for (const via of route.filter((point) => point.route_type === "via")) {
-      const physical = circuit
-        .filter((record) => record.type === "pcb_via")
-        .find(
-          (record) =>
-            (record.pcb_trace_id === trace.pcb_trace_id ||
-              record.source_trace_id === trace.source_trace_id) &&
-            Math.hypot(via.x - record.x, via.y - record.y) < 1e-5,
+      const physical = vias.find((record) => {
+        const matchingTrace =
+          record.pcb_trace_id === traceId ||
+          record.source_trace_id === trace.source_trace_id
+        return (
+          matchingTrace &&
+          Math.hypot(via.x - record.x, via.y - record.y) <
+            VIA_POSITION_TOLERANCE
         )
+      })
       if (!physical)
         throw new Error(`${trace.pcb_trace_id}: missing physical via barrel`)
       const tag = `VT${output.records.length}`
@@ -253,7 +272,7 @@ export function routeTransitions({
       const toLayerHeight = layerHeight(layers, via.to_layer)
       const h = Math.abs(fromLayerHeight - toLayerHeight)
       const diameter = physical.hole_diameter + 2 * geometry.stack.viaPlatingMm!
-      const antipad = physical.outer_diameter + 0.2
+      const antipad = physical.outer_diameter + ANTIPAD_ALLOWANCE_MM
       const er = geometry.stack.relativePermittivity!
       const inductanceH = barrelInductance(h, diameter)
       const capacitanceF = barrelCapacitance({
@@ -277,29 +296,33 @@ export function routeTransitions({
         0,
         (Math.PI * (physical.outer_diameter ** 2 - diameter ** 2)) / 4,
       )
-      const padCapacitanceF = [
+      const connectedEnds = [
         { refs: before, name: via.from_layer },
         { refs: after, name: via.to_layer },
-      ].map(({ refs, name }) => {
+      ]
+      const padCapacitanceF = connectedEnds.map(({ refs, name }) => {
         const layer = layers.find((layer) => layer.name === name)!
         return refs.reduce((sum, ref) => {
           const gap = Math.min(
             Math.abs(ref.z - layer.zMinMm),
             Math.abs(ref.z - layer.zMaxMm),
           )
-          if (!(gap > 1e-6)) return sum
-          return sum + (8.8541878128e-12 * er * padAreaMm2) / gap / 1000
+          if (!(gap > LAYER_HEIGHT_TOLERANCE)) return sum
+          return (
+            sum + (VACUUM_PERMITTIVITY * er * padAreaMm2) / gap / MM_PER_METRE
+          )
         }, 0)
       })
       const referenceLayers = [...new Set(references.map((ref) => ref.layer))]
       const candidates = groundVias
         .filter((v) => {
           const depths = v.layers.map((name) => layerHeight(layers, name))
-          return referenceLayers.every(
-            (name) =>
-              layerHeight(layers, name) >= Math.min(...depths) - 1e-6 &&
-              layerHeight(layers, name) <= Math.max(...depths) + 1e-6,
-          )
+          const bottom = Math.min(...depths) - LAYER_HEIGHT_TOLERANCE
+          const top = Math.max(...depths) + LAYER_HEIGHT_TOLERANCE
+          return referenceLayers.every((name) => {
+            const height = layerHeight(layers, name)
+            return height >= bottom && height <= top
+          })
         })
         .sort(
           (x, y) =>
@@ -307,20 +330,18 @@ export function routeTransitions({
             Math.hypot(y.x - via.x, y.y - via.y),
         )
       const nearest = candidates[0]
-      let distance = 10
+      let distance = GROUND_VIA_DISTANCE_MM
       if (nearest) distance = Math.hypot(nearest.x - via.x, nearest.y - via.y)
       const heightDifference = Math.abs(fromHeight - toHeight)
       let returnInductanceH = 0
-      if (!(heightDifference < 1e-6))
+      if (!(heightDifference < LAYER_HEIGHT_TOLERANCE)) {
+        const hole = nearest?.hole_diameter ?? GROUND_VIA_HOLE_MM
         returnInductanceH =
-          0.2e-9 *
-          heightDifference *
-          Math.log(1 + (2 * distance) / (nearest?.hole_diameter ?? 0.15))
+          0.2e-9 * heightDifference * Math.log(1 + (2 * distance) / hole)
+      }
+      const annulus = diameter ** 2 - physical.hole_diameter ** 2
       const resistance =
-        h /
-        1000 /
-        ((5.8e7 * Math.PI * (diameter ** 2 - physical.hole_diameter ** 2)) /
-          4e6)
+        h / MM_PER_METRE / ((COPPER_CONDUCTIVITY * Math.PI * annulus) / 4e6)
       output.lines.push(
         `R${tag} ${a} ${tag}r ${resistance}`,
         `L${tag} ${tag}r ${b} ${inductanceH + returnInductanceH}`,
@@ -335,13 +356,21 @@ export function routeTransitions({
         Math.max(0, Math.max(...spans) - hi),
       ]
       for (const [i, stub] of stubs.entries()) {
-        if (!(stub > 1e-6)) continue
+        if (!(stub > LAYER_HEIGHT_TOLERANCE)) continue
         const stubStart = [lo, hi][i]
         let tap = b
-        if (Math.abs(fromLayerHeight - stubStart) < 1e-6) tap = a
+        if (Math.abs(fromLayerHeight - stubStart) < LAYER_HEIGHT_TOLERANCE)
+          tap = a
+        const inductance = barrelInductance(stub, diameter)
+        const capacitance = barrelCapacitance({
+          height: stub,
+          diameter,
+          antipad,
+          er,
+        })
         output.lines.push(
-          `L${tag}s${i} ${tap} ${tag}s${i} ${barrelInductance(stub, diameter)}`,
-          `C${tag}s${i} ${tag}s${i} 0 ${barrelCapacitance({ height: stub, diameter, antipad, er })}`,
+          `L${tag}s${i} ${tap} ${tag}s${i} ${inductance}`,
+          `C${tag}s${i} ${tag}s${i} 0 ${capacitance}`,
         )
       }
       output.records.push({
@@ -359,14 +388,19 @@ export function routeTransitions({
         padAreaMm2,
         padCapacitanceF,
       })
-      if (!nearest && returnInductanceH)
+      if (!nearest && returnInductanceH) {
+        const estimate = `return-loop estimate uses explicit ${GROUND_VIA_DISTANCE_MM} mm spreading distance`
         output.warnings.push(
-          `${physical.pcb_via_id}: no spanning ground stitch found; return-loop estimate uses explicit 10 mm spreading distance`,
+          `${physical.pcb_via_id}: no spanning ground stitch found; ${estimate}`,
         )
-      if (references.some((ref) => !ground.has(ref.net)))
+      }
+      if (references.some((ref) => !ground.has(ref.net))) {
+        const assumption =
+          "ideal AC rail/reference assumption omits PDN impedance"
         output.warnings.push(
-          `${physical.pcb_via_id}: reference includes a different-net power plane; ideal AC rail/reference assumption omits PDN impedance`,
+          `${physical.pcb_via_id}: reference includes a different-net power plane; ${assumption}`,
         )
+      }
     }
   }
   for (const port of circuit.filter((record) => record.type === "pcb_port")) {
@@ -389,20 +423,20 @@ export function routeTransitions({
     })
     const layer = layers.find((layer) => layer.name === wire.layer)!
     const area = padArea(pad)
-    const gap = Math.min(
-      ...references.map((plane) =>
-        Math.min(
-          Math.abs(plane.z - layer.zMinMm),
-          Math.abs(plane.z - layer.zMaxMm),
-        ),
+    const gaps = references.map((plane) =>
+      Math.min(
+        Math.abs(plane.z - layer.zMinMm),
+        Math.abs(plane.z - layer.zMaxMm),
       ),
     )
-    if (!(area > 0 && gap > 0 && Number.isFinite(gap)))
+    const gap = Math.min(...gaps)
+    if (!(area > 0 && gap > 0 && Number.isFinite(gap))) {
       throw new Error(`${pad.pcb_smtpad_id}: invalid pad/reference geometry`)
+    }
     const capacitanceF =
-      (8.8541878128e-12 * geometry.stack.relativePermittivity! * area) /
+      (VACUUM_PERMITTIVITY * geometry.stack.relativePermittivity! * area) /
       gap /
-      1000
+      MM_PER_METRE
     output.lines.push(
       `CPAD${output.records.length} ${endpoint(wire, [port.x, port.y])} 0 ${capacitanceF}`,
     )
@@ -415,11 +449,26 @@ export function routeTransitions({
     })
   }
   output.warnings.push(
-    "Via-to-via and via-to-trace mutual coupling is omitted; barrel models contain self L/C and a signal-referred return estimate.",
-    "Via pads use connected-end annular parallel-plate capacitance; nonfunctional internal pads are unspecified and omitted. Antipad edge fringing is not resolved.",
-    "Via antipads: outer pad diameter + 0.20 mm assumed; barrel coaxial C and short-open-stub LC are estimates, not 3D discontinuity extraction.",
-    "Return-loop L is signal-referred at the via; ideal equipotential planes omit shared plane spreading resonances and PDN impedance.",
-    "BGA/SMD pads use parallel-plate area capacitance; routed breakout wire R/L remains distributed. Pad fringing and current crowding are omitted.",
+    [
+      "Via-to-via and via-to-trace mutual coupling is omitted;",
+      "barrel models contain self L/C and a signal-referred return estimate.",
+    ].join(" "),
+    [
+      "Via pads use connected-end annular parallel-plate capacitance;",
+      "nonfunctional internal pads are unspecified and omitted. Antipad edge fringing is not resolved.",
+    ].join(" "),
+    [
+      "Via antipads: outer pad diameter + 0.20 mm assumed;",
+      "barrel coaxial C and short-open-stub LC are estimates, not 3D discontinuity extraction.",
+    ].join(" "),
+    [
+      "Return-loop L is signal-referred at the via;",
+      "ideal equipotential planes omit shared plane spreading resonances and PDN impedance.",
+    ].join(" "),
+    [
+      "BGA/SMD pads use parallel-plate area capacitance;",
+      "routed breakout wire R/L remains distributed. Pad fringing and current crowding are omitted.",
+    ].join(" "),
   )
   return output
 }

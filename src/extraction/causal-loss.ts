@@ -7,8 +7,8 @@ export interface LossPole {
 
 /** Skin weight / sqrt(rate) and dielectric weight per pole, a nonnegative least-squares fit of Zs = (1 + j) sqrt(f)
  * and of a constant loss tangent (G = w, dC/d ln w = -(2/pi) G/w) over 10 MHz–5 GHz. The interior weights stay near the
- * log-uniform Stieltjes quadrature (0.2197, 0.7788); the end poles absorb the truncated tails. Worst error in band: 0.8%
- * skin magnitude and phase, 0.2% dielectric G, 1.0% Kramers–Kronig slope.
+ * log-uniform Stieltjes quadrature (0.2197, 0.7788); the end poles absorb the truncated tails.
+ * Worst error in band: 0.8% skin magnitude and phase, 0.2% dielectric G, 1.0% Kramers–Kronig slope.
  */
 const skinWeights = [
   0.617084, 0.126051, 0.234089, 0.215091, 0.222717, 0.215633, 0.232706,
@@ -19,10 +19,18 @@ const dielectricWeights = [
   1.22581,
 ]
 
+/** Log10 of the first pole's frequency in Hz. */
+const FIRST_POLE_LOG_FREQUENCY = 6.25
+/** Log10 span of the full pole range in Hz. */
+const POLE_LOG_FREQUENCY_RANGE = 4.25
+
 /** Nine negative real poles, log-uniform from 10^6.25 to 10^10.5 Hz, each with positive branch weights. */
 export function causalLossPoles(): LossPole[] {
   return skinWeights.map((skin, i) => {
-    const rate = 2 * Math.PI * 10 ** (6.25 + (4.25 * i) / 8)
+    const logFrequency =
+      FIRST_POLE_LOG_FREQUENCY +
+      (POLE_LOG_FREQUENCY_RANGE * i) / (skinWeights.length - 1)
+    const rate = 2 * Math.PI * 10 ** logFrequency
     return {
       rate,
       skin: skin * Math.sqrt(rate),
@@ -61,7 +69,7 @@ type CausalLossResponse = {
   dielectricCapacitance: number
 }
 
-/** AC response of the implemented unit skin impedance (shifted by `shift`) / unit dielectric admittance, for fit evidence. */
+/** AC response of the shifted unit skin impedance and the unit dielectric admittance, for fit evidence. */
 export function causalLossResponse(
   frequency: number,
   shift = 0,
@@ -80,18 +88,13 @@ export function causalLossResponse(
         sum + (pole.skin * omega * pole.rate) / (pole.rate ** 2 + omega ** 2),
       0,
     ),
-    dielectricReal: poles.reduce(
-      (sum, pole) =>
-        sum +
-        (pole.dielectric * pole.rate * omega ** 2) /
-          (pole.rate ** 2 + omega ** 2),
-      0,
-    ),
-    dielectricCapacitance: poles.reduce(
-      (sum, pole) =>
-        sum +
-        (pole.dielectric * pole.rate ** 2) / (pole.rate ** 2 + omega ** 2),
-      0,
-    ),
+    dielectricReal: poles.reduce((sum, pole) => {
+      const denominator = pole.rate ** 2 + omega ** 2
+      return sum + (pole.dielectric * pole.rate * omega ** 2) / denominator
+    }, 0),
+    dielectricCapacitance: poles.reduce((sum, pole) => {
+      const denominator = pole.rate ** 2 + omega ** 2
+      return sum + (pole.dielectric * pole.rate ** 2) / denominator
+    }, 0),
   }
 }

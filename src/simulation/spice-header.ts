@@ -1,6 +1,9 @@
 import type { TextRange } from "../buffers"
 
-const subcircuitDirective = ".subckt"
+const SUBCIRCUIT_DIRECTIVE = ".subckt"
+
+/** JavaScript line feed, carriage return, line separator and paragraph separator. */
+const LINE_TERMINATORS = ["\n", "\r", "\u2028", "\u2029"]
 
 /** Read the subcircuit name from a single unindented SPICE declaration. */
 export function spiceSubcircuitName(line: string): string | undefined {
@@ -22,9 +25,10 @@ export function spiceSubcircuitHeader(
     const terminalStart = skipWhitespace(source, name.end)
     if (terminalStart === source.length) {
       // A whitespace-only final field can start after the required separator.
-      for (let i = source.length - 1; i > name.end; i--)
+      for (let i = source.length - 1; i > name.end; i--) {
         if (!isLineBreak(source[i]))
           return [source.slice(name.start, name.end), source[i]]
+      }
       return null
     }
     let end = terminalStart
@@ -46,7 +50,8 @@ export function spiceWords(text: string): string[] {
     words.push(text.slice(start, end))
     start = skipWhitespace(text, end)
   }
-  return words.length ? words : [""]
+  if (!words.length) return [""]
+  return words
 }
 
 /** Locate the name after an exact directive and a required whitespace separator. */
@@ -54,10 +59,10 @@ function subcircuitNameRange(
   text: string,
   start: number,
 ): TextRange | undefined {
-  const directiveEnd = start + subcircuitDirective.length
+  const directiveEnd = start + SUBCIRCUIT_DIRECTIVE.length
   if (text[directiveEnd]?.trim() !== "") return
-  for (let i = 0; i < subcircuitDirective.length; i++) {
-    const expected = subcircuitDirective[i]
+  for (let i = 0; i < SUBCIRCUIT_DIRECTIVE.length; i++) {
+    const expected = SUBCIRCUIT_DIRECTIVE[i]
     if (
       text[start + i] !== expected &&
       text[start + i] !== expected.toUpperCase()
@@ -83,10 +88,5 @@ function skipWord(text: string, start: number): number {
 
 /** Recognize all JavaScript line terminators. */
 function isLineBreak(character: string): boolean {
-  return (
-    character === "\n" ||
-    character === "\r" ||
-    character === "\u2028" ||
-    character === "\u2029"
-  )
+  return LINE_TERMINATORS.includes(character)
 }

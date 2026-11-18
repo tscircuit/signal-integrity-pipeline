@@ -1,5 +1,18 @@
 import { crossoverPoles, type LossPole, skinCrossover } from "../extraction"
 
+/** Maximum number of stored sparse entries or entries in a dense modal realization. */
+const MAX_MATRIX_ENTRIES = 500_000
+/** Significant digits written for SPICE coefficients. */
+const COEFFICIENT_PRECISION = 12
+/** Ignore resistance couplings too small to affect the deck. */
+const MIN_RESISTIVE_COUPLING = 1e-20
+/** Ignore inductive couplings below this magnitude. */
+const MIN_INDUCTIVE_COUPLING = 1e-24
+/** Minimum meaningful shunt capacitance. */
+const MIN_SHUNT_CAPACITANCE = 1e-23
+/** Tolerance for checking the diagonally dominant skin loss remainder. */
+const SKIN_REMAINDER_TOLERANCE = 1e-12
+
 /** A stored column and its coefficient in a sparse route energy row. */
 type RouteEnergyEntry = [column: number, coefficient: number]
 
@@ -48,10 +61,11 @@ export class RouteEnergy {
       return
     }
     if (!entries.has(column)) {
-      if (this.budget.entries >= 500_000)
+      if (this.budget.entries >= MAX_MATRIX_ENTRIES) {
         throw new Error(
-          "Route energy exceeds sparse-memory limit of 500000 matrix entries",
+          `Route energy exceeds sparse-memory limit of ${MAX_MATRIX_ENTRIES} matrix entries`,
         )
+      }
       this.budget.entries++
     }
     entries.set(column, coefficient)
@@ -63,16 +77,18 @@ export class RouteEnergy {
   /** Temporary scaled matrices share the assembled sparsity, without dense allocation. */
   scaled(scale: number): RouteEnergy {
     const result = new RouteEnergy(this.rows.length)
-    for (const [i, row] of this.rows.entries())
-      for (const [j, coefficient] of row)
+    for (const [i, row] of this.rows.entries()) {
+      for (const [j, coefficient] of row) {
         result.rows[i].set(j, coefficient * scale)
+      }
+    }
     return result
   }
 }
 
 /** Stable SPICE precision, bounded far beyond board tolerances. */
 function spiceCoefficient(coefficient: number): string {
-  return Number(coefficient.toPrecision(12)).toString()
+  return Number(coefficient.toPrecision(COEFFICIENT_PRECISION)).toString()
 }
 
 /** Coupled series matrix: normalized reciprocal R multiport or mutually coupled inductors. */
@@ -100,11 +116,13 @@ export function seriesEnergy({
       continue
     }
     const resistance = matrix.rows[i].get(i) ?? 0
-    const terms = matrix
-      .entries(i)
-      .filter(
-        ([j, r]) => j !== i && before[j] !== after[j] && Math.abs(r) >= 1e-20,
+    const terms = matrix.entries(i).filter(([j, r]) => {
+      return (
+        j !== i &&
+        before[j] !== after[j] &&
+        Math.abs(r) >= MIN_RESISTIVE_COUPLING
       )
+    })
     if (!terms.length) {
       lines.push(
         `R${tag}${i} ${before[i]} ${after[i]} ${spiceCoefficient(resistance)}`,
@@ -120,24 +138,29 @@ export function seriesEnergy({
       `G${tag}I${i} ${before[i]} ${after[i]} ${current} 0 ${spiceCoefficient(scale)}`,
       `G${tag}V${i} ${current} 0 ${before[i]} ${after[i]} ${spiceCoefficient(-scale)}`,
     )
-    for (const [j, mutual] of terms)
+    for (const [j, mutual] of terms) {
+      const normalized = mutual / Math.sqrt(resistance * matrix.rows[j].get(j)!)
       lines.push(
-        `G${tag}${i}_${j} ${current} 0 ${tag}r${j} 0 ${spiceCoefficient(mutual / Math.sqrt(resistance * matrix.rows[j].get(j)!))}`,
+        `G${tag}${i}_${j} ${current} 0 ${tag}r${j} 0 ${spiceCoefficient(normalized)}`,
       )
+    }
   }
   if (kind !== "L") return
-  for (let i = 0; i < before.length; i++)
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] === after[i]) continue
     for (const [j, mutual] of matrix.entries(i)) {
-      if (j <= i) continue
       if (
-        before[i] !== after[i] &&
-        before[j] !== after[j] &&
-        Math.abs(mutual) > 1e-24
+        j <= i ||
+        before[j] === after[j] ||
+        !(Math.abs(mutual) > MIN_INDUCTIVE_COUPLING)
       )
-        lines.push(
-          `K${tag}${i}_${j} L${tag}${i} L${tag}${j} ${spiceCoefficient(mutual / Math.sqrt((matrix.rows[i].get(i) ?? 0) * (matrix.rows[j].get(j) ?? 0)))}`,
-        )
+        continue
+      const self = (matrix.rows[i].get(i) ?? 0) * (matrix.rows[j].get(j) ?? 0)
+      lines.push(
+        `K${tag}${i}_${j} L${tag}${i} L${tag}${j} ${spiceCoefficient(mutual / Math.sqrt(self))}`,
+      )
     }
+  }
 }
 
 /**
@@ -176,39 +199,29 @@ export function skinEnergy({
   const after = stages.at(-1)!
   const top = Math.max(...poles.map((pole) => pole.skin))
   const terms = before.map((_, i) =>
-    matrix
-      .entries(i)
-      .filter(
-        ([j, coefficient]) => j !== i && Math.abs(coefficient) * top >= 1e-20,
-      ),
+    matrix.entries(i).filter(([j, coefficient]) => {
+      return j !== i && Math.abs(coefficient) * top >= MIN_RESISTIVE_COUPLING
+    }),
   )
-  const own = before.map((_, i) =>
-    Math.max(
-      0,
-      Math.min(
-        strip[i],
-        (matrix.rows[i].get(i) ?? 0) -
-          terms[i].reduce(
-            (sum, [, coefficient]) => sum + Math.abs(coefficient),
-            0,
-          ),
-      ),
-    ),
+  const couplingPerRow = terms.map((row) =>
+    row.reduce((sum, [, coefficient]) => sum + Math.abs(coefficient), 0),
   )
+  const own = before.map((_, i) => {
+    const diagonal = matrix.rows[i].get(i) ?? 0
+    return Math.max(0, Math.min(strip[i], diagonal - couplingPerRow[i]))
+  })
   const rest = own.map(
     (coefficient, i) => (matrix.rows[i].get(i) ?? 0) - coefficient,
   )
   for (const [i, coefficient] of rest.entries()) {
-    if (
-      coefficient <
-      terms[i].reduce((sum, [, mutual]) => sum + Math.abs(mutual), 0) *
-        (1 - 1e-12)
-    )
+    if (coefficient < couplingPerRow[i] * (1 - SKIN_REMAINDER_TOLERANCE)) {
       throw new Error(
         "Skin loss remainder must stay diagonally dominant (passive)",
       )
+    }
   }
-  // A row whose remainder is zero ends its own chain at `after`; one without its own share starts the remainder at `before`.
+  // A row with no remainder ends its own chain at `after`.
+  // A row with no own share starts the remainder chain at `before`.
   const middle = before.map((node, i) => {
     if (!(own[i] > 0)) return node
     if (rest[i] > 0 || terms[i].length) return stripStages.at(-1)![i]
@@ -217,8 +230,8 @@ export function skinEnergy({
   const shifted = own.map((coefficient, i) =>
     crossoverPoles(poles, skinCrossover(dc[i], coefficient)),
   )
-  for (let p = 0; p < poles.length; p++)
-    for (const kind of ["RQ", "LQ"] as const)
+  for (let p = 0; p < poles.length; p++) {
+    for (const kind of ["RQ", "LQ"] as const) {
       for (let i = 0; i < before.length; i++) {
         if (!(own[i] > 0)) continue
         const resistance = own[i] * shifted[i][p].skin
@@ -232,8 +245,10 @@ export function skinEnergy({
           `${kind[0]}${tag}${kind[1]}${p}${i} ${start} ${end} ${spiceCoefficient(coefficient)}`,
         )
       }
-  for (let p = 0; p < poles.length; p++)
-    for (const kind of ["RS", "LP"] as const)
+    }
+  }
+  for (let p = 0; p < poles.length; p++) {
+    for (const kind of ["RS", "LP"] as const) {
       for (let i = 0; i < before.length; i++) {
         if (terms[i].length || (!(rest[i] > 0) && own[i] > 0)) continue
         let coefficient = rest[i] * poles[p].skin
@@ -244,6 +259,8 @@ export function skinEnergy({
           `${kind[0]}${tag}${kind[1]}${p}${i} ${start} ${stages[p][i]} ${spiceCoefficient(coefficient)}`,
         )
       }
+    }
+  }
   for (let i = 0; i < before.length; i++) {
     if (!terms[i].length) continue
     const self = rest[i]
@@ -255,10 +272,12 @@ export function skinEnergy({
       `G${tag}SF${i} 0 ${tag}Su${i} ${x} 0 1`,
       `G${tag}S${i}_${i} ${x} 0 ${tag}Su${i} 0 1`,
     )
-    for (const [j, mutual] of terms[i])
+    for (const [j, mutual] of terms[i]) {
+      const normalized = mutual / Math.sqrt(self * rest[j])
       lines.push(
-        `G${tag}S${i}_${j} ${x} 0 ${tag}Su${j} 0 ${spiceCoefficient(mutual / Math.sqrt(self * rest[j]))}`,
+        `G${tag}S${i}_${j} ${x} 0 ${tag}Su${j} 0 ${spiceCoefficient(normalized)}`,
       )
+    }
     for (const [p, pole] of poles.entries()) {
       let node = `${tag}Su${i}`
       if (p > 0) node = `${tag}F${p - 1}_${i}`
@@ -287,37 +306,49 @@ export function shuntEnergy({
   matrix: RouteEnergy
   rate?: number
 }): void {
-  const remainder = matrix.rows.map(
-    (row, i) =>
-      (row.get(i) ?? 0) -
-      matrix.entries(i).reduce((total, [j, coefficient]) => {
-        if (i === j) return total
-        return total + Math.abs(coefficient)
-      }, 0),
-  )
+  const remainder = matrix.rows.map((row, i) => {
+    const self = row.get(i) ?? 0
+    const coupling = matrix.entries(i).reduce((total, [j, coefficient]) => {
+      if (i === j) return total
+      return total + Math.abs(coefficient)
+    }, 0)
+    return self - coupling
+  })
   if (remainder.some((coefficient) => coefficient < -1e-20)) {
-    modalShunt({ lines, tag, nodes, matrix, rate })
+    modalShunt({
+      lines,
+      tag,
+      nodes,
+      matrix,
+      rate,
+    })
     return
   }
-  const terms: { a: string; b: string; c: number; sum: boolean }[] = nodes.map(
-    (node, i) => ({
-      a: node,
-      b: "0",
-      c: Math.max(0, remainder[i]),
-      sum: false,
-    }),
-  )
-  for (let i = 0; i < nodes.length; i++)
-    for (const [j, coefficient] of matrix.entries(i))
-      if (j > i && Math.abs(coefficient) > 1e-23)
-        terms.push({
-          a: nodes[i],
-          b: nodes[j],
-          c: Math.abs(coefficient),
-          sum: coefficient > 0,
-        })
+  const terms: {
+    a: string
+    b: string
+    c: number
+    sum: boolean
+  }[] = nodes.map((node, i) => ({
+    a: node,
+    b: "0",
+    c: Math.max(0, remainder[i]),
+    sum: false,
+  }))
+  for (let i = 0; i < nodes.length; i++) {
+    for (const [j, coefficient] of matrix.entries(i)) {
+      if (j <= i || !(Math.abs(coefficient) > MIN_SHUNT_CAPACITANCE)) continue
+      terms.push({
+        a: nodes[i],
+        b: nodes[j],
+        c: Math.abs(coefficient),
+        sum: coefficient > 0,
+      })
+    }
+  }
   for (const [i, term] of terms.entries()) {
-    if (term.c <= 1e-23 || (!term.sum && term.a === term.b)) continue
+    if (term.c <= MIN_SHUNT_CAPACITANCE || (!term.sum && term.a === term.b))
+      continue
     const name = `${tag}S${i}`
     let reference = term.b
     let node = term.a
@@ -354,10 +385,11 @@ function modalShunt({
   matrix: RouteEnergy
   rate?: number
 }): void {
-  if (nodes.length ** 2 > 500_000)
+  if (nodes.length ** 2 > MAX_MATRIX_ENTRIES) {
     throw new Error(
-      "Route energy modal realization exceeds 500000 dense entries",
+      `Route energy modal realization exceeds ${MAX_MATRIX_ENTRIES} dense entries`,
     )
+  }
   const residual = matrix.rows.map((row) =>
     nodes.map((_, j) => row.get(j) ?? 0),
   )
@@ -388,14 +420,17 @@ function modalShunt({
         lines.push(
           `R${name} ${name}c 0 ${spiceCoefficient(1 / (rate * capacitance))}`,
         )
-      for (const [i, weight] of weights.entries())
-        if (nodes[i] !== "0" && Math.abs(weight) >= 1e-12)
-          lines.push(
-            `F${name}_${i} ${nodes[i]} 0 V${name} ${spiceCoefficient(weight)}`,
-          )
+      for (const [i, weight] of weights.entries()) {
+        if (nodes[i] === "0" || !(Math.abs(weight) >= 1e-12)) continue
+        lines.push(
+          `F${name}_${i} ${nodes[i]} 0 V${name} ${spiceCoefficient(weight)}`,
+        )
+      }
     }
-    for (let i = mode + 1; i < nodes.length; i++)
-      for (let j = mode + 1; j < nodes.length; j++)
+    for (let i = mode + 1; i < nodes.length; i++) {
+      for (let j = mode + 1; j < nodes.length; j++) {
         residual[i][j] -= capacitance * weights[i] * weights[j]
+      }
+    }
   }
 }

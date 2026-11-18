@@ -10,16 +10,37 @@ import type { RouteLadder } from "./route-ladder"
 
 type CrossSectionKey = string
 
+/** Tolerance for locating contacts on the extracted geometry (mm). */
+const CONTACT_TOLERANCE = 1e-6
+/** Ignore pairs whose angle sine is effectively zero. */
+const MIN_ANGLE_SINE = 1e-6
+/** Allow one picometre when testing whether a plane intersects a conductor (mm). */
+const PLANE_TOLERANCE = 1e-9
+/** Ignore corrections below this capacitance (F). */
+const MIN_OBLIQUE_CAPACITANCE = 1e-23
+/** Micrometres per millimetre, used to round gaps outward. */
+const MICROMETRES_PER_MM = 1000
+
 /** An electrical ladder node and its distance from the requested position in millimetres. */
-type NearestRouteNode = { node: string; errorMm: number }
+type NearestRouteNode = {
+  node: string
+  errorMm: number
+}
 
 /** Nearest existing electrical ladder node; the spatial-error distance is recorded per encounter. */
 function nearestRouteNode(
-  { wire, point }: { wire: RouteWire; point: RouteXY },
+  {
+    wire,
+    point,
+  }: {
+    wire: RouteWire
+    point: RouteXY
+  },
   wireNodes: RouteLadder["wireNodes"],
 ): NearestRouteNode {
   const position = point[0] * wire.u[0] + point[1] * wire.u[1]
-  const node = [...wireNodes.get(wire.id)!].sort(
+  const nodes = [...wireNodes.get(wire.id)!]
+  const node = nodes.sort(
     (a, b) => Math.abs(a.position - position) - Math.abs(b.position - position),
   )[0]
   return { node: node.node, errorMm: Math.abs(node.position - position) }
@@ -54,18 +75,15 @@ export function routeOblique({
   const cache = new Map<CrossSectionKey, number>()
   let solveMilliseconds = 0
   const active = geometry.wires.filter((wire) => ladder.wireNodes.has(wire.id))
-  for (let i = 0; i < active.length; i++)
+  for (let i = 0; i < active.length; i++) {
     for (let j = i + 1; j < active.length; j++) {
       const a = active[i]
       const b = active[j]
-      if (
-        a.source === b.source ||
-        (!scope.selectedPcbTraceIds.includes(a.trace) &&
-          !scope.selectedPcbTraceIds.includes(b.trace))
-      )
-        continue
+      if (a.source === b.source) continue
+      const selected = scope.selectedPcbTraceIds
+      if (!selected.includes(a.trace) && !selected.includes(b.trace)) continue
       const sine = Math.abs(a.u[0] * b.u[1] - a.u[1] * b.u[0])
-      if (sine < 1e-6) continue
+      if (sine < MIN_ANGLE_SINE) continue
       const near = closestRoutePoints({ first: a, second: b })
       if (near.distance - (a.width + b.width) / 2 > scope.lateralDistanceMm)
         continue
@@ -74,16 +92,16 @@ export function routeOblique({
       const lb = layers.findIndex((layer) => layer.name === b.layer)
       if (Math.abs(la - lb) > 1) continue
       const position = near.first[0] * a.u[0] + near.first[1] * a.u[1]
-      const slice = extracted.slices.find(
-        (slice) =>
-          slice.wires.some((wire) => wire.id === a.id) &&
-          position >= slice.start - 1e-6 &&
-          position <= slice.end + 1e-6,
-      )
+      const slice = extracted.slices.find((slice) => {
+        const inSlice =
+          position >= slice.start - CONTACT_TOLERANCE &&
+          position <= slice.end + CONTACT_TOLERANCE
+        return inSlice && slice.wires.some((wire) => wire.id === a.id)
+      })
       if (!slice) continue
       if (
         a.layer === b.layer &&
-        near.distance < (a.width + b.width) / 2 + 1e-6
+        near.distance < (a.width + b.width) / 2 + CONTACT_TOLERANCE
       ) {
         records.push({
           wires: [a.id, b.id],
@@ -105,15 +123,14 @@ export function routeOblique({
         slice: synthetic,
         materials,
       })
-      if (
-        section.conductors.some((conductor) =>
-          section.planes.some(
-            (plane) =>
-              plane.zMm >= conductor.zMm - 1e-9 &&
-              plane.zMm <= conductor.zMm + conductor.thicknessMm + 1e-9,
-          ),
+      const shielded = section.conductors.some((conductor) => {
+        const bottom = conductor.zMm - PLANE_TOLERANCE
+        const top = conductor.zMm + conductor.thicknessMm + PLANE_TOLERANCE
+        return section.planes.some(
+          (plane) => plane.zMm >= bottom && plane.zMm <= top,
         )
-      ) {
+      })
+      if (shielded) {
         records.push({
           wires: [a.id, b.id],
           policy:
@@ -125,7 +142,8 @@ export function routeOblique({
       }
       // Quantisation is explicit and limited to 1 um transverse spacing, below route-file precision.
       section.conductors[1].xMm =
-        Math.ceil(section.conductors[1].xMm * 1000) / 1000
+        Math.ceil(section.conductors[1].xMm * MICROMETRES_PER_MM) /
+        MICROMETRES_PER_MM
       const key = JSON.stringify(section)
       let capacitancePerM = cache.get(key)
       if (capacitancePerM === undefined) {
@@ -140,16 +158,15 @@ export function routeOblique({
             routeSection: section,
             wires: [a, b],
             obliqueSolves: cache.size,
-            solveMilliseconds: solveMilliseconds,
+            solveMilliseconds,
           })
         }
         solveMilliseconds += performance.now() - start
         cache.set(key, capacitancePerM)
       }
+      const layerHeight = (layers[la].zMaxMm + layers[la].zMinMm) / 2
       const referenceGap = Math.min(
-        ...slice.references.map((ref) =>
-          Math.abs(ref.z - (layers[la].zMaxMm + layers[la].zMinMm) / 2),
-        ),
+        ...slice.references.map((ref) => Math.abs(ref.z - layerHeight)),
       )
       const lengthMm = Math.min(
         a.end - a.start,
@@ -165,10 +182,14 @@ export function routeOblique({
         ladder.wireNodes,
       )
       const capacitanceF = (capacitancePerM * lengthMm) / 1000
-      if (first.node !== second.node && capacitanceF > 1e-23)
+      if (
+        first.node !== second.node &&
+        capacitanceF > MIN_OBLIQUE_CAPACITANCE
+      ) {
         lines.push(
           `COB${records.length} ${first.node} ${second.node} ${capacitanceF}`,
         )
+      }
       records.push({
         wires: [a.id, b.id],
         policy: "local parallel electrostatic surrogate; magnetic term omitted",
@@ -179,5 +200,11 @@ export function routeOblique({
         nodePlacementErrorMm: [first.errorMm, second.errorMm],
       })
     }
-  return { lines, records, solveMilliseconds, solves: cache.size }
+  }
+  return {
+    lines,
+    records,
+    solveMilliseconds,
+    solves: cache.size,
+  }
 }

@@ -216,9 +216,21 @@ function ViaPadBoard(): React.JSX.Element {
         pcbPath={[
           ".VIA_PAD > .A",
           { x: -3, y: 0 },
-          { x: -3, y: 0, via: true, fromLayer: "top", toLayer: "inner2" },
+          {
+            x: -3,
+            y: 0,
+            via: true,
+            fromLayer: "top",
+            toLayer: "inner2",
+          },
           { x: 3, y: 0 },
-          { x: 3, y: 0, via: true, fromLayer: "inner2", toLayer: "top" },
+          {
+            x: 3,
+            y: 0,
+            via: true,
+            fromLayer: "inner2",
+            toLayer: "top",
+          },
           ".VIA_PAD > .B",
         ]}
       />
@@ -233,11 +245,10 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
   const component = circuit
     .filter((record) => record.type === "source_component")
     .find((record) => record.name === "A")!
-  const port = circuit
-    .filter((record) => record.type === "source_port")
-    .find(
-      (record) => record.source_component_id === component.source_component_id,
-    )!
+  const ports = circuit.filter((record) => record.type === "source_port")
+  const port = ports.find(
+    (record) => record.source_component_id === component.source_component_id,
+  )!
   const groundNet = circuit
     .filter((record) => record.type === "source_net")
     .find((record) => record.name === "GND")!
@@ -252,14 +263,10 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
   const geometry = segmentRoutes(circuit, scope)
   assert.equal(scope.pcbTraceIds.length, 3)
   assert.ok(geometry.slices.some((slice) => slice.wires.length === 2))
-  assert.deepEqual(
-    new Set(
-      geometry.slices.flatMap((slice) =>
-        slice.references.map((ref) => ref.layer),
-      ),
-    ),
-    new Set(["inner1", "inner3"]),
+  const referenceLayers = geometry.slices.flatMap((slice) =>
+    slice.references.map((ref) => ref.layer),
   )
+  assert.deepEqual(new Set(referenceLayers), new Set(["inner1", "inner3"]))
   const inner4 = { ...geometry.wires[0], layer: "inner4" }
   assert.deepEqual(
     routeReferences({ geometry, wire: inner4, position: -2 }).map(
@@ -268,35 +275,33 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
     ["inner5", "inner3"],
     "inner5 power copper intervenes before inner6 GND",
   )
-  const extracted = ((solver: RouteFieldsSolver) => {
-    solver.solve()
-    return solver.getOutput().value
-  })(
-    new RouteFieldsSolver({
-      geometry: geometry,
-      materials: {
-        maskMm: 0.02,
-        maskEr: 3.3,
-        maskLoss: 0.025,
-        substrateLoss: 0.02,
-      },
-      artifactPrefix: "test",
-      panels: 12,
-    }),
-  )
+  const solver = new RouteFieldsSolver({
+    geometry,
+    materials: {
+      maskMm: 0.02,
+      maskEr: 3.3,
+      maskLoss: 0.025,
+      substrateLoss: 0.02,
+    },
+    artifactPrefix: "test",
+    panels: 12,
+  })
+  solver.solve()
+  const extracted = solver.getOutput().value
   assert.ok(extracted.sections.length <= geometry.slices.length)
   const pair = extracted.slices.find((slice) => slice.wires.length === 2)!.line
   const referenced = referenceSeries(pair, [1])
+  const inductance = referenced.L[0][0]
   assert.ok(
-    referenced.L[0][0] < pair.L[0][0],
+    inductance < pair.L[0][0],
     "shorted AC reference induces a return current instead of an open conductor",
   )
+  const vacuumPermeability = 1.25663706212e-6
+  const vacuumPermittivity = 8.8541878128e-12
+  const ratio =
+    (inductance * pair.C0[0][0]) / (vacuumPermeability * vacuumPermittivity)
   assert.ok(
-    Math.abs(
-      (referenced.L[0][0] * pair.C0[0][0]) /
-        (1.25663706212e-6 * 8.8541878128e-12) -
-        1,
-    ) < 1e-6,
+    Math.abs(ratio - 1) < 1e-6,
     "shorted series inductance matches the independent fixed-potential C0 relationship",
   )
   const ladder = routeLadder({
@@ -307,8 +312,11 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
   })
   assert.ok(ladder.maximumDelaySeconds <= 23e-12)
   assert.ok(ladder.lines.some((line) => line.startsWith("K")))
+  const hasDielectricLoss = ladder.lines.some((line) =>
+    line.startsWith("RARCG"),
+  )
   assert.ok(
-    ladder.lines.some((line) => line.startsWith("RARCG")),
+    hasDielectricLoss,
     "dielectric loss uses causal series-RC relaxation branches",
   )
   const coarse = routeLadder({
@@ -344,27 +352,25 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
       reference: ground,
     }),
   )
+  const hasJoins = merged.wires.some((wire) => wire.joins?.length)
   assert.ok(
-    merged.wires.some((wire) => wire.joins?.length),
+    hasJoins,
     "same-net overlapping bend bodies become equipotential breakout patches",
   )
-  assert.doesNotThrow(() =>
-    ((solver: RouteFieldsSolver) => {
-      solver.solve()
-      return solver.getOutput().value
-    })(
-      new RouteFieldsSolver({
-        geometry: merged,
-        materials: {
-          maskMm: 0.02,
-          maskEr: 3.3,
-          maskLoss: 0.025,
-          substrateLoss: 0.02,
-        },
-        artifactPrefix: "test",
-      }),
-    ),
-  )
+  const mergedSolver = new RouteFieldsSolver({
+    geometry: merged,
+    materials: {
+      maskMm: 0.02,
+      maskEr: 3.3,
+      maskLoss: 0.025,
+      substrateLoss: 0.02,
+    },
+    artifactPrefix: "test",
+  })
+  assert.doesNotThrow(() => {
+    mergedSolver.solve()
+    mergedSolver.getOutput()
+  })
   const obliqueCircuit = await renderCoreSignals(<Board oblique />)
   const obliqueConnectivity =
     getSourcePortConnectivityMapFromCircuitJson(obliqueCircuit)
@@ -381,16 +387,13 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
     maskLoss: 0.025,
     substrateLoss: 0.02,
   }
-  const obliqueFields = ((solver: RouteFieldsSolver) => {
-    solver.solve()
-    return solver.getOutput().value
-  })(
-    new RouteFieldsSolver({
-      geometry: obliqueGeometry,
-      materials: materials,
-      artifactPrefix: "test",
-    }),
-  )
+  const obliqueSolver = new RouteFieldsSolver({
+    geometry: obliqueGeometry,
+    materials,
+    artifactPrefix: "test",
+  })
+  obliqueSolver.solve()
+  const obliqueFields = obliqueSolver.getOutput().value
   const obliqueLadder = routeLadder({
     extracted: obliqueFields,
     endpoint: (wire, point) =>
@@ -404,10 +407,11 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
     scope: obliqueScope,
     materials,
   })
+  const shielded = encounters.records.some((record) =>
+    String(record.policy).includes("intervening local reference"),
+  )
   assert.ok(
-    encounters.records.some((record) =>
-      String(record.policy).includes("intervening local reference"),
-    ),
+    shielded,
     "neighbour on the local plane height uses recorded shielding instead of an invalid solver rectangle",
   )
   const transitions = routeTransitions({
@@ -417,12 +421,12 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
     endpoint: (wire, point) => endpointName(`n${wire.id}_${point.join("_")}`),
     groundPort: groundNet.source_net_id,
   })
+  const viaPads = transitions.records.filter((record) => record.kind === "via")
+  const hasCapacitance = viaPads.some((record) =>
+    (record.padCapacitanceF as number[]).some((value) => value > 0),
+  )
   assert.ok(
-    transitions.records.some(
-      (record) =>
-        record.kind === "via" &&
-        (record.padCapacitanceF as number[]).some((value) => value > 0),
-    ),
+    hasCapacitance,
     "connected annular via pads add explicit capacitance",
   )
   const viaCircuit = await renderCoreSignals(<ViaPadBoard />).catch(
@@ -437,9 +441,7 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
       return error.circuitJson
     },
   )
-  const viaSource = viaCircuit.find(
-    (record) => record.type === "source_trace",
-  )! as Extract<(typeof viaCircuit)[number], { type: "source_trace" }>
+  const viaSource = viaCircuit.find((record) => record.type === "source_trace")!
   const viaConnectivity =
     getSourcePortConnectivityMapFromCircuitJson(viaCircuit)
   const viaScope = channelCopperScope({

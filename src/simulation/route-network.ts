@@ -18,6 +18,15 @@ import { routedControl } from "./routed-control"
 import type { RoutedDeck, RouteNetworkInput } from "./routed-types"
 import { spiceSubcircuitHeader, spiceWords } from "./spice-header"
 
+/** Small series resistance joins aliases without creating an ideal-voltage loop (ohms). */
+const JOIN_RESISTANCE = "1e-6"
+/** Weak DC anchor for otherwise floating neighbouring copper (ohms). */
+const BIAS_RESISTANCE = "1e9"
+/** Default SPICE current convergence tolerance (amperes). */
+const DEFAULT_CURRENT_TOLERANCE = 1e-9
+/** Decimal places used to match coordinates in millimetres. */
+const JUNCTION_PRECISION = 6
+
 /** Physical node identity, coupled ladders, corrections and the single deck assembly. */
 export class RouteNetworkSolver extends BaseSolver {
   private steps?: Generator<void, Produced<RoutedDeck>>
@@ -46,42 +55,52 @@ export class RouteNetworkSolver extends BaseSolver {
     const { geometry, extracted, bindings, options, materials } = this.input
     const { scope, models, mappings } = bindings
     const plan = structuredClone(bindings.plan)
-    const electrical = { lines: bindings.electricalLines }
-    const maskLayers = bindings.circuitJson
-      .filter((record) => record.type === "pcb_stackup")[0]
-      .layers.filter((layer) => layer.layer_type === "soldermask")
+    const stackup = bindings.circuitJson.filter(
+      (record) => record.type === "pcb_stackup",
+    )[0]
+    const maskLayers = stackup.layers.filter(
+      (layer) => layer.layer_type === "soldermask",
+    )
+    const ports = bindings.circuitJson.filter(
+      (record) => record.type === "pcb_port",
+    )
     const aliases: string[] = []
     const known = new Map<RouteJunctionKey, string>()
-    for (const port of bindings.circuitJson.filter(
-      (record) => record.type === "pcb_port",
-    ))
+    for (const port of ports) {
       for (const layer of port.layers) {
+        const point: RouteXY = [port.x, port.y]
         if (
           !routeContactFrame({
             geometry,
             scope,
             layer,
-            point: [port.x, port.y],
+            point,
           })
         )
           continue
-        const id = junctionKey(layer, [port.x, port.y])
+        const id = junctionKey(layer, point)
         const portNode = routedNode(bindings.nodeMap, port.source_port_id)
         const previous = known.get(id)
         if (previous && previous !== portNode) {
-          aliases.push(`RALIAS${aliases.length} ${previous} ${portNode} 1e-6`)
+          aliases.push(
+            `RALIAS${aliases.length} ${previous} ${portNode} ${JOIN_RESISTANCE}`,
+          )
           continue
         }
         known.set(id, portNode)
       }
+    }
     const endpoint = createRouteEndpoint(scope, known)
-    for (const wire of geometry.wires)
+    for (const wire of geometry.wires) {
       for (const join of wire.joins ?? []) {
         const from = endpoint(wire, join.from)
         const to = endpoint(wire, join.to)
         if (from !== to)
-          aliases.push(`RJOIN${aliases.length} ${from} ${to} 1e-6`)
+          aliases.push(
+            `RJOIN${aliases.length} ${from} ${to} ${JOIN_RESISTANCE}`,
+          )
       }
+    }
     const steps = routeLadderSteps({
       extracted,
       endpoint,
@@ -112,10 +131,14 @@ export class RouteNetworkSolver extends BaseSolver {
       endpoint,
       groundPort: bindings.groundSourcePortId,
     })
+    const currentTolerance =
+      options.currentToleranceA ?? DEFAULT_CURRENT_TOLERANCE
+    const convergence = `klu reltol=1e-4 abstol=${currentTolerance} vntol=1e-6`
+    const integration = "method=gear maxord=2 pivrel=0.1"
     const lines = [
       "Routed quasi-TEM coupled 2D extraction; JLC standard stackup (assumed)",
-      `.options klu reltol=1e-4 abstol=${options.currentToleranceA ?? 1e-9} vntol=1e-6 method=gear maxord=2 pivrel=0.1`,
-      ...electrical.lines,
+      `.options ${convergence} ${integration}`,
+      ...bindings.electricalLines,
     ]
     const saved: string[] = []
     for (const [i, model] of models.entries()) {
@@ -141,30 +164,30 @@ export class RouteNetworkSolver extends BaseSolver {
       ladder.lines,
       oblique.lines,
       transitions.lines,
-    ])
+    ]) {
       for (const line of collection) lines.push(line)
-    const biasNodes = [
-      ...new Set(
-        [...ladder.wireNodes.values()]
-          .flatMap((records) => records.map((record) => record.node))
-          .concat(
-            models.flatMap((model) =>
-              Object.values(model.spicePinMapping).map((port) =>
-                routedNode(bindings.nodeMap, port),
-              ),
-            ),
-          ),
-      ),
-    ].filter((node) => node !== "0")
+    }
+    const routeNodes = [...ladder.wireNodes.values()].flatMap((records) =>
+      records.map((record) => record.node),
+    )
+    const modelNodes = models.flatMap((model) => {
+      return Object.values(model.spicePinMapping).map((port) =>
+        routedNode(bindings.nodeMap, port),
+      )
+    })
+    const biasNodes = [...new Set([...routeNodes, ...modelNodes])].filter(
+      (node) => node !== "0",
+    )
     for (const [i, node] of biasNodes.entries())
-      lines.push(`RBIAS${i} ${node} 0 1e9`)
-    for (const probe of [...plan.probes].filter(
+      lines.push(`RBIAS${i} ${node} 0 ${BIAS_RESISTANCE}`)
+    for (const probe of plan.probes.filter(
       (probe) => probe.referenceNode !== "0",
     )) {
-      for (const [suffix, signalNode, signalSourceId] of [
+      const terminals = [
         ["P", probe.signalNode, probe.signalSourceId],
         ["N", probe.referenceNode, probe.referenceSourceId],
-      ] as const)
+      ] as const
+      for (const [suffix, signalNode, signalSourceId] of terminals) {
         plan.probes.push({
           ...probe,
           name: `${probe.name}_${suffix}`,
@@ -175,18 +198,16 @@ export class RouteNetworkSolver extends BaseSolver {
           referenceNode: "0",
           referenceSourceId: bindings.groundSourcePortId,
         })
+      }
     }
     // Only save receiver nodes and behavioural-source branch dependencies; the engine exposes the resulting vectors.
-    const save = [
-      ...new Set(
-        plan.probes
-          .flatMap((probe) => [probe.signalNode, probe.referenceNode])
-          .filter((node) => node !== "0"),
-      ),
-    ]
-      .map((node) => `v(${node})`)
-      .concat(saved)
-      .join(" ")
+    const probeNodes = plan.probes.flatMap((probe) => [
+      probe.signalNode,
+      probe.referenceNode,
+    ])
+    const savedNodes = probeNodes.filter((node) => node !== "0")
+    const voltageSaves = [...new Set(savedNodes)].map((node) => `v(${node})`)
+    const save = [...voltageSaves, ...saved].join(" ")
     lines.push(
       ...routedControl({
         saved: save,
@@ -198,36 +219,37 @@ export class RouteNetworkSolver extends BaseSolver {
       bindings.circuitJson,
     )
     const ground = sourceNetMembers(connectivity, bindings.groundSourcePortId)
-    const powerReferences = geometry.slices.flatMap((slice) =>
-      slice.references
+    const powerReferences = geometry.slices.flatMap((slice) => {
+      return slice.references
         .filter((plane) => !ground.has(plane.net))
         .map((plane) => ({
           plane,
           traces: slice.wires.map((wire) => wire.trace),
           start: slice.start,
           end: slice.end,
-        })),
-    )
+        }))
+    })
     const mapped = new Set(
       models.flatMap((model) => Object.values(model.spicePinMapping)),
     )
-    const external = bindings.circuitJson
-      .filter((record) => record.type === "pcb_port")
-      .filter(
-        (port) =>
-          !mapped.has(port.source_port_id) &&
-          port.layers.some((layer) =>
-            routeContactFrame({
-              geometry,
-              scope,
-              layer,
-              point: [port.x, port.y],
-            }),
-          ),
+    const external = ports.filter((port) => {
+      if (mapped.has(port.source_port_id)) return false
+      const point: RouteXY = [port.x, port.y]
+      return port.layers.some((layer) =>
+        routeContactFrame({
+          geometry,
+          scope,
+          layer,
+          point,
+        }),
       )
+    })
     let maskThicknessSource = "assumed"
     let maskDescription = "assumed; absent from preset"
-    if (maskLayers.length) maskThicknessSource = maskDescription = "preset"
+    if (maskLayers.length) {
+      maskThicknessSource = "preset"
+      maskDescription = "preset"
+    }
     if (options.materials) {
       maskThicknessSource = "explicit"
       maskDescription = "explicit material option"
@@ -236,22 +258,51 @@ export class RouteNetworkSolver extends BaseSolver {
       ...extracted.warnings,
       ...transitions.warnings,
       ...models.flatMap((model) => model.warnings),
-      `JLC standard stackup (assumed): JLC08121H-3313; mask thickness ${materials.maskMm} mm (${maskDescription}). Mask er=${materials.maskEr}, tan(delta)=${materials.maskLoss} and laminate tan(delta)=${materials.substrateLoss}; explicit assumptions, not measured material data.`,
-      "Numerical DC anchors: 1 Gohm per coarse route node; removes open-neighbour common-mode singularities without substituting a vendor load.",
-      "Coplanar pours are not discretized into finite strip conductors; actual pours supply vertical references only. Their lateral shielding/coupling remains unqualified.",
-      "Absent copper-layer volume is filled with nearest laminate; copper roughness, etch trapezoids and bend excess capacitance omitted.",
-      "Oblique corrections apply selected-net to scoped-neighbour encounters within the same/adjacent layers; neighbour-to-neighbour oblique coupling is omitted. Added pair C uses existing isolated self C, a weak-coupling approximation. Placement is at the nearest ladder node; spacing is rounded outward to 1 um.",
-      "Oblique surrogate blocked by an intervening local infinite reference plane is recorded as shielded, with plane-edge/aperture fringing omitted.",
+      [
+        "JLC standard stackup (assumed): JLC08121H-3313;",
+        `mask thickness ${materials.maskMm} mm (${maskDescription}).`,
+        `Mask er=${materials.maskEr}, tan(delta)=${materials.maskLoss}`,
+        `and laminate tan(delta)=${materials.substrateLoss}; explicit assumptions, not measured material data.`,
+      ].join(" "),
+      [
+        "Numerical DC anchors: 1 Gohm per coarse route node;",
+        "removes open-neighbour common-mode singularities without substituting a vendor load.",
+      ].join(" "),
+      [
+        "Coplanar pours are not discretized into finite strip conductors;",
+        "actual pours supply vertical references only.",
+        "Their lateral shielding/coupling remains unqualified.",
+      ].join(" "),
+      [
+        "Absent copper-layer volume is filled with nearest laminate;",
+        "copper roughness, etch trapezoids and bend excess capacitance omitted.",
+      ].join(" "),
+      [
+        "Oblique corrections apply selected-net to scoped-neighbour encounters within the same/adjacent layers;",
+        "neighbour-to-neighbour oblique coupling is omitted.",
+        "Added pair C uses existing isolated self C, a weak-coupling approximation.",
+        "Placement is at the nearest ladder node; spacing is rounded outward to 1 um.",
+      ].join(" "),
+      [
+        "Oblique surrogate blocked by an intervening local infinite reference plane is recorded as shielded,",
+        "with plane-edge/aperture fringing omitted.",
+      ].join(" "),
       "Power rail wires are ideal AC electrodes: their longitudinal impedance and power-plane impedance are omitted.",
-      `${external.length} external neighbour port bodies have open/ideal-logical terminations without additional vendor die models; actual endpoint IDs are recorded. This is a candidate channel experiment, not a complete board/PDN simulation.`,
+      [
+        `${external.length} external neighbour port bodies have open/ideal-logical terminations`,
+        "without additional vendor die models; actual endpoint IDs are recorded.",
+        "This is a candidate channel experiment,",
+        "not a complete board/PDN simulation.",
+      ].join(" "),
     ]
+    const endpointNodes = Object.fromEntries(
+      mappings.flatMap(({ from, to }) => [
+        [from, routedNode(bindings.nodeMap, from)],
+        [to, routedNode(bindings.nodeMap, to)],
+      ]),
+    )
     const evidence = {
-      endpoint_nodes: Object.fromEntries(
-        mappings.flatMap((mapping) => [
-          [mapping.from, routedNode(bindings.nodeMap, mapping.from)],
-          [mapping.to, routedNode(bindings.nodeMap, mapping.to)],
-        ]),
-      ),
+      endpoint_nodes: endpointNodes,
       probes: plan.probes,
       label: "JLC standard stackup (assumed)",
       materials,
@@ -282,12 +333,18 @@ export class RouteNetworkSolver extends BaseSolver {
         warnings: model.warnings,
         sourceEvidence: model.sourceEvidence,
       })),
-      routes: mappings.map((mapping) => ({
-        ...mapping,
-        length_mm: geometry.wires
-          .filter((wire) => wire.source === mapping.sourceTraceId)
-          .reduce((sum, wire) => sum + wire.end - wire.start, 0),
-      })),
+      routes: mappings.map((mapping) => {
+        const wires = geometry.wires.filter(
+          (wire) => wire.source === mapping.sourceTraceId,
+        )
+        return {
+          ...mapping,
+          length_mm: wires.reduce(
+            (sum, wire) => sum + wire.end - wire.start,
+            0,
+          ),
+        }
+      }),
       cross_sections: extracted.sections.map(({ key, line }) => ({
         geometry: JSON.parse(key),
         C: line.C,
@@ -307,12 +364,13 @@ export class RouteNetworkSolver extends BaseSolver {
       })),
     }
     evidence.warnings.unshift(...this.input.warnings)
-    const deck = lines.join("\n") + "\n"
+    const deck = `${lines.join("\n")}\n`
+    const request = routedRequest({ deck })
     const compiled = snapshot({
       blockId: this.input.blockId,
       name: this.input.name,
       deck,
-      requestSha256: sha256(JSON.stringify(routedRequest({ deck }))),
+      requestSha256: sha256(JSON.stringify(request)),
       probes: plan.probes,
       durationSeconds: options.durationSeconds,
       stepSeconds: options.stepSeconds,
@@ -321,13 +379,11 @@ export class RouteNetworkSolver extends BaseSolver {
     const artifactScope = rootScope("simulation").child(
       this.input.artifactPrefix,
     )
-    return {
-      value: compiled,
-      artifacts: [
-        artifactScope.text("simulation.cir", deck),
-        artifactScope.json("evidence.json", evidence),
-      ],
-    }
+    const artifacts = [
+      artifactScope.text("simulation.cir", deck),
+      artifactScope.json("evidence.json", evidence),
+    ]
+    return { value: compiled, artifacts }
   }
   /** No partial deck can be executed. */
   override getOutput(): Produced<RoutedDeck> {
@@ -357,7 +413,7 @@ function routedNode(
 
 /** Coordinates join actual physical copper only. */
 function junctionKey(layer: string, point: RouteXY): RouteJunctionKey {
-  return `${layer}:${point.map((n) => n.toFixed(6)).join(",")}`
+  return `${layer}:${point.map((n) => n.toFixed(JUNCTION_PRECISION)).join(",")}`
 }
 
 /** Resolves a physical point on a routed wire to its electrical node. */

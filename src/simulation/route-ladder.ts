@@ -14,29 +14,54 @@ import {
 } from "./route-energy"
 import type { RouteEndpoint } from "./route-network"
 
+/** Tolerance for finding the arc cell that contains a point (mm). */
+const CELL_POSITION_TOLERANCE = 1e-7
+/** Distance below which touching wire ends belong to the same run (mm). */
+const WIRE_JOIN_TOLERANCE = 1e-6
+/** Keep integration cuts distinct from the slice endpoints (mm). */
+const CUT_EDGE_TOLERANCE = 1e-8
+/** Integration intervals shorter than this are treated as zero (m). */
+const MIN_INTEGRATION_LENGTH = 1e-12
+/** Base spatial sampling density before refinement. */
+const DEFAULT_CELLS_PER_RISE = 10
+/** Allowed spatial refinement and sampling density keep ladder assembly bounded. */
+const MAX_REFINEMENT = 4
+const MIN_CELLS_PER_RISE = 0.5
+const MAX_CELLS_PER_RISE = 40
+/** The causal dielectric fit preserves the per-length C value at 1 GHz. */
+const DIELECTRIC_REFERENCE_HZ = 1e9
+/** Millimetres in one metre. */
+const MM_PER_METRE = 1000
+
+/** A stamped node and its longitudinal position in millimetres. */
+interface RouteLadderNode {
+  position: number
+  node: string
+}
+
 export interface RouteLadder {
   lines: string[]
   cells: number
   maximumDelaySeconds: number
   /** Cells whose own conductor skin share was reduced to keep the shared remainder passive. */
   cappedSkinCells: number
-  wireNodes: Map<number, { position: number; node: string }[]>
+  wireNodes: Map<number, RouteLadderNode[]>
+}
+
+/** Largest absolute row sum of a per-length matrix. */
+function matrixInfinityNorm(matrix: ExtractedRouteSlice["line"]["L"]): number {
+  return Math.max(
+    ...matrix.map((row) =>
+      row.reduce((total, entry) => total + Math.abs(entry), 0),
+    ),
+  )
 }
 
 /** Deliberately conservative modal delay upper bound from matrix infinity norms. */
 function delayPerMetre(slice: ExtractedRouteSlice): number {
-  return Math.sqrt(
-    Math.max(
-      ...slice.line.L.map((row) =>
-        row.reduce((total, entry) => total + Math.abs(entry), 0),
-      ),
-    ) *
-      Math.max(
-        ...slice.line.C.map((row) =>
-          row.reduce((total, entry) => total + Math.abs(entry), 0),
-        ),
-      ),
-  )
+  const inductanceNorm = matrixInfinityNorm(slice.line.L)
+  const capacitanceNorm = matrixInfinityNorm(slice.line.C)
+  return Math.sqrt(inductanceNorm * capacitanceNorm)
 }
 
 interface ArcCell {
@@ -52,31 +77,45 @@ interface ArcWire {
   sign: number
 }
 
+/** Longest propagation time across the current set of arc cells. */
+function maxCellDelay(cells: ArcCell[], delayPerMetre: number): number {
+  return Math.max(
+    ...cells.map(
+      (cell) => ((cell.end - cell.start) / MM_PER_METRE) * delayPerMetre,
+    ),
+  )
+}
+
 /** A wire and the board coordinates of a point on its route arc. */
-type ArcPoint = { wire: RouteWire; position: RouteXY }
+type ArcPoint = {
+  wire: RouteWire
+  position: RouteXY
+}
 
 /** Locate a physical point along the original (simplified) polyline, including its bends. */
 function arcPoint(
   distance: number,
-  { run, arc }: { run: RouteWire[]; arc: ReadonlyMap<number, ArcWire> },
+  {
+    run,
+    arc,
+  }: {
+    run: RouteWire[]
+    arc: ReadonlyMap<number, ArcWire>
+  },
 ): ArcPoint {
   const wire =
-    run.find(
-      (wire) =>
-        distance <= arc.get(wire.id)!.offset + arc.get(wire.id)!.length + 1e-7,
-    ) ?? run.at(-1)!
+    run.find((wire) => {
+      const { offset, length } = arc.get(wire.id)!
+      return distance <= offset + length + CELL_POSITION_TOLERANCE
+    }) ?? run.at(-1)!
   const entry = arc.get(wire.id)!
   const fraction = Math.max(
     0,
     Math.min(1, (distance - entry.offset) / entry.length),
   )
-  return {
-    wire,
-    position: [
-      wire.a[0] + fraction * (wire.b[0] - wire.a[0]),
-      wire.a[1] + fraction * (wire.b[1] - wire.a[1]),
-    ],
-  }
+  const x = wire.a[0] + fraction * (wire.b[0] - wire.a[0])
+  const y = wire.a[1] + fraction * (wire.b[1] - wire.a[1])
+  return { wire, position: [x, y] }
 }
 
 /** Project arc distance onto the wire's signed longitudinal axis. */
@@ -95,6 +134,20 @@ function wirePosition({
 
 type RouteContactKey = string
 
+/** Number of decimal places used to group points at wire contacts (in mm). */
+const CONTACT_PRECISION = 6
+
+/** Identify a contact by its copper layer and rounded board position. */
+function routeContactKey(
+  layer: RouteWire["layer"],
+  point: RouteXY,
+): RouteContactKey {
+  const coordinates = point
+    .map((value) => value.toFixed(CONTACT_PRECISION))
+    .join(",")
+  return `${layer}:${coordinates}`
+}
+
 interface RouteLadderInput {
   extracted: ExtractedRoutes
   endpoint: RouteEndpoint
@@ -109,40 +162,42 @@ export function* routeLadderSteps({
   endpoint,
   riseSeconds,
   refinement = 1,
-  cellsPerRise = 10,
+  cellsPerRise = DEFAULT_CELLS_PER_RISE,
 }: RouteLadderInput): Generator<RouteLadder, RouteLadder> {
-  if (
-    !(riseSeconds > 0) ||
-    !Number.isInteger(refinement) ||
-    refinement < 1 ||
-    refinement > 4
-  )
+  const validRefinement =
+    Number.isInteger(refinement) &&
+    refinement >= 1 &&
+    refinement <= MAX_REFINEMENT
+  if (!(riseSeconds > 0) || !validRefinement) {
     throw new Error(
       "Positive rise time and bounded integer spatial refinement (1..4) required",
     )
-  if (!(cellsPerRise >= 0.5 && cellsPerRise <= 40))
+  }
+  if (
+    !(cellsPerRise >= MIN_CELLS_PER_RISE && cellsPerRise <= MAX_CELLS_PER_RISE)
+  ) {
     throw new Error("Cells per rise time must be in [0.5,40]")
+  }
   const lines: string[] = []
   const wireNodes: RouteLadder["wireNodes"] = new Map()
-  const wires = [
-    ...new Map(
-      extracted.slices.flatMap((slice) =>
-        slice.wires.map((wire) => [wire.id, wire] as const),
-      ),
-    ).values(),
-  ].sort((a, b) => a.id - b.id)
+  const wireEntries = extracted.slices.flatMap((slice) =>
+    slice.wires.map((wire) => [wire.id, wire] as const),
+  )
+  const wires = [...new Map(wireEntries).values()].sort((a, b) => a.id - b.id)
   const maximumDelayPerMetre = Math.max(...extracted.slices.map(delayPerMetre))
   const targetMm =
-    (riseSeconds / cellsPerRise / refinement / maximumDelayPerMetre) * 1000
-  const dispersionMm = ((2 * riseSeconds) / maximumDelayPerMetre) * 1000
+    (riseSeconds / cellsPerRise / refinement / maximumDelayPerMetre) *
+    MM_PER_METRE
+  const dispersionMm = ((2 * riseSeconds) / maximumDelayPerMetre) * MM_PER_METRE
   const cells: ArcCell[] = []
   const arc = new Map<number, ArcWire>()
   const contacts = new Map<RouteContactKey, number>()
-  for (const wire of wires)
+  for (const wire of wires) {
     for (const point of [wire.a, wire.b]) {
-      const key = `${wire.layer}:${point.map((coordinate) => coordinate.toFixed(6)).join(",")}`
+      const key = routeContactKey(wire.layer, point)
       contacts.set(key, (contacts.get(key) ?? 0) + 1)
     }
+  }
   let cursor = 0
   while (cursor < wires.length) {
     const seed = wires[cursor++]
@@ -151,19 +206,14 @@ export function* routeLadderSteps({
     while (cursor < wires.length) {
       const wire = wires[cursor]
       const previous = run.at(-1)!
-      const junction =
-        contacts.get(
-          `${wire.layer}:${wire.a.map((coordinate) => coordinate.toFixed(6)).join(",")}`,
-        ) ?? 0
-      if (
-        wire.aPort ||
-        junction > 2 ||
-        wire.trace !== seed.trace ||
-        wire.layer !== seed.layer ||
-        wire.width !== seed.width ||
-        Math.hypot(wire.a[0] - previous.b[0], wire.a[1] - previous.b[1]) > 1e-6
+      const junction = contacts.get(routeContactKey(wire.layer, wire.a)) ?? 0
+      if (wire.aPort || junction > 2 || wire.trace !== seed.trace) break
+      if (wire.layer !== seed.layer || wire.width !== seed.width) break
+      const separation = Math.hypot(
+        wire.a[0] - previous.b[0],
+        wire.a[1] - previous.b[1],
       )
-        break
+      if (separation > WIRE_JOIN_TOLERANCE) break
       run.push(wire)
       cursor++
     }
@@ -211,13 +261,9 @@ export function* routeLadderSteps({
       const records = indices.flatMap((index) => {
         const cell = cells[index]
         return [cell.start, cell.end].flatMap((distance) => {
-          if (
-            !(
-              distance >= entry.offset - 1e-7 &&
-              distance <= entry.offset + entry.length + 1e-7
-            )
-          )
-            return []
+          const start = entry.offset - CELL_POSITION_TOLERANCE
+          const end = entry.offset + entry.length + CELL_POSITION_TOLERANCE
+          if (!(distance >= start && distance <= end)) return []
           let node = cell.after
           if (distance === cell.start) node = cell.before
           return [{ position: wirePosition({ wire, entry, distance }), node }]
@@ -236,11 +282,7 @@ export function* routeLadderSteps({
     yield {
       lines,
       cells: cells.length,
-      maximumDelaySeconds: Math.max(
-        ...cells.map(
-          (cell) => ((cell.end - cell.start) / 1000) * maximumDelayPerMetre,
-        ),
-      ),
+      maximumDelaySeconds: maxCellDelay(cells, maximumDelayPerMetre),
       cappedSkinCells: 0,
       wireNodes,
     }
@@ -269,17 +311,20 @@ export function* routeLadderSteps({
     for (const wire of slice.wires) {
       const entry = arc.get(wire.id)
       if (!entry) continue
-      for (const index of entry.cells)
+      for (const index of entry.cells) {
         for (const distance of [cells[index].start, cells[index].end]) {
           const position = wirePosition({ wire, entry, distance })
-          if (position > slice.start + 1e-8 && position < slice.end - 1e-8)
-            cuts.push(position)
+          const interior =
+            position > slice.start + CUT_EDGE_TOLERANCE &&
+            position < slice.end - CUT_EDGE_TOLERANCE
+          if (interior) cuts.push(position)
         }
+      }
     }
     cuts.sort((a, b) => a - b)
     for (let part = 1; part < cuts.length; part++) {
-      const metres = (cuts[part] - cuts[part - 1]) / 1000
-      if (metres < 1e-12) continue
+      const metres = (cuts[part] - cuts[part - 1]) / MM_PER_METRE
+      if (metres < MIN_INTEGRATION_LENGTH) continue
       const middle = (cuts[part] + cuts[part - 1]) / 2
       const entries = slice.wires.map((wire) => {
         const entry = arc.get(wire.id)
@@ -287,21 +332,24 @@ export function* routeLadderSteps({
         let local = wire.end - middle
         if (entry.sign > 0) local = middle - wire.start
         const distance = entry.offset + local
-        const index = entry.cells.find(
-          (index) =>
-            distance >= cells[index].start - 1e-7 &&
-            distance <= cells[index].end + 1e-7,
-        )!
+        const index = entry.cells.find((index) => {
+          const { start, end } = cells[index]
+          return (
+            distance >= start - CELL_POSITION_TOLERANCE &&
+            distance <= end + CELL_POSITION_TOLERANCE
+          )
+        })
         if (index === undefined)
           throw new Error("Route arc cell did not cover a geometric section")
         const { before, after } = cells[index]
-        if (entry.sign > 0)
+        if (entry.sign > 0) {
           return {
             index,
             sign: entry.sign,
             before: nodeIds.get(before),
             after: nodeIds.get(after),
           }
+        }
         return {
           index,
           sign: entry.sign,
@@ -309,7 +357,7 @@ export function* routeLadderSteps({
           after: nodeIds.get(before),
         }
       })
-      for (let i = 0; i < entries.length; i++)
+      for (let i = 0; i < entries.length; i++) {
         for (let j = 0; j < entries.length; j++) {
           const a = entries[i]
           const b = entries[j]
@@ -332,20 +380,21 @@ export function* routeLadderSteps({
           })
           if (i === j)
             strip[a.index] += series.stripSkinResistance[i][i] * metres
-          for (const side of ["before", "after"] as const)
-            if (a[side] !== undefined && b[side] !== undefined) {
-              C.add({
-                row: a[side]!,
-                column: b[side]!,
-                coefficient: (slice.line.C[i][j] * metres) / 2,
-              })
-              D.add({
-                row: a[side]!,
-                column: b[side]!,
-                coefficient: (slice.line.dielectricLoss[i][j] * metres) / 2,
-              })
-            }
+          for (const side of ["before", "after"] as const) {
+            if (a[side] === undefined || b[side] === undefined) continue
+            C.add({
+              row: a[side]!,
+              column: b[side]!,
+              coefficient: (slice.line.C[i][j] * metres) / 2,
+            })
+            D.add({
+              row: a[side]!,
+              column: b[side]!,
+              coefficient: (slice.line.dielectricLoss[i][j] * metres) / 2,
+            })
+          }
         }
+      }
     }
   }
   const dc = cells.map((_, i) => R.rows[i].get(i) ?? 0)
@@ -385,15 +434,22 @@ export function* routeLadderSteps({
     matrix: L,
     kind: "L",
   })
-  const dielectricAtReference = causalLossResponse(1e9).dielectricCapacitance
+  const dielectricAtReference = causalLossResponse(
+    DIELECTRIC_REFERENCE_HZ,
+  ).dielectricCapacitance
   const capacitance = C.scaled(1)
-  for (const [i, row] of D.rows.entries())
-    for (const [j, loss] of row)
-      capacitance.rows[i].set(
-        j,
-        (C.rows[i].get(j) ?? 0) - dielectricAtReference * loss,
-      )
-  shuntEnergy({ lines, tag: "ARCC", nodes: nodeNames, matrix: capacitance })
+  for (const [i, row] of D.rows.entries()) {
+    for (const [j, loss] of row) {
+      const adjusted = (C.rows[i].get(j) ?? 0) - dielectricAtReference * loss
+      capacitance.rows[i].set(j, adjusted)
+    }
+  }
+  shuntEnergy({
+    lines,
+    tag: "ARCC",
+    nodes: nodeNames,
+    matrix: capacitance,
+  })
   for (const [p, pole] of causalLossPoles().entries())
     shuntEnergy({
       lines,
@@ -405,11 +461,7 @@ export function* routeLadderSteps({
   return {
     lines,
     cells: cells.length,
-    maximumDelaySeconds: Math.max(
-      ...cells.map(
-        (cell) => ((cell.end - cell.start) / 1000) * maximumDelayPerMetre,
-      ),
-    ),
+    maximumDelaySeconds: maxCellDelay(cells, maximumDelayPerMetre),
     cappedSkinCells,
     wireNodes,
   }

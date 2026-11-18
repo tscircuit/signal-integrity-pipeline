@@ -12,7 +12,11 @@ test("routed decks declare saved vectors and transient analysis without interact
     [".save v(receiver) i(vdrive)", ".tran 1e-11 4e-9 0 1e-11", ".end"],
   )
   assert.doesNotMatch(
-    routedControl({ saved: "v(n)", step: 1e-11, duration: 4e-9 }).join("\n"),
+    routedControl({
+      saved: "v(n)",
+      step: 1e-11,
+      duration: 4e-9,
+    }).join("\n"),
     /control|wrdata|quit|resume|stop when/,
   )
 })
