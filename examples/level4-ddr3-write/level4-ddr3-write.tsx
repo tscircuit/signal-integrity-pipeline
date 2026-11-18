@@ -5,7 +5,7 @@ import { routes } from "./routes"
 
 /* LEVEL 4: AM3352 -> W631GG6MB-12 DDR3 lower-byte write illustration, not JEDEC compliance.
  * Raw AM335x package C has positive off-diagonal entries, violating IBIS Maxwell signs.
- * Typical corner is 1.5 V. DQS is delayed 0.5 UI to centre-align write stimulus.
+ * Typical corner is 1.5 V. DQS is delayed by half a unit interval to centre-align write stimulus.
  * Exact native source footprint coordinates (CPU 0.4 mm pads, DRAM 0.350012 mm pads).
  * Source byte-lane swaps are retained; pin labels still identify actual IBIS [Pin] signals.
  * Eight-layer 1.2 mm board; JLC preset is illustrative, not a qualified source stackup.
