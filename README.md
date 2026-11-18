@@ -172,3 +172,6 @@ Optional checks use `test.skipIf` and known failures still execute through `test
 Run `bun run fetch:vendor-models` and put `ngspice` on PATH before running the IBIS tests locally.
 
 Run `bun run test:package` to verify the packed package in Node and Bun.
+
+SVG visual baselines in `tests/**/__snapshots__/` use the `.snap.svg` suffix so GitHub displays image previews.
+The visual-test helper compares their contents byte for byte.

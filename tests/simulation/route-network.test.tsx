@@ -86,6 +86,12 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
       3,
       "two receivers and the existing rail monitor",
     )
+    assert.ok(
+      network
+        .visualize()
+        .lines!.some((line) => line.strokeColor === routeTones.cell),
+      "ladder cells are ticks across the copper",
+    )
   },
 )
 
@@ -101,6 +107,42 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
     )
   },
 )
+
+import { routeTones } from "../../src/board"
+import {
+  assertRouteVisual,
+  routedVisualFixture,
+} from "../support/routed-visual-fixture"
+
+test("two-trace TSX route-network visual SVG snapshot", async () => {
+  const { root } = await routedVisualFixture()
+  assertRouteVisual(
+    root.getSolver<RouteNetworkSolver>("RouteNetworkSolver")!.visualize(),
+    "simulation",
+    "route-network",
+  )
+})
+
+test("rejected network drawing retains physical context and shows its red reason", async () => {
+  const { root } = await routedVisualFixture()
+  const params = root
+    .getSolver<RoutedStageSolver<RouteNetworkInput, RoutedDeck>>(
+      "RouteNetworkSolver",
+    )!
+    .getConstructorParams()[0][0]
+  const rejected = new RouteNetworkSolver(params)
+  // Drawing-only failure state; the real DDR render separately exercises the 1,024-cell admission gate.
+  rejected.failed = true
+  rejected.error =
+    "Route ladder requires 1835 cells; exceeds modest-memory limit of 1024"
+  const drawing = rejected.visualize()
+  assert.ok(
+    drawing.texts!.some(
+      (text) => text.color === routeTones.failure && text.text.includes("1835"),
+    ),
+  )
+  assertRouteVisual(drawing, "simulation", "route-network-rejected")
+})
 
 /** One unit interval is 2 ns at this rate. */
 const QUIET_BIT_RATE_BPS = 500e6
