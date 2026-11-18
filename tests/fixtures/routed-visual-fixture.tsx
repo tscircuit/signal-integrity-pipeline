@@ -131,98 +131,102 @@ export const separateClampIbis = routedVisualIbis
 `,
   )
 
-const fixtures = new Map<number, Promise<{ root: RoutedPipelineSolver }>>()
+interface RoutedVisualFixture {
+  root: RoutedPipelineSolver
+}
 
-/** Solve real TwoTraceBoard TSX with original drawing-only model tables, once per test file. */
-export function routedVisualFixture(
-  blocks = 1,
-): Promise<{ root: RoutedPipelineSolver }> {
+const fixtures = new Map<number, Promise<RoutedVisualFixture>>()
+
+/** Swap the board's single simulation declaration for the two-block fixture. */
+function twoBlockBoard(
+  board: ReturnType<typeof TwoTraceBoard>,
+): ReturnType<typeof TwoTraceBoard> {
+  const children = React.Children.toArray(board.props.children).filter(
+    (child) =>
+      !React.isValidElement(child) ||
+      child.type !== simulation.pcbtransientchannelsimulation,
+  )
+  const blocks = [0, 1].map((i) => (
+    <simulation.pcbtransientchannelsimulation
+      key={i}
+      name={`BLOCK${i}`}
+      bitRate="400Mbps"
+      duration={4e-9}
+    >
+      <simulation.pcbdriverreceiverchannel
+        name={`DATA${i}`}
+        driverRef={`.TX${i} > .Y`}
+        receiverRef={`.RX${i} > .A`}
+        pattern="01"
+      />
+    </simulation.pcbtransientchannelsimulation>
+  ))
+  return React.cloneElement(board, {}, ...children, ...blocks)
+}
+
+/** Return one of the synthetic voltage series shown in the drawings. */
+function fixtureVoltage(probe: number): number[] {
+  if (probe === 0) return [0, 0.8, 2.1, 1.5, 1.5]
+  if (probe === 1) return [0, 0.1, -0.5, 0.05, 0]
+  return [3.3, 3.3, 3.3, 3.3, 3.3]
+}
+
+// Synthetic engine IO for drawing only.
+const context: SolverContext = {
+  progress: (): void => undefined,
+  runSolver: async (request) => {
+    const deck = request.files["simulation.cir"]
+    const duration = transientDuration(deck)
+    const names = voltageNames(savedVectors(deck))
+    const times = [
+      0,
+      duration * 0.2,
+      duration * 0.21,
+      duration * 0.25,
+      duration,
+    ]
+    const raw = formatSpiceVectors([
+      { name: "time", type: "time", values: times },
+      ...names.map((name, i) => ({
+        name: `v(${name})`,
+        type: "voltage",
+        values: fixtureVoltage(i),
+      })),
+    ])
+    return { stdout: "", stderr: "", files: { "waveform.raw": raw } }
+  },
+}
+
+/** Render and solve the visual fixture with original drawing-only model tables. */
+async function solveVisualFixture(
+  blocks: number,
+): Promise<RoutedVisualFixture> {
+  const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
+  const board = TwoTraceBoard({
+    "bit-rate": "400Mbps",
+    "duration-seconds": 4e-9,
+  })
+  let tree = board
+  if (blocks !== 1) tree = twoBlockBoard(board)
+  circuit.add(tree)
+  await circuit.renderUntilSettled()
+  const root = new RoutedPipelineSolver(
+    {
+      circuitJson: circuit.getCircuitJson() as CircuitJson,
+      ibisSources: { "models/sn74lvc1g04.ibs": routedVisualIbis },
+      scopeDistanceMm: 1,
+    },
+    context,
+  )
+  await root.solveAsync()
+  return { root }
+}
+
+/** Solve real TwoTraceBoard TSX once per block count in each test file. */
+export function routedVisualFixture(blocks = 1): Promise<RoutedVisualFixture> {
   const existing = fixtures.get(blocks)
   if (existing) return existing
-  const fixture = (async () => {
-    const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
-    const board = TwoTraceBoard({
-      "bit-rate": "400Mbps",
-      "duration-seconds": 4e-9,
-    })
-    const tree =
-      blocks === 1
-        ? board
-        : React.cloneElement(
-            board,
-            {},
-            ...React.Children.toArray(board.props.children).filter(
-              (child) =>
-                !React.isValidElement(child) ||
-                child.type !== simulation.pcbtransientchannelsimulation,
-            ),
-            ...[0, 1].map((i) => (
-              <simulation.pcbtransientchannelsimulation
-                key={i}
-                name={`BLOCK${i}`}
-                bitRate="400Mbps"
-                duration={4e-9}
-              >
-                <simulation.pcbdriverreceiverchannel
-                  name={`DATA${i}`}
-                  driverRef={`.TX${i} > .Y`}
-                  receiverRef={`.RX${i} > .A`}
-                  pattern="01"
-                />
-              </simulation.pcbtransientchannelsimulation>
-            )),
-          )
-    circuit.add(tree)
-    await circuit.renderUntilSettled()
-    // Synthetic engine IO for drawing only; these curves are not solver evidence.
-    const context: SolverContext = {
-      progress: (): void => undefined,
-      runSolver: async (request) => {
-        const deck = request.files["simulation.cir"]
-        const duration = transientDuration(deck)
-        const names = voltageNames(savedVectors(deck))
-        return {
-          stdout: "",
-          stderr: "",
-          files: {
-            "waveform.raw": formatSpiceVectors([
-              {
-                name: "time",
-                type: "time",
-                values: [
-                  0,
-                  duration * 0.2,
-                  duration * 0.21,
-                  duration * 0.25,
-                  duration,
-                ],
-              },
-              ...names.map((name, i) => ({
-                name: `v(${name})`,
-                type: "voltage",
-                values:
-                  i === 0
-                    ? [0, 0.8, 2.1, 1.5, 1.5]
-                    : i === 1
-                      ? [0, 0.1, -0.5, 0.05, 0]
-                      : [3.3, 3.3, 3.3, 3.3, 3.3],
-              })),
-            ]),
-          },
-        }
-      },
-    }
-    const root = new RoutedPipelineSolver(
-      {
-        circuitJson: circuit.getCircuitJson() as CircuitJson,
-        ibisSources: { "models/sn74lvc1g04.ibs": routedVisualIbis },
-        scopeDistanceMm: 1,
-      },
-      context,
-    )
-    await root.solveAsync()
-    return { root }
-  })()
+  const fixture = solveVisualFixture(blocks)
   fixtures.set(blocks, fixture)
   return fixture
 }
@@ -241,11 +245,11 @@ export function assertRouteVisual(
     `${name}.snap.svg`,
   )
   // Ignore sub-micro-atlas-unit V8/JavaScriptCore rounding in display coordinates only.
-  const normalized: GraphicsObject = JSON.parse(
-    JSON.stringify(drawing, (_key, value) =>
-      typeof value === "number" ? Number(value.toFixed(6)) : value,
-    ),
-  )
+  const serialized = JSON.stringify(drawing, (_key, value) => {
+    if (typeof value === "number") return Number(value.toFixed(6))
+    return value
+  })
+  const normalized: GraphicsObject = JSON.parse(serialized)
   const svg = getSvgFromGraphicsObject(normalized, {
     svgWidth: 1100,
     svgHeight: 800,

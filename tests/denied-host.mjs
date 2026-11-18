@@ -10,21 +10,17 @@ const denied = () => {
 }
 const builtin = new Set([
   ...builtinModules,
-  ...builtinModules.map((name) => "node:" + name),
+  ...builtinModules.map((name) => `node:${name}`),
 ])
+const deniedPrefixes = ["@tscircuit/core", "tsx", "http:", "https:"]
 registerHooks({
   resolve(specifier, context, next) {
-    if (
+    const deniedImport =
       builtin.has(specifier) ||
       specifier === "react" ||
-      specifier.startsWith("@tscircuit/core") ||
-      specifier.startsWith("tsx") ||
-      specifier.startsWith("http:") ||
-      specifier.startsWith("https:")
-    )
-      throw Error(
-        "Forbidden import " + specifier + " from " + context.parentURL,
-      )
+      deniedPrefixes.some((prefix) => specifier.startsWith(prefix))
+    if (deniedImport)
+      throw Error(`Forbidden import ${specifier} from ${context.parentURL}`)
     return next(specifier, context)
   },
 })

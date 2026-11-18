@@ -11,11 +11,10 @@ import { routedVisualFixture } from "../support/routed-visual-fixture"
 
 test("a flat stage drains real TSX block inputs in order", async () => {
   const { root } = await routedVisualFixture(2)
-  const inputs = root
-    .getSolver<RoutedStageSolver<RouteSectionsInput, RoutedSections>>(
-      "RouteSectionsSolver",
-    )!
-    .getConstructorParams()[0]
+  const sections = root.getSolver<
+    RoutedStageSolver<RouteSectionsInput, RoutedSections>
+  >("RouteSectionsSolver")!
+  const [inputs] = sections.getConstructorParams()
   const stage = new RoutedStageSolver(
     [...inputs].reverse(),
     RouteSectionsSolver,
@@ -48,9 +47,10 @@ test("an empty transient stage completes synchronously without invoking the runt
 test("a failing block stops the flat stage before later blocks or partial outputs", async () => {
   const { root } = await routedVisualFixture(2)
   type Input = ReturnType<RouteTransientSolver["getConstructorParams"]>[0]
-  const inputs = root
-    .getSolver<RoutedStageSolver<Input, RoutedCapture>>("RouteTransientSolver")!
-    .getConstructorParams()[0]
+  const transient = root.getSolver<RoutedStageSolver<Input, RoutedCapture>>(
+    "RouteTransientSolver",
+  )!
+  const [inputs] = transient.getConstructorParams()
   let calls = 0
   const stage = new RoutedStageSolver(
     inputs.map((input) => ({

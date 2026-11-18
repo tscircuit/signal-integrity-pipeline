@@ -31,11 +31,12 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
   }
   /** Only the transient algorithm requires asynchronous stepping. */
   override assertCanStepSynchronously(): void {
+    if (this.inputs.length === 0) return
     if (
-      this.inputs.length &&
       this.solverClass.prototype._stepAsync !== BaseSolver.prototype._stepAsync
-    )
+    ) {
       super.assertCanStepSynchronously()
+    }
   }
   /** Start the next block only after the previous block has completed successfully. */
   private prepare(): ItemSolver<I, O> | undefined {
@@ -128,7 +129,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
   > {
     return [this.inputs]
   }
-  /** Keep the last block's physical drawing after its stage completes; with no admitted blocks there is nothing to overlay. */
+  /** Retain the last block's drawing when its stage completes, or a blank drawing when no blocks were admitted. */
   override visualize(): GraphicsObject {
     return this.current?.visualize() ?? { coordinateSystem: "cartesian" }
   }

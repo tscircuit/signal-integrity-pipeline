@@ -119,6 +119,10 @@ test("agent rules live only in AGENTS.md", () => {
     )
 })
 
+/** Characters allowed in generated stage names. */
+const STAGE_NAME_CHARACTERS =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
+
 /** Read generated stage names from numbered Markdown table rows. */
 function documentedStageNames(text: string): string[] {
   const names: string[] = []
@@ -135,13 +139,7 @@ function documentedStageNames(text: string): string[] {
       continue
     if (
       !name ||
-      ![...name].every(
-        (char) =>
-          (char >= "A" && char <= "Z") ||
-          (char >= "a" && char <= "z") ||
-          (char >= "0" && char <= "9") ||
-          char === "_",
-      )
+      ![...name].every((char) => STAGE_NAME_CHARACTERS.includes(char))
     )
       continue
     names.push(name)
@@ -151,9 +149,9 @@ function documentedStageNames(text: string): string[] {
 
 test("routed documentation stage order is generated from the debugger tuple", () => {
   for (const file of ["README.md", "docs/ARCHITECTURE.md"]) {
-    const text = readFileSync(join(root, file), "utf8")
-      .split("<!-- routed-stages:start -->")[1]
-      .split("<!-- routed-stages:end -->")[0]
+    const markdown = readFileSync(join(root, file), "utf8")
+    const afterMarker = markdown.split("<!-- routed-stages:start -->")[1]
+    const [text] = afterMarker.split("<!-- routed-stages:end -->")
     const names = documentedStageNames(text)
     assert.deepEqual(
       names,

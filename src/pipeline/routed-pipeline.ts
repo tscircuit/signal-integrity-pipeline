@@ -156,10 +156,10 @@ export class RoutedPipelineSolver extends BasePipelineSolver<RoutedProblem> {
     if (!this.solved) throw new Error("Routed pipeline is incomplete")
     if (this.output) return this.output
     let ledger = ArtifactLedger.empty()
-    for (const stage of this.pipelineDef)
-      ledger = ledger.add(
-        this.getStageOutput<Produced<unknown>>(stage.solverName)!.artifacts,
-      )
+    for (const stage of this.pipelineDef) {
+      const output = this.getStageOutput<Produced<unknown>>(stage.solverName)!
+      ledger = ledger.add(output.artifacts)
+    }
     const plans = this.stageOutput("RoutedAdmissionSolver").value
     const compiled = this.stageOutput("RouteNetworkSolver").value
     const captures = this.stageOutput("RouteTransientSolver").value

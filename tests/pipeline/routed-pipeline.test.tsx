@@ -31,13 +31,12 @@ import {
 import { routedProblem } from "../support/routed-fixture"
 import { routedVisualFixture } from "../support/routed-visual-fixture"
 
-test(
-  "TSX two-trace routed deck pins the single coupled skin multiport and declarative transient vectors",
-  {
-    skip:
-      !process.env.IBIS_MODEL_DIR &&
-      "Set IBIS_MODEL_DIR to local vendor sn74lvc1g04.ibs; vendor bytes are not committed",
-  },
+const vendorModelSkip =
+  !process.env.IBIS_MODEL_DIR &&
+  "Set IBIS_MODEL_DIR to local vendor sn74lvc1g04.ibs; vendor bytes are not committed"
+
+test.skipIf(Boolean(vendorModelSkip))(
+  "TSX two-trace deck pins coupled skin loss and transient vectors",
   async () => {
     const circuit = await renderCoreSignals(
       <TwoTraceBoard bit-rate="400Mbps" duration-seconds={4e-9} />,
@@ -45,9 +44,11 @@ test(
     const bytes = await readFile(
       `${process.env.IBIS_MODEL_DIR}/sn74lvc1g04.ibs`,
     )
+    const modelHash =
+      "03033638d7fe8bf268428be133a5aad63aae0145980113561b20ab92063e2c00"
     assert.equal(
       sha256(bytes),
-      "03033638d7fe8bf268428be133a5aad63aae0145980113561b20ab92063e2c00",
+      modelHash,
       "oracle uses the same vendor revision",
     )
     const solver = new RoutedPipelineSolver(
@@ -65,18 +66,17 @@ test(
       durationSeconds: 4e-9,
       stepSeconds: 1e-11,
     }
-    const input = solver
-      .getSolver<RoutedStageSolver<RouteBindingsInput, RoutedBindings>>(
-        "RouteBindingsSolver",
-      )!
-      .getConstructorParams()[0][0]
+    const bindingsStage = solver.getSolver<
+      RoutedStageSolver<RouteBindingsInput, RoutedBindings>
+    >("RouteBindingsSolver")!
+    const [[input]] = bindingsStage.getConstructorParams()
     const bindings = new RouteBindingsSolver({ ...input, options })
     bindings.solve()
-    const networkInput = solver
-      .getSolver<RoutedStageSolver<RouteNetworkInput, RoutedDeck>>(
+    const networkStage =
+      solver.getSolver<RoutedStageSolver<RouteNetworkInput, RoutedDeck>>(
         "RouteNetworkSolver",
       )!
-      .getConstructorParams()[0][0]
+    const [[networkInput]] = networkStage.getConstructorParams()
     const network = new RouteNetworkSolver({
       ...networkInput,
       bindings: bindings.getOutput().value,
@@ -87,17 +87,19 @@ test(
     assert.equal(result.evidence.geometry_wires, 2)
     assert.equal(result.evidence.sections, 1)
     // V8 and JavaScriptCore differ in the final digits of the unchanged BEM coefficients.
-    const expected = process.versions.bun
-      ? "84d62db005e8b8b39aba038a66d6eb1be137848f4a2b3bdbfccf9d2160f52911"
-      : "9373941fc0d7f13fae049b0e6e6571143475eb2356be9468efb5b894e901e63b"
-    assert.equal(
-      Buffer.byteLength(result.deck),
-      process.versions.bun ? 22142 : 22147,
-    )
+    let expected =
+      "9373941fc0d7f13fae049b0e6e6571143475eb2356be9468efb5b894e901e63b"
+    let expectedBytes = 22147
+    if (process.versions.bun) {
+      expected =
+        "84d62db005e8b8b39aba038a66d6eb1be137848f4a2b3bdbfccf9d2160f52911"
+      expectedBytes = 22142
+    }
+    assert.equal(Buffer.byteLength(result.deck), expectedBytes)
     assert.equal(
       sha256(result.deck),
       expected,
-      "full deck bytes, including vendor compilation and coupling, pinned per JS engine",
+      "pins vendor compilation and coupling per JS engine",
     )
   },
 )
@@ -108,25 +110,20 @@ const synthetic: SolverContext = {
   runSolver: async (request) => {
     const deck = request.files["simulation.cir"]
     const duration = transientDuration(deck)
-    const names = voltageNames(deck)
-    return {
-      stdout: "",
-      stderr: "",
-      files: {
-        "waveform.raw": formatSpiceVectors([
-          { name: "time", type: "time", values: [0, duration] },
-          ...names.map((name) => ({
-            name: `v(${name})`,
-            type: "voltage",
-            values: [0, 0],
-          })),
-        ]),
-      },
-    }
+    const voltageVectors = voltageNames(deck).map((name) => ({
+      name: `v(${name})`,
+      type: "voltage",
+      values: [0, 0],
+    }))
+    const raw = formatSpiceVectors([
+      { name: "time", type: "time", values: [0, duration] },
+      ...voltageVectors,
+    ])
+    return { stdout: "", stderr: "", files: { "waveform.raw": raw } }
   },
 }
 
-test("six static stages walk all blocks without nested pipelines and produce deterministic artifacts", async (context) => {
+test("six flat stages visit every block and produce deterministic artifacts", async (context) => {
   const input = await routedProblem(context)
   if (!input) return
   const solver = new RoutedPipelineSolver(input, synthetic)
@@ -161,8 +158,9 @@ test("six static stages walk all blocks without nested pipelines and produce det
     if (
       record.type === "simulation_pcb_transient_channel_simulation" ||
       record.type === "simulation_pcb_driver_receiver_channel"
-    )
+    ) {
       record.simulation_pcb_transient_channel_simulation_id = "getOutput"
+    }
   }
   const collision = new RoutedPipelineSolver(renamed, synthetic)
   await collision.solveAsync()
@@ -197,12 +195,15 @@ test("default two-trace TSX deck retains the measured driver lead-in and capture
     40e-9,
   )
   const deck = solver.stageOutput("RouteNetworkSolver").value[0]
-  if (!process.versions.bun)
+  if (!process.versions.bun) {
+    const expected =
+      "83867184e5373f0b20e056fe1011de164269396e2b51bb5ff76a171a288371ad"
     assert.equal(
       sha256(deck.deck),
-      "83867184e5373f0b20e056fe1011de164269396e2b51bb5ff76a171a288371ad",
-      "default two-trace deck pins the deliberate single skin multiport realization",
+      expected,
+      "default two-trace deck pins the single skin multiport realization",
     )
+  }
   const values = driverWeights(deck.deck)
   const weights = values
     .filter((_, i) => i % 2 === 0)
