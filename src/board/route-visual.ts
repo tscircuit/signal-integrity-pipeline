@@ -577,6 +577,33 @@ export function routePane({
   })
 }
 
+/** Find up to three spans ending at whitespace or the end of the message. */
+function failureLines(message: string, perLine: number): string[] {
+  const lines: string[] = []
+  // A nonfinite limit used to match a single character followed by the literal count.
+  const literalCount = Number.isFinite(perLine) ? "" : `{1,${perLine}}`
+  const width = literalCount ? 1 : perLine
+  let start = 0
+  while (start < message.length && lines.length < 3) {
+    let boundary = start
+    const limit = Math.min(start + width, message.length)
+    for (let end = start + 1; end <= limit; end++) {
+      if ("\r\n\u2028\u2029".includes(message[end - 1])) break
+      if (!message.startsWith(literalCount, end)) continue
+      const after = end + literalCount.length
+      if (after === message.length || message[after].trim() === "")
+        boundary = after
+    }
+    if (boundary === start) {
+      start++
+      continue
+    }
+    lines.push(message.slice(start, boundary + 1))
+    start = boundary + 1
+  }
+  return lines.length > 0 ? lines : [message]
+}
+
 /** A failure reason in the pane slot (or across the board without one), wrapped to at most three lines that fit. */
 export function routeFailure({
   drawing,
@@ -590,9 +617,7 @@ export function routeFailure({
   const width = box.maxX - box.minX
   const size = Math.min((box.maxY - box.minY) * 0.06, width / 40)
   const perLine = Math.max(10, Math.floor((width * 0.9) / (size * 0.6)))
-  const lines = (
-    message.match(new RegExp(`.{1,${perLine}}(\\s|$)`, "g")) ?? [message]
-  ).slice(0, 3)
+  const lines = failureLines(message, perLine)
   for (const [i, line] of lines.entries())
     routeText({
       drawing,

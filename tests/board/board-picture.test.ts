@@ -11,27 +11,59 @@ import {
 } from "../../src/board/board-picture"
 import { routedVisualFixture } from "../support/routed-visual-fixture"
 
-/** The pixel centre of the first SVG circle whose attributes match. */
-function centre(svg: string, pattern: RegExp): [number, number] {
-  const element = svg
-    .match(/<circle[^>]*>/g)!
-    .find((circle) => pattern.test(circle))!
+/** Find generated SVG tags with the given opening text. */
+function svgTags(svg: string, opener: string): string[] {
+  const tags: string[] = []
+  let start = svg.indexOf(opener)
+  while (start >= 0) {
+    const end = svg.indexOf(">", start)
+    if (end < 0) break
+    tags.push(svg.slice(start, end + 1))
+    start = svg.indexOf(opener, end + 1)
+  }
+  return tags
+}
+
+/** Read an attribute value from a generated SVG tag. */
+function svgAttribute(tag: string, name: string): string {
+  const prefix = `${name}="`
+  let index = tag.indexOf(prefix)
+  while (index >= 0) {
+    const start = index + prefix.length
+    const end = tag.indexOf('"', start)
+    if (end < 0) break
+    if (end > start) return tag.slice(start, end)
+    index = tag.indexOf(prefix, end + 1)
+  }
+  throw new TypeError(`Missing SVG attribute ${name}`)
+}
+
+/** The pixel centre of the first SVG circle containing the given attribute. */
+function centre(svg: string, attribute: string): [number, number] {
+  const element = svgTags(svg, "<circle").find((circle) =>
+    circle.includes(attribute),
+  )
+  if (!element) throw new TypeError(`Missing SVG circle with ${attribute}`)
   return [
-    Number(/cx="([^"]+)"/.exec(element)![1]),
-    Number(/cy="([^"]+)"/.exec(element)![1]),
+    Number(svgAttribute(element, "cx")),
+    Number(svgAttribute(element, "cy")),
   ]
 }
 
 /** The x, y offset of the nested board svg inside the letterboxed picture. */
 function offset(board: string): [number, number] {
-  const nested = /<svg x="([^"]+)" y="([^"]+)"/.exec(board)!
-  return [Number(nested[1]), Number(nested[2])]
+  const [nested] = svgTags(board, '<svg x="')
+  if (!nested) throw new TypeError("Missing nested board SVG")
+  return [Number(svgAttribute(nested, "x")), Number(svgAttribute(nested, "y"))]
 }
 
 /** An overlay pixel position after its root viewBox crop. */
 function project(overlay: string, point: [number, number]): [number, number] {
-  const [, width, height, box] =
-    /<svg[^>]*width="([^"]+)" height="([^"]+)" viewBox="([^"]+)"/.exec(overlay)!
+  const [root] = svgTags(overlay, "<svg")
+  if (!root) throw new TypeError("Missing overlay SVG")
+  const [width, height, box] = ["width", "height", "viewBox"].map((name) =>
+    svgAttribute(root, name),
+  )
   const [x, y, w, h] = box.split(" ").map(Number)
   return [
     ((point[0] - x) * Number(width)) / w,
@@ -67,10 +99,10 @@ test("the real board and the stage drawing share one camera: a via lands on the 
   ]) {
     const picture = boardPicture({ circuit, drawing, width, height })
     const [left, top] = offset(picture.board)
-    const board = centre(picture.board, /data-type="pcb_via"/)
+    const board = centre(picture.board, 'data-type="pcb_via"')
     const overlay = project(
       picture.overlay,
-      centre(picture.overlay, /fill="#ff0000"/),
+      centre(picture.overlay, 'fill="#ff0000"'),
     )
     assert.ok(
       Math.hypot(board[0] + left - overlay[0], board[1] + top - overlay[1]) <

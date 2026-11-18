@@ -171,6 +171,40 @@ interface BoardPictureInput {
   region?: Viewbox
 }
 
+/** Find the camera rect emitted by graphics-debug. */
+function cameraRect(svg: string): string {
+  let start = svg.indexOf("<rect")
+  while (start >= 0) {
+    const end = svg.indexOf(">", start)
+    if (end < 0) break
+    const rect = svg.slice(start, end + 1)
+    if (rect.includes('data-label="camera"')) return rect
+    start = svg.indexOf("<rect", end + 1)
+  }
+  throw new TypeError("Missing SVG camera rect")
+}
+
+/** Read a nonempty numeric attribute from a generated SVG tag. */
+function svgNumber(tag: string, name: string): number {
+  const prefix = ` ${name}="`
+  let index = tag.indexOf(prefix)
+  while (index >= 0) {
+    const start = index + prefix.length
+    const end = tag.indexOf('"', start)
+    if (end < 0) break
+    if (end > start) return Number(tag.slice(start, end))
+    index = tag.indexOf(prefix, end + 1)
+  }
+  throw new TypeError(`Missing SVG attribute ${name}`)
+}
+
+/** Replace the generated SVG root's opening tag. */
+function replaceSvgRoot(svg: string, tag: string): string {
+  const end = svg.indexOf(">")
+  if (!svg.startsWith("<svg") || end < 0) return svg
+  return tag + svg.slice(end + 1)
+}
+
 /**
  * The real board under a stage drawing, both cropped to one camera and letterboxed in width × height.
  * `region` zooms into part of the camera; labels keep their on-screen size.
@@ -216,21 +250,24 @@ export function boardPicture({
     { svgWidth: pictureWidth, svgHeight: pictureHeight, backgroundColor: null },
   )
   // Wherever graphics-debug placed the frame, crop the overlay to it: objects outside the camera never move it.
-  const rect = /<rect[^>]*data-label="camera"[^>]*>/.exec(raw)![0]
+  const rect = cameraRect(raw)
   const [x, y, w, h] = ["x", "y", "width", "height"].map((name) =>
-    Number(new RegExp(` ${name}="([^"]+)"`).exec(rect)![1]),
+    svgNumber(rect, name),
   )
   const unit = w / pictureWidth
-  const overlay = raw.replace(
-    /^<svg[^>]*>/,
+  const overlay = replaceSvgRoot(
+    raw,
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${x - left * unit} ${y - top * unit} ${width * unit} ${height * unit}">`,
   )
-  const board = boardSvg({
+  const svg = boardSvg({
     circuit,
     view,
     width: pictureWidth,
     height: pictureHeight,
-  }).replace(/^<svg /, `<svg x="${left}" y="${top}" `)
+  })
+  const board = svg.startsWith("<svg ")
+    ? `<svg x="${left}" y="${top}" ${svg.slice("<svg ".length)}`
+    : svg
   return {
     board: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="${boardColors.background}"/>${board}</svg>`,
     overlay,

@@ -40,15 +40,93 @@ export interface WaveformState {
   error?: string
 }
 
+const thresholdUnits = new Map([
+  ["k", 1e3],
+  ["K", 1e3],
+  ["m", 1e-3],
+  ["M", 1e-3],
+  ["u", 1e-6],
+  ["U", 1e-6],
+  ["n", 1e-9],
+  ["N", 1e-9],
+  ["p", 1e-12],
+  ["P", 1e-12],
+])
+
+/** Advance over contiguous ASCII digits. */
+function digitEnd(text: string, start: number): number {
+  let end = start
+  while (text[end] >= "0" && text[end] <= "9") end++
+  return end
+}
+
 /** Typical value of an IBIS number with an optional SI suffix (`0.8`, `800m`, `1.2V`). */
 function ibisNumber(text: string): number | undefined {
-  const match = /^([-+]?\d*\.?\d+(?:e[-+]?\d+)?)([kmunp]?)/i.exec(text)
-  if (!match) return undefined
-  return (
-    Number(match[1]) *
-    ({ k: 1e3, m: 1e-3, u: 1e-6, n: 1e-9, p: 1e-12 }[match[2].toLowerCase()] ??
-      1)
-  )
+  const start = text[0] === "+" || text[0] === "-" ? 1 : 0
+  let end = digitEnd(text, start)
+  if (text[end] === ".") {
+    const fraction = digitEnd(text, end + 1)
+    if (fraction > end + 1) end = fraction
+  }
+  if (end === start) return undefined
+  if (text[end] === "e" || text[end] === "E") {
+    let exponent = end + 1
+    if (text[exponent] === "+" || text[exponent] === "-") exponent++
+    const exponentEnd = digitEnd(text, exponent)
+    if (exponentEnd > exponent) end = exponentEnd
+  }
+  return Number(text.slice(0, end)) * (thresholdUnits.get(text[end]) ?? 1)
+}
+
+/** Advance over contiguous whitespace. */
+function skipWhitespace(text: string, start: number): number {
+  let end = start
+  while (end < text.length && text[end].trim() === "") end++
+  return end
+}
+
+/** Find the end of a model name or a typical-value token. */
+function tokenEnd(text: string, start: number): number {
+  let end = start
+  while (end < text.length && text[end].trim() !== "") end++
+  return end
+}
+
+/** Find a case-insensitive keyword at a line start, allowing leading whitespace. */
+function ibisLinePrefix({
+  text,
+  prefix,
+  from,
+}: {
+  text: string
+  prefix: string
+  from: number
+}): { start: number; end: number } | undefined {
+  for (let start = from; start < text.length; start++) {
+    if (start > 0 && !"\r\n\u2028\u2029".includes(text[start - 1])) continue
+    const keyword = skipWhitespace(text, start)
+    const end = keyword + prefix.length
+    if (text.slice(keyword, end).toLowerCase() === prefix) return { start, end }
+    start = keyword
+  }
+  return undefined
+}
+
+/** Find the first section whose initial token is the bound model name. */
+function thresholdModel(text: string, model: string): string | undefined {
+  const name = model.toLowerCase()
+  let start = 0
+  while (true) {
+    const header = ibisLinePrefix({ text, prefix: "[model]", from: start })
+    const end = header?.start ?? text.length
+    if (
+      text.slice(start, Math.min(end, tokenEnd(text, start))).toLowerCase() ===
+      name
+    )
+      return text.slice(start, end)
+    if (!header) return undefined
+    start = skipWhitespace(text, header.end)
+  }
 }
 
 /** One keyword's typical value inside this model's section. */
@@ -56,10 +134,16 @@ function modelThreshold(
   section: string | undefined,
   name: "Vinl" | "Vinh",
 ): number | undefined {
-  return ibisNumber(
-    new RegExp(`^\\s*${name}\\s*=?\\s*(\\S+)`, "im").exec(section ?? "")?.[1] ??
-      "",
-  )
+  if (section === undefined) return undefined
+  const keyword = ibisLinePrefix({
+    text: section,
+    prefix: name.toLowerCase(),
+    from: 0,
+  })
+  if (!keyword) return undefined
+  let start = skipWhitespace(section, keyword.end)
+  if (section[start] === "=") start = skipWhitespace(section, start + 1)
+  return ibisNumber(section.slice(start, tokenEnd(section, start)))
 }
 
 /** Vinl/Vinh of the bound single-ended receiver models, widened across receivers; none for differential receivers or models without them. */
@@ -83,13 +167,9 @@ export function receiverThreshold({
     )
     for (const pin of model.metadata.pins) {
       if (!receivers.has(pin.port)) continue
-      if (/diff/i.test(pin.modelType)) return undefined
-      const section = text
-        ?.split(/^\s*\[Model\]\s*/im)
-        .find(
-          (part) =>
-            part.split(/\s/)[0].toLowerCase() === pin.model.toLowerCase(),
-        )
+      if (pin.modelType.toLowerCase().includes("diff")) return undefined
+      const section =
+        text === undefined ? undefined : thresholdModel(text, pin.model)
       const low = modelThreshold(section, "Vinl")
       const high = modelThreshold(section, "Vinh")
       if (low !== undefined && high !== undefined) found.push({ low, high })
