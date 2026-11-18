@@ -1,0 +1,87 @@
+const subcircuitDirective = ".subckt"
+
+/** Read the subcircuit name from a single unindented SPICE declaration. */
+export function spiceSubcircuitName(line: string): string | undefined {
+  const name = subcircuitNameRange(line, 0)
+  return name && line.slice(name.start, name.end)
+}
+
+/** Find the first unindented subcircuit declaration with a terminal field. */
+export function spiceSubcircuitHeader(
+  source: string,
+): [name: string, terminals: string] | null {
+  for (let start = 0; start < source.length; start++) {
+    if (start > 0 && !isLineBreak(source[start - 1])) continue
+    const name = subcircuitNameRange(source, start)
+    if (!name || source[name.end]?.trim() !== "") continue
+    const terminalStart = skipWhitespace(source, name.end)
+    if (terminalStart === source.length) {
+      // A whitespace-only final field can start after the required separator.
+      for (let i = source.length - 1; i > name.end; i--)
+        if (!isLineBreak(source[i]))
+          return [source.slice(name.start, name.end), source[i]]
+      return null
+    }
+    let end = terminalStart
+    while (end < source.length && !isLineBreak(source[end])) end++
+    return [
+      source.slice(name.start, name.end),
+      source.slice(terminalStart, end),
+    ]
+  }
+  return null
+}
+
+/** Split whitespace-delimited SPICE fields, retaining an empty field for blank input. */
+export function spiceWords(text: string): string[] {
+  const words: string[] = []
+  let start = skipWhitespace(text, 0)
+  while (start < text.length) {
+    const end = skipWord(text, start)
+    words.push(text.slice(start, end))
+    start = skipWhitespace(text, end)
+  }
+  return words.length ? words : [""]
+}
+
+/** Locate the name after an exact directive and a required whitespace separator. */
+function subcircuitNameRange(
+  text: string,
+  start: number,
+): { start: number; end: number } | undefined {
+  const directiveEnd = start + subcircuitDirective.length
+  if (text[directiveEnd]?.trim() !== "") return
+  for (let i = 0; i < subcircuitDirective.length; i++) {
+    const expected = subcircuitDirective[i]
+    if (
+      text[start + i] !== expected &&
+      text[start + i] !== expected.toUpperCase()
+    )
+      return
+  }
+  const nameStart = skipWhitespace(text, directiveEnd)
+  if (nameStart === text.length) return
+  return { start: nameStart, end: skipWord(text, nameStart) }
+}
+
+/** Advance across whitespace recognized by JavaScript's string trimming. */
+function skipWhitespace(text: string, start: number): number {
+  while (start < text.length && text[start].trim() === "") start++
+  return start
+}
+
+/** Advance to the whitespace after a word, or to the end of the string. */
+function skipWord(text: string, start: number): number {
+  while (start < text.length && text[start].trim() !== "") start++
+  return start
+}
+
+/** Recognize all JavaScript line terminators. */
+function isLineBreak(character: string): boolean {
+  return (
+    character === "\n" ||
+    character === "\r" ||
+    character === "\u2028" ||
+    character === "\u2029"
+  )
+}

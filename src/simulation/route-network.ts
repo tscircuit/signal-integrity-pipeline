@@ -15,6 +15,7 @@ import { routedRequest } from "./route-transient"
 import { routeTransitions } from "./route-transitions"
 import { routedControl } from "./routed-control"
 import type { RoutedDeck, RouteNetworkInput } from "./routed-types"
+import { spiceSubcircuitHeader, spiceWords } from "./spice-header"
 
 /** Physical node identity, coupled ladders, corrections and the single deck assembly. */
 export class RouteNetworkSolver extends BaseSolver {
@@ -118,13 +119,10 @@ export class RouteNetworkSolver extends BaseSolver {
     const saved: string[] = []
     for (const [i, model] of models.entries()) {
       const namespaced = namespaceSpice(model.source, `I${i}`)
-      const header = model.source.match(/^\.subckt\s+\S+\s+(.+)$/im)!
-      const nodes = header[1]
-        .trim()
-        .split(/\s+/)
-        .map((terminal) =>
-          routedNode(bindings.nodeMap, model.spicePinMapping[terminal]),
-        )
+      const header = spiceSubcircuitHeader(model.source)!
+      const nodes = spiceWords(header[1]).map((terminal) =>
+        routedNode(bindings.nodeMap, model.spicePinMapping[terminal]),
+      )
       saved.push(
         ...branchSaves({
           source: namespaced.source,

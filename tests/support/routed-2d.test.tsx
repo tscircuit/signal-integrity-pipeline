@@ -17,6 +17,11 @@ import {
 } from "../../src/simulation"
 import { renderCoreSignals } from "./core-render"
 
+/** Normalize coordinate punctuation when deriving synthetic SPICE endpoint names. */
+function endpointName(name: string): string {
+  return name.replaceAll("-", "_").replaceAll(".", "_")
+}
+
 /** Real TSX copper, two parallel routed wires and a reference that changes across x=0. */
 function Board({
   overlap = false,
@@ -294,7 +299,7 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
   const ladder = routeLadder({
     extracted,
     endpoint: (wire, point) =>
-      `n${wire.id}_${point[0]}_${point[1]}`.replace(/[-.]/g, "_"),
+      endpointName(`n${wire.id}_${point[0]}_${point[1]}`),
     riseSeconds: 230e-12,
   })
   assert.ok(ladder.maximumDelaySeconds <= 23e-12)
@@ -306,7 +311,7 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
   const coarse = routeLadder({
     extracted,
     endpoint: (wire, point) =>
-      `n${wire.id}_${point[0]}_${point[1]}`.replace(/[-.]/g, "_"),
+      endpointName(`n${wire.id}_${point[0]}_${point[1]}`),
     riseSeconds: 230e-12,
     refinement: 1,
     cellsPerRise: 2,
@@ -380,7 +385,7 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
   const obliqueLadder = routeLadder({
     extracted: obliqueFields,
     endpoint: (wire, point) =>
-      `n${wire.id}_${point[0]}_${point[1]}`.replace(/[-.]/g, "_"),
+      endpointName(`n${wire.id}_${point[0]}_${point[1]}`),
     riseSeconds: 230e-12,
   })
   const encounters = routeOblique({
@@ -400,8 +405,7 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
     circuit: obliqueCircuit,
     scope: obliqueScope,
     geometry: obliqueGeometry,
-    endpoint: (wire, point) =>
-      `n${wire.id}_${point.join("_")}`.replace(/[-.]/g, "_"),
+    endpoint: (wire, point) => endpointName(`n${wire.id}_${point.join("_")}`),
     groundPort: groundNet.source_net_id,
   })
   assert.ok(
@@ -454,8 +458,7 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
     circuit: viaCircuit,
     scope: viaScope,
     geometry: viaGeometry,
-    endpoint: (wire, point) =>
-      `${wire.layer}_${point.join("_")}`.replace(/[-.]/g, "_"),
+    endpoint: (wire, point) => endpointName(`${wire.layer}_${point.join("_")}`),
     groundPort: "source_net_0",
   })
   assert.equal(

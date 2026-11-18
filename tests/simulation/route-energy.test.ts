@@ -130,7 +130,19 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
     strip: [0, 0, 0],
   })
   assert.equal(
-    lines.filter((line) => / q[abc]\d /.test(line)).length,
+    lines.filter((line) =>
+      line
+        .split(" ")
+        .slice(1, -1)
+        .some(
+          (token) =>
+            token.length === 3 &&
+            token[0] === "q" &&
+            "abc".includes(token[1]) &&
+            token[2] >= "0" &&
+            token[2] <= "9",
+        ),
+    ).length,
     0,
     "no conductor-wall chain without a share",
   )
@@ -189,11 +201,11 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
         )
     }
     for (const [node, value] of residual) {
-      const expected = /^[abc]$/.test(node)
-        ? currents["abc".indexOf(node)]
-        : /^[abc]8$/.test(node)
-          ? -currents["abc".indexOf(node[0])]
-          : 0
+      const index = node.length ? "abc".indexOf(node[0]) : -1
+      let expected = 0
+      if (index !== -1 && node.length === 1) expected = currents[index]
+      if (index !== -1 && node.length === 2 && node[1] === "8")
+        expected = -currents[index]
       if (node !== "0")
         assert.ok(
           Math.hypot(value[0] - expected, value[1]) < 1e-12,

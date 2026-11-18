@@ -36,13 +36,15 @@ test("actual routed TSX exceeds the old 1024-cell cap with locally supported cou
     "actual TSX copper exercises coupled Foster resistance",
   )
   assert.equal(
-    result.lines.filter((line) => /^[VH]ARCS/.test(line)).length,
+    result.lines.filter(
+      (line) => line.startsWith("VARCS") || line.startsWith("HARCS"),
+    ).length,
     0,
     "tiny Foster voltages must not be differences along sensor/CCVS chains",
   )
   assert.ok(
     result.lines
-      .filter((line) => /^RARCS/.test(line))
+      .filter((line) => line.startsWith("RARCS"))
       .every((line) => line.split(" ")[2] !== "0" || line.endsWith(" 1")),
     "coupled resistance equations have unit diagonal",
   )
