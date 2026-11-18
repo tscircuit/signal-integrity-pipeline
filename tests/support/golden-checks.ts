@@ -122,6 +122,56 @@ export function energyFacts(matrix: Matrix): EnergyFacts {
   }
 }
 
+/** The relative floating-point tolerance for energy-matrix symmetry and loss eigenvalues. */
+const MATRIX_TOLERANCE = 1e-12
+/** Allow tiny negative Maxwell row sums introduced by floating-point reduction. */
+const MAXWELL_ROW_SUM_TOLERANCE = 1e-9
+/** Below and at 50 MHz the interpolation of the conductor crossover has a wider error band. */
+const CROSSOVER_BAND_LIMIT_HZ = 5e7
+const CROSSOVER_ERROR = 0.1
+const HIGH_FREQUENCY_ERROR = 0.05
+
+/** Positive definite energy matrix with every pairwise coupling strictly below one. */
+export function isPositiveDefinite(facts: EnergyFacts): boolean {
+  return (
+    facts.asymmetry <= MATRIX_TOLERANCE &&
+    facts.minimumEigenvalue > 0 &&
+    facts.coupling < 1
+  )
+}
+
+/** Grounded Maxwell capacitance with nonnegative row sums and the requested off-diagonal bound. */
+export function isGroundedMaxwell(
+  facts: MaxwellFacts,
+  strictOffDiagonalLimit?: number,
+): boolean {
+  let validOffDiagonal = facts.maximumOffDiagonal <= 0
+  if (strictOffDiagonalLimit !== undefined)
+    validOffDiagonal = facts.maximumOffDiagonal < strictOffDiagonalLimit
+  return (
+    facts.minimumDiagonal > 0 &&
+    validOffDiagonal &&
+    facts.minimumRowSum >= -MAXWELL_ROW_SUM_TOLERANCE
+  )
+}
+
+/** Positive semidefinite loss matrix to floating-point tolerance, with nonnegative diagonal. */
+export function hasNonnegativeLoss(
+  matrix: readonly (readonly number[])[],
+  facts: EnergyFacts,
+): boolean {
+  const minimum = -MATRIX_TOLERANCE * Math.abs(facts.maximumEigenvalue)
+  return (
+    matrix.every((row, i) => row[i] >= 0) && facts.minimumEigenvalue >= minimum
+  )
+}
+
+/** Relative tolerance for the ladder or field solver against the filament reference. */
+export function conductorLossTolerance(frequency: number): number {
+  if (frequency <= CROSSOVER_BAND_LIMIT_HZ) return CROSSOVER_ERROR
+  return HIGH_FREQUENCY_ERROR
+}
+
 /** Extremal entries and relative row sum for a Maxwell (grounded) capacitance matrix. */
 interface MaxwellFacts {
   minimumDiagonal: number
@@ -219,7 +269,7 @@ export async function runGoldenDeck(deck: string): Promise<number[][]> {
     args: ["-n", "-b", "golden.cir"],
     outputFiles: ["golden.dat"],
   })
-  const diagnostic = goldenDiagnostic(output.stdout + "\n" + output.stderr)
+  const diagnostic = goldenDiagnostic(`${output.stdout}\n${output.stderr}`)
   if (diagnostic) throw new Error(`ngspice: ${diagnostic}`)
   const text = output.files["golden.dat"]
   if (!text) throw new Error("ngspice wrote no golden.dat")
@@ -236,12 +286,11 @@ export function valueAt(
   for (let i = 1; i < rows.length; i++)
     if (rows[i][0] >= time) {
       const span = rows[i][0] - rows[i - 1][0]
-      return span
-        ? rows[i - 1][column] +
-            ((rows[i][column] - rows[i - 1][column]) *
-              (time - rows[i - 1][0])) /
-              span
-        : rows[i][column]
+      if (!span) return rows[i][column]
+      const before = rows[i - 1][column]
+      const change = rows[i][column] - before
+      const elapsed = time - rows[i - 1][0]
+      return before + (change * elapsed) / span
     }
   return rows.at(-1)![column]
 }
@@ -278,7 +327,10 @@ export interface FilamentLine {
   planeThicknessM: number
   conductivity: number
 }
-/** Cells per strip: `x` across the width and `z` through the thickness (both even), geometric growth away from the faces. */
+/**
+ * Cells per strip: `x` across the width and `z` through the thickness (both even), geometric growth away from
+ * the faces.
+ */
 export interface FilamentCells {
   x: number
   z: number
@@ -338,7 +390,7 @@ function meanLogDistance(a: FilamentCell, c: FilamentCell): number {
   for (const [ax, sa] of [
     [a.x0, 1],
     [a.x1, -1],
-  ])
+  ]) {
     for (const [cx, sc] of [
       [c.x0, 1],
       [c.x1, -1],
@@ -346,23 +398,30 @@ function meanLogDistance(a: FilamentCell, c: FilamentCell): number {
       for (const [az, ta] of [
         [a.z0, 1],
         [a.z1, -1],
-      ])
+      ]) {
         for (const [cz, tc] of [
           [c.z0, 1],
           [c.z1, -1],
-        ])
+        ]) {
           total += sa * sc * ta * tc * logPrimitive(ax - cx, az - cz)
+        }
+      }
     }
+  }
   return total / ((a.x1 - a.x0) * (a.z1 - a.z0) * (c.x1 - c.x0) * (c.z1 - c.z0))
+}
+
+/** Matrix with its real and imaginary rows stored separately. */
+interface ComplexRows {
+  re: Float64Array[]
+  im: Float64Array[]
 }
 
 /** Complex Gaussian elimination of A X = B (A n x n, B n x m, split real/imaginary rows, overwritten); returns X. */
 function complexSolve(
-  re: Float64Array[],
-  im: Float64Array[],
-  bre: Float64Array[],
-  bim: Float64Array[],
-): { re: Float64Array[]; im: Float64Array[] } {
+  { re, im }: ComplexRows,
+  { re: bre, im: bim }: ComplexRows,
+): ComplexRows {
   const n = re.length
   const m = bre[0].length
   for (let k = 0; k < n; k++) {
@@ -388,7 +447,7 @@ function complexSolve(
   }
   const xre = bre.map(() => new Float64Array(m))
   const xim = bre.map(() => new Float64Array(m))
-  for (let k = n - 1; k >= 0; k--)
+  for (let k = n - 1; k >= 0; k--) {
     for (let j = 0; j < m; j++) {
       let sr = bre[k][j]
       let si = bim[k][j]
@@ -400,7 +459,29 @@ function complexSolve(
       xre[k][j] = (sr * re[k][k] + si * im[k][k]) / pivot
       xim[k][j] = (si * re[k][k] - sr * im[k][k]) / pivot
     }
+  }
   return { re: xre, im: xim }
+}
+
+/** Frequency sweep and optional mesh for the independent filament reference. */
+interface FilamentSweep {
+  frequencies: number[]
+  cells?: FilamentCells
+}
+
+/** Series resistance and inductance per metre at one frequency. */
+interface FilamentImpedancePoint {
+  frequency: number
+  R: number[][]
+  L: number[][]
+}
+
+/** Mesh density and grading for the default reference calculation. */
+const DEFAULT_FILAMENT_CELLS: FilamentCells = {
+  x: 48,
+  z: 20,
+  xRatio: 1.13,
+  zRatio: 1.3,
 }
 
 /**
@@ -416,14 +497,18 @@ function complexSolve(
  */
 export function filamentImpedance(
   line: FilamentLine,
-  frequencies: number[],
-  cells: FilamentCells = { x: 48, z: 20, xRatio: 1.13, zRatio: 1.3 },
-): { frequency: number; R: number[][]; L: number[][] }[] {
+  sweep: FilamentSweep,
+): FilamentImpedancePoint[] {
+  const { frequencies, cells = DEFAULT_FILAMENT_CELLS } = sweep
   const mu0 = 1.25663706212e-6
   const b = line.spacingM
   const p = Math.PI / b
   const count = line.strips.length
-  const parts: (FilamentCell & { x: number; z: number; strip: number })[] = []
+  const parts: (FilamentCell & {
+    x: number
+    z: number
+    strip: number
+  })[] = []
   for (const [k, strip] of line.strips.entries()) {
     const xs = gradedEdges(strip.widthM, cells.x, cells.xRatio).map(
       (x) => x + strip.xM - strip.widthM / 2,
@@ -431,7 +516,7 @@ export function filamentImpedance(
     const zs = gradedEdges(strip.thicknessM, cells.z, cells.zRatio).map(
       (z) => z + strip.bottomM,
     )
-    for (let i = 0; i < cells.x; i++)
+    for (let i = 0; i < cells.x; i++) {
       for (let j = 0; j < cells.z; j++) {
         parts.push({
           x0: xs[i],
@@ -443,12 +528,19 @@ export function filamentImpedance(
           strip: k,
         })
       }
+    }
   }
   const n = parts.length
   /** Image sum minus the free-space singularity, finite as r -> 0. */
   const images = (
-    a: { x: number; z: number },
-    c: { x: number; z: number },
+    a: {
+      x: number
+      z: number
+    },
+    c: {
+      x: number
+      z: number
+    },
   ): number => {
     const r2 = (a.x - c.x) ** 2 + (a.z - c.z) ** 2
     const near =
@@ -462,13 +554,14 @@ export function filamentImpedance(
     )
   }
   const inductance = parts.map(() => new Float64Array(n))
-  for (let i = 0; i < n; i++)
+  for (let i = 0; i < n; i++) {
     for (let j = i; j < n; j++) {
       inductance[i][j] =
         (-mu0 / (2 * Math.PI)) * meanLogDistance(parts[i], parts[j]) +
         images(parts[i], parts[j])
       inductance[j][i] = inductance[i][j]
     }
+  }
   const step = b / 200
   const centre = line.strips.reduce((sum, strip) => sum + strip.xM, 0) / count
   const samples = Array.from(
@@ -477,41 +570,41 @@ export function filamentImpedance(
   )
   return frequencies.map((frequency) => {
     const omega = 2 * Math.PI * frequency
-    const re = parts.map((part, i) =>
-      Float64Array.from({ length: n }, (_, j) =>
-        i === j
-          ? 1 / (line.conductivity * (part.x1 - part.x0) * (part.z1 - part.z0))
-          : 0,
-      ),
-    )
+    const re = parts.map((part, i) => {
+      const width = part.x1 - part.x0
+      const thickness = part.z1 - part.z0
+      const resistance = 1 / (line.conductivity * width * thickness)
+      return Float64Array.from({ length: n }, (_, j) =>
+        i === j ? resistance : 0,
+      )
+    })
     const im = inductance.map((row) => row.map((value) => omega * value))
     // Unit longitudinal field on strip k only: cell currents Y = Zf^-1 E, strip currents M = E^T Y, impedance M^-1.
     const field = parts.map((part) =>
       Float64Array.from({ length: count }, (_, k) => Number(part.strip === k)),
     )
+    const imaginaryField = parts.map(() => new Float64Array(count))
     const admittance = complexSolve(
-      re,
-      im,
-      field,
-      parts.map(() => new Float64Array(count)),
+      { re, im },
+      { re: field, im: imaginaryField },
     )
     const sums = {
       re: line.strips.map(() => new Float64Array(count)),
       im: line.strips.map(() => new Float64Array(count)),
     }
-    for (const [i, part] of parts.entries())
+    for (const [i, part] of parts.entries()) {
       for (let k = 0; k < count; k++) {
         sums.re[part.strip][k] += admittance.re[i][k]
         sums.im[part.strip][k] += admittance.im[i][k]
       }
-    const impedance = complexSolve(
-      sums.re,
-      sums.im,
-      line.strips.map((_, i) =>
+    }
+    const identity = {
+      re: line.strips.map((_, i) =>
         Float64Array.from({ length: count }, (_, j) => Number(i === j)),
       ),
-      line.strips.map(() => new Float64Array(count)),
-    )
+      im: line.strips.map(() => new Float64Array(count)),
+    }
+    const impedance = complexSolve(sums, identity)
     // Cell currents for unit strip currents: Y M^-1.
     const current = parts.map((_, i) =>
       line.strips.map((_, l) => {
@@ -545,7 +638,7 @@ export function filamentImpedance(
       im: line.strips.map(() => Array(count).fill(0)),
     }
     const sheet = line.strips.map(() => [0, 0])
-    for (const x of samples)
+    for (const x of samples) {
       for (const top of [false, true]) {
         for (const entry of sheet) entry.fill(0)
         for (const [i, part] of parts.entries()) {
@@ -558,14 +651,16 @@ export function filamentImpedance(
             sheet[l][1] += current[i][l][1] * kernel
           }
         }
-        for (let k = 0; k < count; k++)
+        for (let k = 0; k < count; k++) {
           for (let l = 0; l < count; l++) {
             const r = sheet[k][0] * sheet[l][0] + sheet[k][1] * sheet[l][1]
             const s = sheet[k][0] * sheet[l][1] - sheet[k][1] * sheet[l][0]
             plane.re[k][l] += (surfaceRe * r - surfaceIm * s) * step
             plane.im[k][l] += (surfaceRe * s + surfaceIm * r) * step
           }
+        }
       }
+    }
     const R = line.strips.map((_, k) =>
       line.strips.map(
         (_, l) =>
