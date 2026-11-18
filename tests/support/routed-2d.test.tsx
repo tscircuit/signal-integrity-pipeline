@@ -4,10 +4,11 @@ import type React from "react"
 import {
   type CircuitJson,
   channelCopperScope,
-  connectedSourceIds,
+  getSourcePortConnectivityMapFromCircuitJson,
   routeContactFrame,
   routeReferences,
   segmentRoutes,
+  sourceNetMembers,
 } from "../../src/board"
 import { RouteFieldsSolver, referenceSeries } from "../../src/extraction"
 import {
@@ -240,10 +241,12 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
   const groundNet = circuit
     .filter((record) => record.type === "source_net")
     .find((record) => record.name === "GND")!
-  const ground = connectedSourceIds(circuit, groundNet.source_net_id)
+  const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
+  const ground = sourceNetMembers(connectivity, groundNet.source_net_id)
   const scope = channelCopperScope({
     circuit,
-    selected: connectedSourceIds(circuit, port.source_port_id),
+    connectivity,
+    selected: sourceNetMembers(connectivity, port.source_port_id),
     reference: ground,
   })
   const geometry = segmentRoutes(circuit, scope)
@@ -330,11 +333,14 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
     /Cells per rise/,
   )
   const mergedCircuit = await renderCoreSignals(<Board overlap />)
+  const mergedConnectivity =
+    getSourcePortConnectivityMapFromCircuitJson(mergedCircuit)
   const merged = segmentRoutes(
     mergedCircuit,
     channelCopperScope({
       circuit: mergedCircuit,
-      selected: connectedSourceIds(mergedCircuit, port.source_port_id),
+      connectivity: mergedConnectivity,
+      selected: sourceNetMembers(mergedConnectivity, port.source_port_id),
       reference: ground,
     }),
   )
@@ -360,9 +366,12 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
     ),
   )
   const obliqueCircuit = await renderCoreSignals(<Board oblique />)
+  const obliqueConnectivity =
+    getSourcePortConnectivityMapFromCircuitJson(obliqueCircuit)
   const obliqueScope = channelCopperScope({
     circuit: obliqueCircuit,
-    selected: connectedSourceIds(obliqueCircuit, port.source_port_id),
+    connectivity: obliqueConnectivity,
+    selected: sourceNetMembers(obliqueConnectivity, port.source_port_id),
     reference: ground,
   })
   const obliqueGeometry = segmentRoutes(obliqueCircuit, obliqueScope)
@@ -431,10 +440,13 @@ test("TSX routed 2D preserves nearby conductors, changes actual reference and ca
   const viaSource = viaCircuit.find(
     (record) => record.type === "source_trace",
   )! as Extract<(typeof viaCircuit)[number], { type: "source_trace" }>
+  const viaConnectivity =
+    getSourcePortConnectivityMapFromCircuitJson(viaCircuit)
   const viaScope = channelCopperScope({
     circuit: viaCircuit,
-    selected: connectedSourceIds(
-      viaCircuit,
+    connectivity: viaConnectivity,
+    selected: sourceNetMembers(
+      viaConnectivity,
       viaSource.connected_source_port_ids[0],
     ),
     reference: ground,

@@ -1,7 +1,7 @@
 import {
   type CircuitJson,
   type CopperScope,
-  connectedSourceIds,
+  getSourcePortConnectivityMapFromCircuitJson,
   type RouteReference,
   type RouteWire,
   type RouteXY,
@@ -9,6 +9,7 @@ import {
   routeContactFrame,
   routeReferences,
   type SectionGeometry,
+  sourceNetMembers,
 } from "../board"
 import { type Matrix, validateMatrix } from "../extraction"
 
@@ -209,7 +210,8 @@ export function routeTransitions({
 }): RouteTransitions {
   const output: RouteTransitions = { lines: [], records: [], warnings: [] }
   const layers = geometry.stack.copperLayers
-  const ground = connectedSourceIds(circuit, groundPort)
+  const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
+  const ground = sourceNetMembers(connectivity, groundPort)
   const sources = circuit.filter((record) => record.type === "source_trace")
   const groundVias = circuit
     .filter((record) => record.type === "pcb_via")

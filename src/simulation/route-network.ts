@@ -1,10 +1,11 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import {
-  connectedSourceIds,
+  getSourcePortConnectivityMapFromCircuitJson,
   type RouteWire,
   type RouteXY,
   routeContactFrame,
   routePosition,
+  sourceNetMembers,
 } from "../board"
 import { type Produced, rootScope, sha256, snapshot } from "../kernel"
 import { branchSaves } from "./branch-saves"
@@ -193,10 +194,10 @@ export class RouteNetworkSolver extends BaseSolver {
         duration: options.durationSeconds,
       }),
     )
-    const ground = connectedSourceIds(
+    const connectivity = getSourcePortConnectivityMapFromCircuitJson(
       bindings.circuitJson,
-      bindings.groundSourcePortId,
     )
+    const ground = sourceNetMembers(connectivity, bindings.groundSourcePortId)
     const powerReferences = geometry.slices.flatMap((slice) =>
       slice.references
         .filter((plane) => !ground.has(plane.net))
