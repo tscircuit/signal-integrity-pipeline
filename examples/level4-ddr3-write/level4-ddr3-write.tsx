@@ -1,4 +1,5 @@
 import { simulation } from "@tscircuit/core"
+import type { SimulationIbisModelProps, TraceProps } from "@tscircuit/props"
 import React from "react"
 import { cpuFootprint, dramFootprint } from "../ddr3-parts"
 import { routes } from "./routes"
@@ -31,7 +32,16 @@ const dramPins = {
   A1: "VDDQ",
   B1: "VSSQ",
 }
-const references = (balls: string[], high: string, low: string) =>
+/** Reference port labels indexed by IBIS ball name. */
+type IbisReferencePortLabels = NonNullable<
+  SimulationIbisModelProps["ibisPinNameToReferencePortLabels"]
+>
+
+const references = (
+  balls: string[],
+  high: string,
+  low: string,
+): IbisReferencePortLabels =>
   Object.fromEntries(
     balls.map((ball) => [
       ball,
@@ -39,7 +49,12 @@ const references = (balls: string[], high: string, low: string) =>
     ]),
   )
 
-const route = (key: string) => ({
+/** The trace props supplied by a saved copper route. */
+type SavedRouteProps = Required<
+  Pick<TraceProps, "pcbPathRelativeTo" | "thickness" | "pcbPaths">
+>
+
+const route = (key: string): SavedRouteProps => ({
   pcbPathRelativeTo: routes[key].anchor,
   thickness: routes[key].width,
   pcbPaths: routes[key].paths.map((path) =>
