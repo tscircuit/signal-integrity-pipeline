@@ -125,11 +125,11 @@ test("two-trace TSX route-network visual SVG snapshot", async () => {
 
 test("rejected network drawing retains physical context and shows its red reason", async () => {
   const { root } = await routedVisualFixture()
-  const params = root
-    .getSolver<RoutedStageSolver<RouteNetworkInput, RoutedDeck>>(
+  const stage =
+    root.getSolver<RoutedStageSolver<RouteNetworkInput, RoutedDeck>>(
       "RouteNetworkSolver",
     )!
-    .getConstructorParams()[0][0]
+  const [[params]] = stage.getConstructorParams()
   const rejected = new RouteNetworkSolver(params)
   // Drawing-only failure state; the real DDR render separately exercises the 1,024-cell admission gate.
   rejected.failed = true

@@ -38,7 +38,7 @@ const probes = [
   { name: "VICTIM", sourcePortId: "victim", near: true },
 ]
 
-test("waveform pane: one colour per probe, near ends dashed underneath, a threshold band and noise-free round ticks", () => {
+test("waveform pane draws probe colors, dashed drivers, thresholds and round ticks", () => {
   const original = structuredClone(capture)
   const drawing = routeWaveformDrawing({
     probes,
@@ -67,14 +67,22 @@ test("waveform pane: one colour per probe, near ends dashed underneath, a thresh
     "no floating-point noise in labels",
   )
   assert.deepEqual(
-    roundTicks({ low: -0.55, high: 0.2, count: 5 }).map((tick) => tick.text),
+    roundTicks({
+      low: -0.55,
+      high: 0.2,
+      count: 5,
+    }).map((tick) => tick.text),
     ["-0.4", "-0.2", "0.0", "0.2"],
   )
 })
 
-test("pending, running and failed captures draw empty axes, an amber hatch and a red reason, never invented curves", () => {
+test("pending, running and failed captures draw status and empty axes", () => {
   assertRouteVisual(
-    routeWaveformDrawing({ probes, durationSeconds: 1e-9, running: false }),
+    routeWaveformDrawing({
+      probes,
+      durationSeconds: 1e-9,
+      running: false,
+    }),
     "simulation",
     "waveform-visual-pending",
   )
@@ -99,7 +107,7 @@ test("pending, running and failed captures draw empty axes, an amber hatch and a
   assert.equal(failed.lines!.filter((line) => line.label === "DATA").length, 0)
 })
 
-test("a long capture folds into an eye spanning two unit intervals at the channel bit period; above six probes an envelope keeps one worst curve", async () => {
+test("long captures fold into a two-unit-interval eye and crowded plots draw an envelope", async () => {
   const { root } = await routedVisualFixture()
   const board = root.stageOutput("RouteSectionsSolver").value[0]
   const ports = root
@@ -123,13 +131,18 @@ test("a long capture folds into an eye spanning two unit intervals at the channe
     eye.lines!.filter((line) => line.layer === "waveform").length > 10,
     "one run per fold",
   )
-  const many = Array.from({ length: 8 }, (_, i) => ({
-    name: `N${i}`,
-    sourcePortId: `n${i}`,
-    voltageLevels: capture.probes[0].voltageLevels.map(
-      (value) => value + i * 0.01 + (i === 5 ? 1 : 0),
-    ),
-  }))
+  const many = Array.from(
+    {
+      length: 8,
+    },
+    (_, i) => ({
+      name: `N${i}`,
+      sourcePortId: `n${i}`,
+      voltageLevels: capture.probes[0].voltageLevels.map(
+        (value) => value + i * 0.01 + (i === 5 ? 1 : 0),
+      ),
+    }),
+  )
   const envelope = routeWaveformDrawing({
     probes: many.map((probe) => ({ ...probe, near: false })),
     capture: { ...capture, probes: many },
@@ -171,7 +184,10 @@ test("receiver thresholds come from the bound IBIS models of single-ended receiv
       models: [model("Input")],
       receivers: new Set(["rx"]),
     }),
-    { low: 0.8, high: 2 },
+    {
+      low: 0.8,
+      high: 2,
+    },
   )
   assert.equal(
     receiverThreshold({

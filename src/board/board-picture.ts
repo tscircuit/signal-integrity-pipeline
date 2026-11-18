@@ -61,19 +61,17 @@ function drawingBounds(circuit: CircuitJson, drawing: GraphicsObject): Viewbox {
     (
       ["lines", "rects", "circles", "polygons", "points", "texts"] as const
     ).some((key) => drawing[key]?.length)
-  )
+  ) {
     return getBounds(drawing)
+  }
   return routeBoardBox(circuit)
 }
 
 /** A point with numeric x and y. */
 function isPoint(item: unknown): item is Point {
-  return (
-    typeof item === "object" &&
-    item !== null &&
-    typeof (item as { x?: unknown }).x === "number" &&
-    typeof (item as { y?: unknown }).y === "number"
-  )
+  if (typeof item !== "object" || item === null) return false
+  const { x, y } = item as Partial<Point>
+  return typeof x === "number" && typeof y === "number"
 }
 
 /** Every coordinate a record carries, whatever its shape. */
@@ -89,7 +87,10 @@ function recordPoints(record: object): Point[] {
 type CameraKey = string
 const crops = new WeakMap<CircuitJson, Map<CameraKey, CircuitJson>>()
 
-/** Only records near the camera reach circuit-to-svg, and silkscreen text never does, so the board layer stays small and wordless. */
+/**
+ * Only records near the camera reach circuit-to-svg, and silkscreen text never does, so the board layer stays
+ * small and wordless.
+ */
 function cropCircuit(circuit: CircuitJson, view: Viewbox): CircuitJson {
   const key = JSON.stringify(view)
   const cache = crops.get(circuit) ?? new Map<CameraKey, CircuitJson>()
@@ -107,16 +108,16 @@ function cropCircuit(circuit: CircuitJson, view: Viewbox): CircuitJson {
         !record.type.startsWith("pcb_") ||
         record.type === "pcb_board" ||
         record.type === "pcb_copper_pour"
-      )
+      ) {
         return true
+      }
       const box = routeBounds(recordPoints(record))
-      return (
-        !box ||
-        (box.maxX >= view.minX - margin &&
-          box.minX <= view.maxX + margin &&
-          box.maxY >= view.minY - margin &&
-          box.minY <= view.maxY + margin)
-      )
+      if (!box) return true
+      const overlapsX =
+        box.maxX >= view.minX - margin && box.minX <= view.maxX + margin
+      const overlapsY =
+        box.maxY >= view.minY - margin && box.minY <= view.maxY + margin
+      return overlapsX && overlapsY
     })
   cache.set(key, cropped)
   if (cache.size > 6) cache.delete(cache.keys().next().value!)
@@ -202,7 +203,7 @@ function svgNumber(tag: string, name: string): number {
 function replaceSvgRoot(svg: string, tag: string): string {
   const end = svg.indexOf(">")
   if (!svg.startsWith("<svg") || end < 0) return svg
-  return tag + svg.slice(end + 1)
+  return `${tag}${svg.slice(end + 1)}`
 }
 
 /**
@@ -255,9 +256,16 @@ export function boardPicture({
     svgNumber(rect, name),
   )
   const unit = w / pictureWidth
+  const dimensions = svgDimensions(width, height)
+  const overlayBox = [
+    x - left * unit,
+    y - top * unit,
+    width * unit,
+    height * unit,
+  ].join(" ")
   const overlay = replaceSvgRoot(
     raw,
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${x - left * unit} ${y - top * unit} ${width * unit} ${height * unit}">`,
+    `<svg ${dimensions} viewBox="${overlayBox}">`,
   )
   const svg = boardSvg({
     circuit,
@@ -265,13 +273,19 @@ export function boardPicture({
     width: pictureWidth,
     height: pictureHeight,
   })
-  const board = svg.startsWith("<svg ")
-    ? `<svg x="${left}" y="${top}" ${svg.slice("<svg ".length)}`
-    : svg
+  let board = svg
+  if (svg.startsWith("<svg "))
+    board = `<svg x="${left}" y="${top}" ${svg.slice("<svg ".length)}`
+  const background = `<rect width="${width}" height="${height}" fill="${boardColors.background}"/>`
   return {
-    board: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="${boardColors.background}"/>${board}</svg>`,
+    board: `<svg ${dimensions}>${background}${board}</svg>`,
     overlay,
   }
+}
+
+/** SVG root attributes shared by both layers and the composed picture. */
+function svgDimensions(width: number, height: number): string {
+  return `xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"`
 }
 
 /** Both layers as one standalone SVG, for PNG renders and snapshots. */
@@ -281,6 +295,12 @@ export function boardPictureSvg({
   width,
   height,
 }: Omit<BoardPictureInput, "region">): string {
-  const picture = boardPicture({ circuit, drawing, width, height })
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${picture.board}${picture.overlay}</svg>`
+  const picture = boardPicture({
+    circuit,
+    drawing,
+    width,
+    height,
+  })
+  const dimensions = svgDimensions(width, height)
+  return `<svg ${dimensions} viewBox="0 0 ${width} ${height}">${picture.board}${picture.overlay}</svg>`
 }

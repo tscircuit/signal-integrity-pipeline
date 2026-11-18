@@ -221,7 +221,7 @@ test("live stage uses the shared waveform atlas for completed samples and failur
     0,
     "no curves before ngspice returns",
   )
-  const failed = solver(response(undefined, undefined, "fatal: rejected"))
+  const failed = solver(response({ stdout: "fatal: rejected" }))
   await assert.rejects(failed.solveAsync(), /fatal/)
   assert.ok(
     failed

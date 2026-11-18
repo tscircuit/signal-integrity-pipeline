@@ -117,7 +117,10 @@ export interface FieldsState {
   error?: string
 }
 
-/** The selected copper coloured by solved Z0, an amber cut at the slice on screen, and its to-scale stack in the pane. */
+/**
+ * The selected copper coloured by solved Z0, an amber cut at the slice on screen, and its to-scale stack in
+ * the pane.
+ */
 export function fieldsDrawing(state: FieldsState): GraphicsObject {
   const { geometry, circuitJson, scope } = state
   let view: RouteView | undefined
@@ -127,10 +130,20 @@ export function fieldsDrawing(state: FieldsState): GraphicsObject {
     routeFrame(
       routeBounds(
         geometry.wires.flatMap((wire) => [wire.a, wire.b].map(drawingPoint)),
-      ) ?? { minX: 0, maxX: 1, minY: 0, maxY: 1 },
+      ) ?? {
+        minX: 0,
+        maxX: 1,
+        minY: 0,
+        maxY: 1,
+      },
     )
   const drawing = routeCanvas(frame)
-  drawCopper({ drawing, geometry, circuitJson, view })
+  drawCopper({
+    drawing,
+    geometry,
+    circuitJson,
+    view,
+  })
   const impedances = state.solved.flatMap((slice) =>
     slice.wires.flatMap((wire, i) => {
       if (view && !view.traces.has(wire.trace)) return []
@@ -163,8 +176,21 @@ export function fieldsDrawing(state: FieldsState): GraphicsObject {
   let edge: string | undefined
   if (state.error) edge = routeTones.failure
   routePane({ drawing, box: frame.pane, edge })
-  drawSlice({ drawing, state, frame, view, low, high })
-  if (impedances.length) impedanceBar({ drawing, pane: frame.pane, low, high })
+  drawSlice({
+    drawing,
+    state,
+    frame,
+    view,
+    low,
+    high,
+  })
+  if (impedances.length)
+    impedanceBar({
+      drawing,
+      pane: frame.pane,
+      low,
+      high,
+    })
   if (state.error)
     routeFailure({ drawing, box: frame.pane, message: state.error })
   return drawing
@@ -224,7 +250,10 @@ function drawSlice({
   })
 }
 
-/** An amber band across the slice's conductors at its midpoint, at least a few camera units long so it reads at any zoom. */
+/**
+ * An amber band across the slice's conductors at its midpoint, at least a few camera units long so it reads at
+ * any zoom.
+ */
 function sliceCut({
   drawing,
   slice,
@@ -246,7 +275,13 @@ function sliceCut({
     [-half, high],
   ].map(([offset, transverse]) =>
     drawingPoint(
-      routePosition({ ...slice.wires[0], transverse }, middle + offset),
+      routePosition(
+        {
+          ...slice.wires[0],
+          transverse,
+        },
+        middle + offset,
+      ),
     ),
   )
   drawing.polygons!.push({
@@ -261,7 +296,15 @@ function sliceCut({
 /** One stack axis in pane coordinates, using the common millimetre scale. */
 function paneCoordinate(
   mm: number,
-  { center, origin, scale }: { center: number; origin: number; scale: number },
+  {
+    center,
+    origin,
+    scale,
+  }: {
+    center: number
+    origin: number
+    scale: number
+  },
 ): number {
   return center + (mm - origin) * scale
 }
@@ -280,13 +323,21 @@ function bandArc({
   rise: number
   offset: number
 }): Point[] {
-  return Array.from({ length: 17 }, (_, t) => ({
-    x: from + ((to - from) * t) / 16,
-    y: top + (rise + offset) * Math.sin((Math.PI * t) / 16),
-  }))
+  return Array.from(
+    {
+      length: 17,
+    },
+    (_, t) => ({
+      x: from + ((to - from) * t) / 16,
+      y: top + (rise + offset) * Math.sin((Math.PI * t) / 16),
+    }),
+  )
 }
 
-/** The cross-section at one uniform mm scale: laminate tan, mask green, planes copper, conductors coloured, coupling bands over the top. */
+/**
+ * The cross-section at one uniform mm scale: laminate tan, mask green, planes copper, conductors coloured,
+ * coupling bands over the top.
+ */
 function stackPane({
   drawing,
   pane,
@@ -298,7 +349,10 @@ function stackPane({
   drawing: GraphicsObject
   pane: Viewbox
   section: CrossSection
-  conductorDisplay: { color: string; label?: string }[]
+  conductorDisplay: {
+    color: string
+    label?: string
+  }[]
   line?: RouteCoefficients
   materials: RouteMaterials
 }): void {
@@ -396,8 +450,20 @@ function stackPane({
       .sort((p, q) => p - q)
     const rise = Math.min(unit * 8, (to - from) * 0.4) + unit
     const thickness = unit * (0.3 + 3 * Math.sqrt(Math.min(pair.k, 1)))
-    const upper = bandArc({ from, to, top, rise, offset: thickness / 2 })
-    const lower = bandArc({ from, to, top, rise, offset: -thickness / 2 })
+    const upper = bandArc({
+      from,
+      to,
+      top,
+      rise,
+      offset: thickness / 2,
+    })
+    const lower = bandArc({
+      from,
+      to,
+      top,
+      rise,
+      offset: -thickness / 2,
+    })
     drawing.polygons!.push({
       points: [...upper, ...lower.reverse()],
       fill: routeTones.coupling,

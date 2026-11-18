@@ -71,7 +71,7 @@ function project(overlay: string, point: [number, number]): [number, number] {
   ]
 }
 
-test("the real board and the stage drawing share one camera: a via lands on the same pixel in both layers", async () => {
+test("the board and stage overlay place a via at the same pixel", async () => {
   const { root } = await routedVisualFixture()
   const circuit = root.inputProblem.circuitJson
   const via = circuit.find((record) => record.type === "pcb_via")!
@@ -97,7 +97,12 @@ test("the real board and the stage drawing share one camera: a via lands on the 
     [1200, 500],
     [500, 900],
   ]) {
-    const picture = boardPicture({ circuit, drawing, width, height })
+    const picture = boardPicture({
+      circuit,
+      drawing,
+      width,
+      height,
+    })
     const [left, top] = offset(picture.board)
     const board = centre(picture.board, 'data-type="pcb_via"')
     const overlay = project(
@@ -112,7 +117,7 @@ test("the real board and the stage drawing share one camera: a via lands on the 
   }
 })
 
-test("an empty drawing views the whole board; a stage views its frame; silkscreen text never reaches the board layer", async () => {
+test("the camera uses the stage frame and omits silkscreen text", async () => {
   const { root } = await routedVisualFixture()
   const circuit = root.inputProblem.circuitJson
   const board = circuit.find((record) => record.type === "pcb_board")!
@@ -160,9 +165,11 @@ test("an empty drawing views the whole board; a stage views its frame; silkscree
 
 /** RGBA pixels of a PNG, decoded by rendering it as an SVG image. */
 function pixels(png: Buffer, width: number, height: number): Uint8Array {
-  return new Resvg(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><image width="${width}" height="${height}" href="data:image/png;base64,${png.toString("base64")}"/></svg>`,
-  ).render().pixels
+  const dimensions = `width="${width}" height="${height}"`
+  const data = `data:image/png;base64,${png.toString("base64")}`
+  const image = `<image ${dimensions} href="${data}"/>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" ${dimensions}>${image}</svg>`
+  return new Resvg(svg).render().pixels
 }
 
 test("composed board pictures of every two-trace stage match their PNG snapshots", async () => {
@@ -176,7 +183,9 @@ test("composed board pictures of every two-trace stage match their PNG snapshots
         width,
         height,
       }),
-      { font: { defaultFontFamily: "Arial" } },
+      {
+        font: { defaultFontFamily: "Arial" },
+      },
     )
       .render()
       .asPng()
@@ -194,13 +203,14 @@ test("composed board pictures of every two-trace stage match their PNG snapshots
       pixels(readFileSync(path), width, height),
     ]
     let differing = 0
-    for (let i = 0; i < actual.length; i += 4)
+    for (let i = 0; i < actual.length; i += 4) {
       if (
         Math.max(
           ...[0, 1, 2].map((c) => Math.abs(actual[i + c] - expected[i + c])),
         ) > 48
       )
         differing++
+    }
     // Font rasterisation differs between machines; geometry and colour changes move far more pixels than this.
     assert.ok(
       differing / (width * height) < 0.01,

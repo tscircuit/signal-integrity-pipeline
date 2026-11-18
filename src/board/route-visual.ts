@@ -79,7 +79,12 @@ export function routeHue({
 /** Bounds of points, or undefined when there are none. */
 export function routeBounds(points: readonly Point[]): Viewbox | undefined {
   if (!points.length) return
-  let box = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
+  let box = {
+    minX: Infinity,
+    maxX: -Infinity,
+    minY: Infinity,
+    maxY: -Infinity,
+  }
   for (const point of points)
     box = {
       minX: Math.min(box.minX, point.x),
@@ -99,6 +104,9 @@ export function routeDisplayItems<T>(items: readonly T[], limit = 160): T[] {
   )
 }
 
+/** Prefer a roughly 8:5 camera for a board and its stage pane. */
+const CAMERA_ASPECT_RATIO = 1.6
+
 /** A focus box with a pane slot on whichever side brings the camera closest to 1.6:1. */
 export function routeFrame(box: Viewbox): RouteFrame {
   const margin = Math.max(box.maxX - box.minX, box.maxY - box.minY, 1e-3) * 0.06
@@ -111,11 +119,13 @@ export function routeFrame(box: Viewbox): RouteFrame {
   const width = focus.maxX - focus.minX
   const height = focus.maxY - focus.minY
   const gap = Math.max(width, height) * 0.03
-  const side = Math.max(0.6 * height, 1.6 * height - width)
-  const below = Math.max(0.35 * width, width / 1.6 - height)
+  const side = Math.max(0.6 * height, CAMERA_ASPECT_RATIO * height - width)
+  const below = Math.max(0.35 * width, width / CAMERA_ASPECT_RATIO - height)
+  const sideAspect = (width + gap + side) / height
+  const belowAspect = width / (height + gap + below)
   const right =
-    Math.abs(Math.log((width + gap + side) / height / 1.6)) <=
-    Math.abs(Math.log(width / (height + gap + below) / 1.6))
+    Math.abs(Math.log(sideAspect / CAMERA_ASPECT_RATIO)) <=
+    Math.abs(Math.log(belowAspect / CAMERA_ASPECT_RATIO))
   let pane = {
     minX: focus.minX,
     maxX: focus.maxX,
@@ -145,7 +155,10 @@ export function routeFrame(box: Viewbox): RouteFrame {
 
 const views = new WeakMap<CopperScope, WeakMap<CircuitJson, RouteView>>()
 
-/** Selected copper plus its endpoint components frame the problem; nets follow electrical connectivity, and differential channels pair two nets in one hue. */
+/**
+ * Selected copper plus its endpoint components frame the problem; nets follow electrical connectivity, and
+ * differential channels pair two nets in one hue.
+ */
 export function routeView(circuit: CircuitJson, scope: CopperScope): RouteView {
   const cached = views.get(scope)?.get(circuit)
   if (cached) return cached
@@ -165,7 +178,12 @@ export function routeView(circuit: CircuitJson, scope: CopperScope): RouteView {
     }
   }
   // Endpoint parts join the focus, but a large package (a BGA) only near the copper.
-  const copper = routeBounds(points) ?? { minX: 0, maxX: 1, minY: 0, maxY: 1 }
+  const copper = routeBounds(points) ?? {
+    minX: 0,
+    maxX: 1,
+    minY: 0,
+    maxY: 1,
+  }
   const reach =
     Math.max(copper.maxX - copper.minX, copper.maxY - copper.minY) * 0.25
   const components = new Set(
@@ -198,7 +216,12 @@ export function routeView(circuit: CircuitJson, scope: CopperScope): RouteView {
         ),
       })
   }
-  const parts = routeBounds(points) ?? { minX: 0, maxX: 1, minY: 0, maxY: 1 }
+  const parts = routeBounds(points) ?? {
+    minX: 0,
+    maxX: 1,
+    minY: 0,
+    maxY: 1,
+  }
   // A board edge just beyond the problem is framed too, so the camera never cuts a board a few millimetres short.
   const board = routeBoardBox(circuit)
   const [reachX, reachY] = [
@@ -227,7 +250,10 @@ function routeViewNets(
   order: SourceTraceId[],
 ): Pick<RouteView, "sources" | "ports"> {
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
-  const nets: { ids: Set<string>; sources: string[] }[] = []
+  const nets: {
+    ids: Set<string>
+    sources: string[]
+  }[] = []
   const sourceTraces = circuit.filter(
     (record) => record.type === "source_trace",
   )
@@ -249,7 +275,11 @@ function routeViewNets(
   }
   const channels = new Map<
     SignalName,
-    { ends: string[]; legs: string[]; unitInterval: number }
+    {
+      ends: string[]
+      legs: string[]
+      unitInterval: number
+    }
   >()
   for (const signal of circuit.filter(
     (record) => record.type === "simulation_pcb_driver_receiver_channel",
@@ -284,22 +314,22 @@ function routeViewNets(
   }
   const sources = new Map<SourceTraceId, RouteNet>()
   const ports = new Map<SourcePortId, RouteNet>()
+  const sourcePorts = new Set(
+    circuit
+      .filter((record) => record.type === "source_port")
+      .map((port) => port.source_port_id),
+  )
   for (const [i, unit] of units.entries())
     for (const [leg, net] of unit.nets.entries()) {
       const hue = 195 + (i * 360) / units.length
       const differential = unit.nets.length > 1
       let lightness = 62
       if (differential) lightness = [74, 48][leg]
-      const port = [...net.ids].find((id) =>
-        circuit.some(
-          (record) =>
-            record.type === "source_port" && record.source_port_id === id,
-        ),
-      )
+      const port = [...net.ids].find((id) => sourcePorts.has(id))
       let label = port ?? net.sources[0]
       if (unit.name) {
         label = unit.name
-        if (differential) label += [" P", " N"][leg]
+        if (differential) label = `${label}${[" P", " N"][leg]}`
       }
       const style = {
         label,
@@ -354,7 +384,12 @@ export function routeStroke({
   layer: string
   label?: string
 }): Line[] {
-  const line = { points, strokeColor: color, strokeWidth: width, label }
+  const line = {
+    points,
+    strokeColor: color,
+    strokeWidth: width,
+    label,
+  }
   if (layer === "top") return [line]
   if (layer === "bottom")
     return [
@@ -368,7 +403,12 @@ export function routeStroke({
     ]
   return [
     line,
-    { points, strokeColor: routeTones.halo, strokeWidth: width * 0.45, label },
+    {
+      points,
+      strokeColor: routeTones.halo,
+      strokeWidth: width * 0.45,
+      label,
+    },
   ]
 }
 
@@ -385,7 +425,11 @@ function drawRouteRun(
     run,
     net,
     color,
-  }: { run?: RouteRun; net?: RouteNet; color?: RouteNetColor },
+  }: {
+    run?: RouteRun
+    net?: RouteNet
+    color?: RouteNetColor
+  },
   drawing: GraphicsObject,
 ): void {
   if (!run || run.points.length <= 1) return
@@ -438,13 +482,21 @@ export function routeNets({
 
 /** A closed circle outline as polygon points. */
 function circle(center: Point, radius: number): Point[] {
-  return Array.from({ length: 24 }, (_, i) => ({
-    x: center.x + radius * Math.cos((i * Math.PI) / 12),
-    y: center.y + radius * Math.sin((i * Math.PI) / 12),
-  }))
+  return Array.from(
+    {
+      length: 24,
+    },
+    (_, i) => ({
+      x: center.x + radius * Math.cos((i * Math.PI) / 12),
+      y: center.y + radius * Math.sin((i * Math.PI) / 12),
+    }),
+  )
 }
 
-/** Pin marks over a dark halo, a dot for a driver and a ring for anything that listens, never wider than their spacing allows. */
+/**
+ * Pin marks over a dark halo, a dot for a driver and a ring for anything that listens, never wider than their
+ * spacing allows.
+ */
 export function routeMarks({
   drawing,
   marks,
@@ -541,7 +593,14 @@ export function routeText({
   size: number
   anchor?: NinePointAnchor
 }): void {
-  drawing.texts!.push({ x, y, text, color, fontSize: size, anchorSide: anchor })
+  drawing.texts!.push({
+    x,
+    y,
+    text,
+    color,
+    fontSize: size,
+    anchorSide: anchor,
+  })
 }
 
 /** An opaque pane: a thick line at zIndex -1 fills it, because graphics-debug paints every line before other shapes. */
@@ -641,20 +700,25 @@ export function routeBoardBox(circuit: CircuitJson): Viewbox {
       maxY: board.center.y + board.height / 2,
     }
   const points = circuit.flatMap((record) => {
-    if (
-      !("x" in record) ||
-      !("y" in record) ||
-      typeof record.x !== "number" ||
-      typeof record.y !== "number" ||
-      !record.type.startsWith("pcb_")
-    )
+    if (!record.type.startsWith("pcb_") || !("x" in record) || !("y" in record))
       return []
+    if (typeof record.x !== "number" || typeof record.y !== "number") return []
     return [{ x: record.x, y: record.y }]
   })
-  return routeBounds(points) ?? { minX: -1, maxX: 1, minY: -1, maxY: 1 }
+  return (
+    routeBounds(points) ?? {
+      minX: -1,
+      maxX: 1,
+      minY: -1,
+      maxY: 1,
+    }
+  )
 }
 
-/** The problem's canvas with its selected copper in net colours; without a scope it is empty, so the whole board shows. */
+/**
+ * The problem's canvas with its selected copper in net colours; without a scope it is empty, so the whole
+ * board shows.
+ */
 export function routeBoardDrawing({
   circuit,
   scope,
@@ -667,7 +731,12 @@ export function routeBoardDrawing({
   if (!scope) return routeCanvas()
   const view = routeView(circuit, scope)
   const drawing = routeCanvas(view)
-  routeNets({ drawing, circuit, view, color })
+  routeNets({
+    drawing,
+    circuit,
+    view,
+    color,
+  })
   return drawing
 }
 
@@ -719,7 +788,10 @@ type RouteBuffer = {
   label?: string
 }
 
-/** IBIS buffer glyphs at their pins: a filled ▶ leaving each driver, a hollow ◀ arriving at each receiver, over a dark halo. */
+/**
+ * IBIS buffer glyphs at their pins: a filled ▶ leaving each driver, a hollow ◀ arriving at each receiver, over
+ * a dark halo.
+ */
 export function routeBuffers({
   drawing,
   buffers,
@@ -754,8 +826,14 @@ export function routeBuffers({
     }
     const points = [
       tip,
-      { x: base.x + across.x * size * 0.8, y: base.y + across.y * size * 0.8 },
-      { x: base.x - across.x * size * 0.8, y: base.y - across.y * size * 0.8 },
+      {
+        x: base.x + across.x * size * 0.8,
+        y: base.y + across.y * size * 0.8,
+      },
+      {
+        x: base.x - across.x * size * 0.8,
+        y: base.y - across.y * size * 0.8,
+      },
     ]
     drawing.polygons!.push({
       points,
@@ -800,21 +878,41 @@ export interface RouteStripRow {
   net: RouteNet
   length: number
   /** Coloured pieces along the unrolled net; `casing` marks the piece being worked on. */
-  parts?: { from: number; to: number; color: string; casing?: boolean }[]
+  parts?: {
+    from: number
+    to: number
+    color: string
+    casing?: boolean
+  }[]
   ticks?: number[]
   /** Coupling to neighbours along the net, drawn under the bar with height growing with k. */
-  bands?: { from: number; to: number; k: number }[]
+  bands?: {
+    from: number
+    to: number
+    k: number
+  }[]
 }
 
 /** Convert position along a net to its x coordinate in the pane. */
 function routeStripX(
   position: number,
-  { left, right, longest }: { left: number; right: number; longest: number },
+  {
+    left,
+    right,
+    longest,
+  }: {
+    left: number
+    right: number
+    longest: number
+  },
 ): number {
   return left + (position / longest) * (right - left)
 }
 
-/** Every net unrolled into a to-scale bar in the pane, with a quiet name and the longest length; buffer glyphs at the ends when `buffers` is set. */
+/**
+ * Every net unrolled into a to-scale bar in the pane, with a quiet name and the longest length; buffer glyphs
+ * at the ends when `buffers` is set.
+ */
 export function routeStrip({
   drawing,
   pane,
@@ -824,7 +922,10 @@ export function routeStrip({
   drawing: GraphicsObject
   pane: Viewbox
   rows: readonly RouteStripRow[]
-  buffers?: { driver: boolean; receiver: boolean }
+  buffers?: {
+    driver: boolean
+    receiver: boolean
+  }
 }): void {
   routePane({ drawing, box: pane })
   if (!rows.length) return
@@ -858,20 +959,19 @@ export function routeStrip({
     for (const part of row.parts ?? [
       { from: 0, to: row.length, color: row.net.color },
     ]) {
-      if (part.casing)
+      const points = [
+        { x: routeStripX(part.from, scale), y },
+        { x: routeStripX(part.to, scale), y },
+      ]
+      if (part.casing) {
         drawing.lines!.push({
-          points: [
-            { x: routeStripX(part.from, scale), y },
-            { x: routeStripX(part.to, scale), y },
-          ],
+          points,
           strokeColor: routeTones.via,
           strokeWidth: bar * 1.8,
         })
+      }
       drawing.lines!.push({
-        points: [
-          { x: routeStripX(part.from, scale), y },
-          { x: routeStripX(part.to, scale), y },
-        ],
+        points: [{ ...points[0] }, { ...points[1] }],
         strokeColor: part.color,
         strokeWidth: bar,
         label: row.net.label,
@@ -956,7 +1056,10 @@ export function routeLengths(
 }
 
 /** A net and the distance along it from the start of its unrolled copper. */
-type UnrolledRoutePosition = { net: RouteNet; distance: number }
+type UnrolledRoutePosition = {
+  net: RouteNet
+  distance: number
+}
 
 /** The length of each unrolled net and a lookup from a wire position to a net distance. */
 type UnrolledRoutes = {
@@ -978,7 +1081,11 @@ export function routeUnrolled(
   const lengths = new Map<RouteNet, number>()
   const offsets = new Map<
     number,
-    { net: RouteNet; offset: number; start: number }
+    {
+      net: RouteNet
+      offset: number
+      start: number
+    }
   >()
   for (const wire of wires) {
     if (!view.traces.has(wire.trace)) continue

@@ -92,6 +92,9 @@ function tokenEnd(text: string, start: number): number {
   return end
 }
 
+/** JavaScript line boundaries accepted in IBIS source text. */
+const LINE_ENDINGS = "\r\n\u2028\u2029"
+
 /** Find a case-insensitive keyword at a line start, allowing leading whitespace. */
 function ibisLinePrefix({
   text,
@@ -103,7 +106,7 @@ function ibisLinePrefix({
   from: number
 }): TextRange | undefined {
   for (let start = from; start < text.length; start++) {
-    if (start > 0 && !"\r\n\u2028\u2029".includes(text[start - 1])) continue
+    if (start > 0 && !LINE_ENDINGS.includes(text[start - 1])) continue
     const keyword = skipWhitespace(text, start)
     const end = keyword + prefix.length
     if (text.slice(keyword, end).toLowerCase() === prefix) return { start, end }
@@ -146,7 +149,10 @@ function modelThreshold(
   return ibisNumber(section.slice(start, tokenEnd(section, start)))
 }
 
-/** Vinl/Vinh of the bound single-ended receiver models, widened across receivers; none for differential receivers or models without them. */
+/**
+ * Vinl/Vinh of the bound single-ended receiver models, widened across receivers; none for differential
+ * receivers or models without them.
+ */
 export function receiverThreshold({
   ibisSources,
   models,
@@ -192,7 +198,10 @@ export function roundStep(range: number, count: number): number {
 }
 
 /** A plot-axis tick's numeric position and display label. */
-type AxisTick = { value: number; text: string }
+type AxisTick = {
+  value: number
+  text: string
+}
 
 /** Ticks as integer multiples of a round step, so labels never show floating-point noise. */
 export function roundTicks({
@@ -274,15 +283,53 @@ function excursion({
   return Math.max(most - high, low - least)
 }
 
+/** Eye folding starts once a capture has enough bit periods to show repeated transitions. */
+const MINIMUM_EYE_INTERVALS = 8
+
+/** Every eye fold spans two bit periods. */
+const EYE_INTERVALS = 2
+
+/** Show an envelope above this number of far-end traces. */
+const MAX_INDIVIDUAL_PROBES = 6
+
+/** One vertical envelope band for each time bucket. */
+const ENVELOPE_COLUMNS = 300
+
+/** Trim quiet time until a probe moves by 5% of the full swing, retaining some lead-in. */
+const ACTIVE_SWING_FRACTION = 0.05
+const TRANSIENT_LEAD_IN_FRACTION = 0.08
+
+/** A visible voltage curve and its index in the requested probe order. */
+interface WaveformSeries {
+  entry: RoutedCapture["probes"][number]
+  index: number
+}
+
+/** The shared sample and axis inputs for drawing all waveforms in the pane. */
+interface WaveformCurveContext {
+  coordinates: PlotCoordinates
+  times: readonly number[]
+  from: number
+  eye: boolean
+}
+
 /**
  * Probe marks on the board and a waveform pane beside it.
- * Long captures fold into an eye spanning two unit intervals; short ones start just before the first activity. Above six far-end probes,
- * an envelope and the worst curve replace the rainbow. IBIS receiver thresholds are a band; amber hatching means ngspice is running.
+ * Long captures fold into a two-unit-interval eye. Short captures start just before the first activity.
+ * Above six far-end probes, draw their envelope and the largest excursion. A band shows IBIS input thresholds.
+ * Amber hatching means ngspice is running.
  */
 export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
   const { board, probes, capture, durationSeconds } = state
   const view = board && routeView(board.circuitJson, board.scope)
-  const frame = view ?? routeFrame({ minX: 0, maxX: 100, minY: 0, maxY: 40 })
+  const frame =
+    view ??
+    routeFrame({
+      minX: 0,
+      maxX: 100,
+      minY: 0,
+      maxY: 40,
+    })
   const drawing = waveformCanvas(frame, board)
   const styles = probes.map((probe, i) => {
     const net = view?.ports.get(probe.sourcePortId)
@@ -342,24 +389,24 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
   const eye =
     Boolean(capture) &&
     Number.isFinite(unitInterval) &&
-    durationSeconds / unitInterval >= 8
+    durationSeconds / unitInterval >= MINIMUM_EYE_INTERVALS
   const [least, most] = extent(
     series.flatMap(({ entry }) => entry.voltageLevels),
   )
   const swing = most - least
+  const activeSwing = swing * ACTIVE_SWING_FRACTION
   const active = times.findIndex((_, j) =>
-    series.some(
-      ({ entry }) =>
-        Math.abs(entry.voltageLevels[j] - entry.voltageLevels[0]) >
-        swing * 0.05,
-    ),
+    series.some(({ entry }) => {
+      const delta = entry.voltageLevels[j] - entry.voltageLevels[0]
+      return Math.abs(delta) > activeSwing
+    }),
   )
   let start = 0
-  if (!eye && active >= 0)
-    start = Math.max(
-      0,
-      times[active] - (durationSeconds - times[active]) * 0.08,
-    )
+  if (!eye && active >= 0) {
+    const activeTime = times[active]
+    const leadIn = (durationSeconds - activeTime) * TRANSIENT_LEAD_IN_FRACTION
+    start = Math.max(0, activeTime - leadIn)
+  }
   const from = Math.max(
     0,
     times.findIndex((time) => time >= start),
@@ -382,7 +429,7 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
   }
   if (eye) {
     coordinates.origin = 0
-    coordinates.timeSpan = 2
+    coordinates.timeSpan = EYE_INTERVALS
   }
   for (const level of levels) {
     let color: string = routeTones.paneEdge
@@ -435,7 +482,10 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
       const offset = ((plot.maxX - plot.minX) * i) / 16
       drawing.lines!.push({
         points: [
-          { x: plot.minX + offset, y: plot.minY },
+          {
+            x: plot.minX + offset,
+            y: plot.minY,
+          },
           {
             x: Math.min(
               plot.maxX,
@@ -449,72 +499,27 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
       })
     }
   if (!capture) return drawing
-  const curveContext = { coordinates, times, from, eye }
-  if (far.length > 6 && !eye) {
-    // A grey envelope of every far-end probe under the one curve that leaves the common band the most.
-    const columns = Array.from({ length: 300 }, () => [Infinity, -Infinity])
-    for (let j = from; j < times.length; j++) {
-      const column =
-        columns[
-          Math.min(
-            299,
-            Math.floor(
-              ((times[j] - start) / Math.max(durationSeconds - start, 1e-30)) *
-                300,
-            ),
-          )
-        ]
-      for (const { entry } of far)
-        column.splice(
-          0,
-          2,
-          Math.min(column[0], entry.voltageLevels[j]),
-          Math.max(column[1], entry.voltageLevels[j]),
-        )
-    }
-    for (const [i, [low, high]] of columns.entries())
-      if (high >= low)
-        drawing.lines!.push({
-          points: [
-            {
-              x: plotX(
-                coordinates,
-                start + ((i + 0.5) * (durationSeconds - start)) / 300,
-              ),
-              y: plotY(coordinates, low),
-            },
-            {
-              x: plotX(
-                coordinates,
-                start + ((i + 0.5) * (durationSeconds - start)) / 300,
-              ),
-              y: plotY(coordinates, high) + unit * 0.05,
-            },
-          ],
-          strokeColor: routeTones.envelope,
-          strokeWidth: ((plot.maxX - plot.minX) / 300) * 1.05,
-          zIndex: -0.4,
-        })
-    const all = far
-      .flatMap(({ entry }) => entry.voltageLevels.slice(from))
-      .sort((a, b) => a - b)
-    const [low, high] = [
-      all[Math.floor(all.length * 0.05)],
-      all[Math.floor(all.length * 0.95)],
-    ]
-    const worst = far.reduce((a, b) => {
-      if (
-        excursion({ levels: b.entry.voltageLevels.slice(from), low, high }) >
-        excursion({ levels: a.entry.voltageLevels.slice(from), low, high })
-      )
-        return b
-      return a
+  const curveContext = {
+    coordinates,
+    times,
+    from,
+    eye,
+  }
+  if (far.length > MAX_INDIVIDUAL_PROBES && !eye) {
+    drawEnvelope(drawing, {
+      series: far,
+      curveContext,
+      unit,
+      start,
+      durationSeconds,
     })
+    const worst = greatestExcursion(far, from)
     const style = styles[worst.index] ?? styles[0]
-    for (const points of waveformCurve(
+    const runs = waveformCurve(
       { curveLevels: worst.entry.voltageLevels, period: unitInterval },
       curveContext,
-    ))
+    )
+    for (const points of runs) {
       drawing.lines!.push({
         points,
         strokeColor: style.color,
@@ -522,11 +527,13 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
         label: style.label,
         layer: "waveform",
       })
+    }
     return drawing
   }
-  for (const { entry, index } of [...series].sort(
+  const nearFirst = [...series].sort(
     (a, b) => Number(!probes[a.index]?.near) - Number(!probes[b.index]?.near),
-  )) {
+  )
+  for (const { entry, index } of nearFirst) {
     const style = styles[index] ?? {
       color: routeHue({ hue: 0 }),
       label: entry.name,
@@ -539,13 +546,12 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
       width = 0.18
       strokeDash = "6 4"
     }
-    for (const points of waveformCurve(
-      {
-        curveLevels: entry.voltageLevels,
-        period: style.unitInterval ?? unitInterval,
-      },
+    const period = style.unitInterval ?? unitInterval
+    const runs = waveformCurve(
+      { curveLevels: entry.voltageLevels, period },
       curveContext,
-    ))
+    )
+    for (const points of runs) {
       drawing.lines!.push({
         points,
         strokeColor: style.color,
@@ -554,8 +560,86 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
         label: style.label,
         layer: "waveform",
       })
+    }
   }
   return drawing
+}
+
+interface EnvelopeInput {
+  series: WaveformSeries[]
+  curveContext: WaveformCurveContext
+  unit: number
+  start: number
+  durationSeconds: number
+}
+
+/** Shade the full far-end voltage range in each time bucket. */
+function drawEnvelope(drawing: GraphicsObject, input: EnvelopeInput): void {
+  const { series, curveContext, unit, start, durationSeconds } = input
+  const { coordinates, times, from } = curveContext
+  const { plot, timeSpan } = coordinates
+  const duration = durationSeconds - start
+  const columns: SampleExtent[] = Array.from(
+    { length: ENVELOPE_COLUMNS },
+    () => [Infinity, -Infinity],
+  )
+  for (let j = from; j < times.length; j++) {
+    const fraction = (times[j] - start) / timeSpan
+    const index = Math.min(
+      ENVELOPE_COLUMNS - 1,
+      Math.floor(fraction * ENVELOPE_COLUMNS),
+    )
+    const column = columns[index]
+    for (const { entry } of series) {
+      const level = entry.voltageLevels[j]
+      column[0] = Math.min(column[0], level)
+      column[1] = Math.max(column[1], level)
+    }
+  }
+  const columnWidth = (plot.maxX - plot.minX) / ENVELOPE_COLUMNS
+  for (const [i, [low, high]] of columns.entries()) {
+    if (!(high >= low)) continue
+    const time = start + ((i + 0.5) * duration) / ENVELOPE_COLUMNS
+    const x = plotX(coordinates, time)
+    drawing.lines!.push({
+      points: [
+        { x, y: plotY(coordinates, low) },
+        { x, y: plotY(coordinates, high) + unit * 0.05 },
+      ],
+      strokeColor: routeTones.envelope,
+      strokeWidth: columnWidth * 1.05,
+      zIndex: -0.4,
+    })
+  }
+}
+
+/** Use the middle 90% of samples as the common voltage band. */
+const LOWER_BAND_QUANTILE = 0.05
+const UPPER_BAND_QUANTILE = 0.95
+
+/** Find the far-end waveform that moves farthest outside the common voltage band. */
+function greatestExcursion(
+  series: WaveformSeries[],
+  from: number,
+): WaveformSeries {
+  const levels = series.flatMap(({ entry }) => entry.voltageLevels.slice(from))
+  levels.sort((a, b) => a - b)
+  const low = levels[Math.floor(levels.length * LOWER_BAND_QUANTILE)]
+  const high = levels[Math.floor(levels.length * UPPER_BAND_QUANTILE)]
+  return series.reduce((worst, candidate) => {
+    const candidateExcursion = excursion({
+      levels: candidate.entry.voltageLevels.slice(from),
+      low,
+      high,
+    })
+    const worstExcursion = excursion({
+      levels: worst.entry.voltageLevels.slice(from),
+      low,
+      high,
+    })
+    if (candidateExcursion > worstExcursion) return candidate
+    return worst
+  })
 }
 
 interface PlotCoordinates {
@@ -654,8 +738,14 @@ function drawTimeAxis(
   })) {
     drawing.lines!.push({
       points: [
-        { x: plotX(coordinates, tick.value / scale), y: plot.minY },
-        { x: plotX(coordinates, tick.value / scale), y: plot.minY - unit },
+        {
+          x: plotX(coordinates, tick.value / scale),
+          y: plot.minY,
+        },
+        {
+          x: plotX(coordinates, tick.value / scale),
+          y: plot.minY - unit,
+        },
       ],
       strokeColor: routeTones.quiet,
       strokeWidth: unit * 0.15,
@@ -675,33 +765,35 @@ function drawTimeAxis(
 /** Points in one continuous segment of a plotted waveform. */
 type WaveformRun = Point[]
 
+/** Cap display sampling while keeping more detail in the multi-run eye. */
+const TRANSIENT_SAMPLE_BUCKETS = 700
+const EYE_SAMPLE_BUCKETS = 2500
+
 /** One probe's curve, cut at every fold of the eye. */
 function waveformCurve(
-  { curveLevels, period }: { curveLevels: readonly number[]; period: number },
   {
-    coordinates,
-    times,
-    from,
-    eye,
+    curveLevels,
+    period,
   }: {
-    coordinates: PlotCoordinates
-    times: readonly number[]
-    from: number
-    eye: boolean
+    curveLevels: readonly number[]
+    period: number
   },
+  { coordinates, times, from, eye }: WaveformCurveContext,
 ): WaveformRun[] {
-  if (!eye)
+  if (!eye) {
+    const indices = waveformSampleIndices({
+      times,
+      values: curveLevels,
+      from,
+      limit: TRANSIENT_SAMPLE_BUCKETS,
+    })
     return [
-      waveformSampleIndices({
-        times,
-        values: curveLevels,
-        from,
-        limit: 700,
-      }).map((j) => ({
+      indices.map((j) => ({
         x: plotX(coordinates, times[j]),
         y: plotY(coordinates, curveLevels[j]),
       })),
     ]
+  }
   const middle = extent(curveLevels).reduce((a, b) => a + b) / 2
   const crossing = curveLevels.findIndex(
     (level, j) => j > 0 && (curveLevels[j - 1] - middle) * (level - middle) < 0,
@@ -711,13 +803,15 @@ function waveformCurve(
   origin -= period / 2
   const runs: WaveformRun[] = [[]]
   let last = -1
-  for (const j of waveformSampleIndices({
+  const indices = waveformSampleIndices({
     times,
     values: curveLevels,
     from: 0,
-    limit: 2500,
-  })) {
-    const phase = ((((times[j] - origin) / period) % 2) + 2) % 2
+    limit: EYE_SAMPLE_BUCKETS,
+  })
+  for (const j of indices) {
+    const interval = (times[j] - origin) / period
+    const phase = ((interval % EYE_INTERVALS) + EYE_INTERVALS) % EYE_INTERVALS
     if (phase < last) runs.push([])
     runs.at(-1)!.push({
       x: plotX(coordinates, phase),

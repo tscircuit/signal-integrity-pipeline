@@ -17,7 +17,7 @@ import {
   routedVisualFixture,
 } from "../support/routed-visual-fixture"
 
-test("nets follow electrical connectivity, and one camera frames the copper, its endpoint parts and a pane slot", async () => {
+test("one camera frames connected copper, its endpoint parts and a pane", async () => {
   const { root } = await routedVisualFixture()
   const { circuitJson, scope } = root.stageOutput("RouteSectionsSolver")
     .value[0]
@@ -55,7 +55,10 @@ test("nets follow electrical connectivity, and one camera frames the copper, its
     "a neighbour is context, not a net",
   )
   assert.deepEqual(
-    routeBoardDrawing({ circuit: circuitJson, scope: undefined }).lines,
+    routeBoardDrawing({
+      circuit: circuitJson,
+      scope: undefined,
+    }).lines,
     [],
     "without a scope nothing is overlaid, so the whole board shows",
   )
@@ -66,18 +69,20 @@ test("a differential channel colours its two nets as two shades of one hue and c
   const { circuitJson, scope } = root.stageOutput("RouteSectionsSolver")
     .value[0]
   const selected = new Set(
-    circuitJson.flatMap((record) =>
-      record.type === "pcb_trace" &&
-      scope.selectedPcbTraceIds.includes(record.pcb_trace_id)
-        ? [record.source_trace_id]
-        : [],
-    ),
+    circuitJson.flatMap((record) => {
+      if (
+        record.type !== "pcb_trace" ||
+        !scope.selectedPcbTraceIds.includes(record.pcb_trace_id)
+      )
+        return []
+      return [record.source_trace_id]
+    }),
   )
-  const ports = circuitJson.flatMap((record) =>
-    record.type === "source_trace" && selected.has(record.source_trace_id)
-      ? [record.connected_source_port_ids]
-      : [],
-  )
+  const ports = circuitJson.flatMap((record) => {
+    if (record.type !== "source_trace" || !selected.has(record.source_trace_id))
+      return []
+    return [record.connected_source_port_ids]
+  })
   const signal: SimulationPcbDriverReceiverChannel = {
     type: "simulation_pcb_driver_receiver_channel",
     simulation_pcb_driver_receiver_channel_id: "pair",
@@ -99,7 +104,9 @@ test("a differential channel colours its two nets as two shades of one hue and c
       ),
       signal,
     ],
-    { ...scope },
+    {
+      ...scope,
+    },
   )
   const [p, n] = [...new Set(view.sources.values())]
   assert.equal(p.hue, n.hue)
@@ -111,9 +118,19 @@ test("a differential channel colours its two nets as two shades of one hue and c
 })
 
 test("the pane goes on the side that brings the camera nearest 1.6:1", () => {
-  const tall = routeFrame({ minX: 0, maxX: 10, minY: 0, maxY: 30 })
+  const tall = routeFrame({
+    minX: 0,
+    maxX: 10,
+    minY: 0,
+    maxY: 30,
+  })
   assert.ok(tall.pane.minX > tall.focus.maxX)
-  const wide = routeFrame({ minX: 0, maxX: 30, minY: 0, maxY: 2 })
+  const wide = routeFrame({
+    minX: 0,
+    maxX: 30,
+    minY: 0,
+    maxY: 2,
+  })
   assert.ok(wide.pane.maxY < wide.focus.minY)
   for (const frame of [tall, wide]) {
     const aspect =
@@ -129,7 +146,12 @@ test("the layer is in the stroke: top solid, inner hollow, bottom dimmed", () =>
     { x: 1, y: 0 },
   ]
   assert.equal(
-    routeStroke({ points, color: "red", width: 0.2, layer: "top" }).length,
+    routeStroke({
+      points,
+      color: "red",
+      width: 0.2,
+      layer: "top",
+    }).length,
     1,
   )
   const [inner, core] = routeStroke({
@@ -153,8 +175,16 @@ test("pin marks never grow past half their closest spacing, and sit on a dark ha
   routeMarks({
     drawing,
     marks: [
-      { point: { x: 0, y: 0 }, color: "red", driver: true },
-      { point: { x: 0.8, y: 0 }, color: "red", driver: false },
+      {
+        point: { x: 0, y: 0 },
+        color: "red",
+        driver: true,
+      },
+      {
+        point: { x: 0.8, y: 0 },
+        color: "red",
+        driver: false,
+      },
     ],
     unit: 10,
   })
