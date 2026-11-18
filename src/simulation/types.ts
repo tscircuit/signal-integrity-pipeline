@@ -2,7 +2,7 @@
 // experiments/<id>/experiment.json and PipelineResult.experiments[].plan: do not reorder or rename.
 import type { IbisConversionMetadata } from '@tscircuit/ibis-to-spice'
 import type { SafeId } from '../kernel'
-import type { CircuitJson, PortSelector, SimulationExperiment, SimulationIbisModel, SimulationIbisPinState, SimulationDigitalStimulus } from '../board'
+import type { CircuitJson, PortSelector, SimulationExperiment, SimulationIbisModel } from '../board'
 import type { WaveformRows } from '../observation'
 
 /** simulation's slice of the flat public `Modeling`. (`channelReference` is shared with board's slice.) */
@@ -27,18 +27,15 @@ export interface VoltageProbePlan {
   signalNode: string
   referenceNode: string
 }
-export interface EyePlan {
-  simulationEyeDiagramId: string
-  name: string
-  simulationExperimentId: string
-  simulationVoltageProbeId: string
-  column: number
-  unitIntervalSeconds: number
-  timeOriginSeconds: number
-  startTimeSeconds: number
-  endTimeSeconds: number
+/** Run controls lowered from channel declarations for the IBIS converter. */
+export interface RunControls {
+  states: { source_port_id: string; is_output: boolean; is_output_enabled?: boolean }[]
+  stimuli: {
+    name: string; source_port_id: string; bit_duration_ms: number; start_time_ms: number; initial_state: 0 | 1; inverted?: boolean
+    transmission_pattern: { transmission_type: 'bits'; bits: string; repeat: boolean }
+  }[]
 }
-export interface SimulationPlan {
+export interface SimulationPlan extends RunControls {
   simulationExperimentId: string
   name: string
   subcircuitId: string | null
@@ -46,19 +43,11 @@ export interface SimulationPlan {
   startTimeSeconds: number
   maxStepSeconds: number
   experiment: SimulationExperiment
-  states: SimulationIbisPinState[]
-  stimuli: (SimulationDigitalStimulus & { transmission_pattern: { bits: string } })[]
   probes: VoltageProbePlan[]
-  eyes: EyePlan[]
   models: PipelineIbisModel[]
 }
-/**
- * A plan whose experiment and eye ids passed kernel safeId (safeSimulationPlans), shaped as observation's
- * EyeRequest. Note: today's code never validates simulationVoltageProbeId; it is branded only because
- * EyeRequest requires it (it reaches CSV headers, not paths).
- */
-export type SafeEyePlan = Omit<EyePlan, 'simulationEyeDiagramId' | 'simulationExperimentId' | 'simulationVoltageProbeId'> & { simulationEyeDiagramId: SafeId; simulationExperimentId: SafeId; simulationVoltageProbeId: SafeId }
-export type SafeSimulationPlan = Omit<SimulationPlan, 'simulationExperimentId' | 'eyes'> & { simulationExperimentId: SafeId; eyes: SafeEyePlan[] }
+/** A plan with an admitted experiment artifact identifier. */
+export type SafeSimulationPlan = Omit<SimulationPlan, 'simulationExperimentId'> & { simulationExperimentId: SafeId }
 
 /** Today's generalDeclarations return value. `models` holds only models some plan uses, in declaration order. */
 export interface Declarations {
@@ -100,13 +89,11 @@ export interface ExperimentRun {
   /** `experiments/<id>`. */
   readonly directory: string
   readonly rows: number[][]
-  /** SHA-256 of `<directory>/waveform.csv`, the eye descriptors' sourceSha256. */
+  /** SHA-256 of `<directory>/waveform.csv`, the accepted waveform's identity. */
   readonly waveformCsvSha256: string
-  /** This experiment's simulation_transient_voltage_graph records, one per probe. */
-  readonly records: CircuitJson
 }
 /** Today's PipelineResult.experiments[] entry. Key order is serialized. */
-export interface ExperimentResult<E = unknown, A = unknown> {
+export interface ExperimentResult<A = unknown> {
   plan: SimulationPlan
   waveform: { timeUnit: 's'; voltageUnit: 'V'; rows: number[][] }
   simulationExperimentId: string
@@ -116,7 +103,6 @@ export interface ExperimentResult<E = unknown, A = unknown> {
   startTimeSeconds: number
   maxStepSeconds: number
   probes: VoltageProbePlan[]
-  eyes: E[]
   solverInvocations: 1
   waveformSamples: number
   assembly: A[]

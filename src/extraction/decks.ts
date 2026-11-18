@@ -2,16 +2,32 @@
 import { polygonContains as contains, type CopperPoint as Point, type CopperXYZ as XYZ, type CopperPath as Path,
   type ExtractionSettings, type GeometryCell } from '../board'
 import { groundMesh, pathSolids, surfacePanels, copperPanelSizing } from './mesh'
+import { layeredCapacitanceDeck } from './dielectric'
 
 // FasterCap has absolute panel-area thresholds. Millimetre coordinates keep
 // real fine copper edges numerically resolvable. Electrostatic capacitance
 // scales linearly with length, so rescale the raw matrix back to SI farads.
 export const copperCapacitanceScaleToFarads=1e-3
 
+/** Skin-depth edge sizing; plane refinement reduces the target size. */
+function filamentCount({ sizeMm, skinMm, extra, plane = false }: { sizeMm: number; skinMm: number; extra: number; plane?: boolean }): number {
+  let target = skinMm / 2
+  let count = 3
+  if (plane) {
+    target = skinMm / (2 * (1 + extra / 4))
+    count = 1
+  }
+  while (sizeMm / (2 * (2 ** ((count + 1) / 2) - 1)) > target) count += 2
+  if (plane) return count
+  return count + extra
+}
+
 /** FastHenry conductor mesh follows the selected polygon, including every cutout. */
 export function copperFastHenryDeck(cell: GeometryCell, extraction: ExtractionSettings): string {
   const copper = cell.routedCopper!
   const mesh = extraction.groundMeshMm!
+  const skinMm = 1000 * Math.sqrt(1 / (Math.PI * extraction.modelHz * 4e-7 * Math.PI * cell.conductivitySm))
+  const extra = Math.max(0, extraction.filaments - 3)
   const lines = ['* Actual routed signals and inferred ground copper; dimensions in metres', '.units m', `.default sigma=${cell.conductivitySm} nhinc=${extraction.filaments} nwinc=${extraction.filaments}`]
   /** Formats a millimetre point as FastHenry node coordinates in metres. */
   const coordinates = (p: XYZ): string => `x=${p[0] / 1000} y=${p[1] / 1000} z=${p[2] / 1000}`
@@ -30,7 +46,15 @@ export function copperFastHenryDeck(cell: GeometryCell, extraction: ExtractionSe
       const dx = s.b[0] - s.a[0]
       const dy = s.b[1] - s.a[1]
       const horizontal = Math.hypot(dx, dy)
-      lines.push(`E${serial++} ${names[i]} ${names[i + 1]} w=${s.widthMm / 1000} h=${s.thicknessMm / 1000} sigma=${s.conductivitySm??cell.conductivitySm} wx=${horizontal ? -dy / horizontal : 1} wy=${horizontal ? dx / horizontal : 0} wz=0`)
+      let widthX = 1
+      let widthY = 0
+      if (horizontal) {
+        widthX = -dy / horizontal
+        widthY = dx / horizontal
+      }
+      const widthFilaments = filamentCount({ sizeMm: s.widthMm, skinMm, extra })
+      const thicknessFilaments = filamentCount({ sizeMm: s.thicknessMm, skinMm, extra })
+      lines.push(`E${serial++} ${names[i]} ${names[i + 1]} w=${s.widthMm / 1000} h=${s.thicknessMm / 1000} sigma=${s.conductivitySm??cell.conductivitySm} wx=${widthX} wy=${widthY} wz=0 nwinc=${widthFilaments} nhinc=${thicknessFilaments}`)
     }
   }
   copper.signals.forEach((p, i) => path(p, `N${i}a`, `N${i}b`))
@@ -38,9 +62,16 @@ export function copperFastHenryDeck(cell: GeometryCell, extraction: ExtractionSe
   copper.connections.forEach((p, i) => path(p, `N${n}${i ? 'b' : 'a'}`, `Ng${i}`))
   for (const [index, pour] of copper.pours.entries()) {
     const contacts = copper.connections.map((p, i) => ({ p, i })).filter(({ p }) => Math.abs((pour.zMinMm + pour.zMaxMm) / 2 - p.terminals[1][2]) < 1e-8 && contains(p.terminals[1].slice(0, 2) as Point, pour.polygon))
-    const ground = groundMesh(pour, mesh, contacts.map(({p})=>({point:p.terminals[1].slice(0,2) as Point,radius:p.contactRadiusMm!})),Math.max(2,Math.ceil(Math.sqrt(extraction.filaments))))
+    const ground = groundMesh({
+      pour,
+      meshMm: mesh,
+      contacts: contacts.map(({ p }) => ({ point: p.terminals[1].slice(0, 2) as Point, radius: p.contactRadiusMm! })),
+      contactDivisions: Math.max(2, Math.ceil(Math.sqrt(extraction.filaments))),
+      paths: [...copper.signals, ...copper.connections],
+    })
     const zz = (pour.zMinMm + pour.zMaxMm) / 2000
     const thickness = (pour.zMaxMm - pour.zMinMm) / 1000
+    const planeFilaments = filamentCount({ sizeMm: thickness * 1000, skinMm, extra, plane: true })
     lines.push(`* ${pour.pcbCopperPourId} layer=${pour.layer} cutouts=${pour.polygon.length-1} meshMm=${mesh}`)
     ground.points.forEach((p,j)=>lines.push(`Np${index}_${j} x=${p[0]/1000} y=${p[1]/1000} z=${zz}`))
     ground.edges.forEach(([a,b,width],j)=>{
@@ -48,7 +79,7 @@ export function copperFastHenryDeck(cell: GeometryCell, extraction: ExtractionSe
       const dx=v[0]-u[0]
       const dy=v[1]-u[1]
       const length=Math.hypot(dx,dy)
-      lines.push(`Eg${index}_${j} Np${index}_${a} Np${index}_${b} w=${width/1000} h=${thickness} sigma=${pour.conductivitySm??cell.conductivitySm} wx=${-dy/length} wy=${dx/length} wz=0 nwinc=1 nhinc=${extraction.filaments}`)
+      lines.push(`Eg${index}_${j} Np${index}_${a} Np${index}_${b} w=${width/1000} h=${thickness} sigma=${pour.conductivitySm??cell.conductivitySm} wx=${-dy/length} wy=${dx/length} wz=0 nwinc=1 nhinc=${planeFilaments}`)
     })
     contacts.forEach(({i},j)=>ground.contacts[j].forEach(id=>lines.push(`.equiv Ng${i} Np${index}_${id}`)))
   }
@@ -60,13 +91,14 @@ export function copperFastHenryDeck(cell: GeometryCell, extraction: ExtractionSe
 /** FasterCap panel files for routed copper: one surface file per signal plus one for the return (pours and ground connections), in millimetres. */
 export function copperFasterCapDeck(cell: GeometryCell, extraction?: Pick<ExtractionSettings, 'maxPanelLengthMm'>): Record<string, string> {
   const copper = cell.routedCopper!
+  if (cell.dielectric) return layeredCapacitanceDeck(cell, extraction)
   const files: Record<string, string> = {}
   const list = ['* Actual routed copper in millimetres; physical capacitance = raw matrix * 0.001; homogeneous dielectric']
   const solids = [...copper.signals.map(pathSolids), [...copper.pours, ...copper.connections.flatMap(pathSolids)]]
   const sizing = extraction ? copperPanelSizing(copper, extraction.maxPanelLengthMm) : undefined
   solids.forEach((pieces, i) => {
     const name = i === copper.signals.length ? 'return' : `sig${i}`
-    files[`${name}.txt`] = surfacePanels(pieces, name, sizing)
+    files[`${name}.txt`] = surfacePanels({ solids: pieces, name, sizing })
     list.push(`C ${name}.txt ${cell.relativePermittivity} 0 0 0`)
   })
   files['channel.lst'] = list.join('\n') + '\n'
@@ -88,6 +120,7 @@ export function fastHenryDeck(cell: GeometryCell,extraction: ExtractionSettings)
 }
 /** FasterCap input files for a cell: routed copper gets surface panels, otherwise each conductor is a closed box split along its length. */
 export function fasterCapDeck(cell: GeometryCell,extraction: ExtractionSettings): Record<string,string> {
+  if (cell.dielectric) return layeredCapacitanceDeck(cell, extraction)
   if(cell.routedCopper) return copperFasterCapDeck(cell,extraction)
   const files: Record<string,string>={}
   const list=['* 3D conductor surfaces; metres; homogeneous dielectric']

@@ -3,7 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { bitSchedule, sha256 } from '../../scripts/verification/independent-helpers.mjs'
 
-const stimulus = bits => ({ type: 'simulation_digital_stimulus', bit_duration_ms: 1,
+const stimulus = bits => ({ bit_duration_ms: 1,
   start_time_ms: 1, initial_state: 0, inverted: false,
   transmission_pattern: { transmission_type: 'bits', bits, repeat: true } })
 

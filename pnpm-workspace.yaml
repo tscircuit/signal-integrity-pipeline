@@ -4,7 +4,7 @@ allowBuilds:
   esbuild: true
 blockExoticSubdeps: false
 minimumReleaseAgeExclude:
-  - '@tscircuit/core@0.0.2188 || 0.0.2217'
-  - '@tscircuit/props@0.0.709 || 0.0.712'
-  - circuit-json@0.0.541
+  - '@tscircuit/core@0.0.2409'
+  - '@tscircuit/props@0.0.709 || 0.0.712 || 0.0.735'
+  - circuit-json@0.0.541 || 0.0.552
   - jscad-fiber@0.0.92
