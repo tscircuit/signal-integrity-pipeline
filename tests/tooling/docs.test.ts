@@ -2,6 +2,7 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { extname, join } from "node:path"
+import { routedStages } from "../../src/pipeline"
 
 const root = join(import.meta.dirname, "..", "..")
 /** README.md, AGENTS.md and every Markdown file under docs/, relative to the repo root. */
@@ -116,4 +117,19 @@ test("agent rules live only in AGENTS.md", () => {
       !existsSync(join(root, other)),
       `${other}: put agent rules in AGENTS.md instead`,
     )
+})
+
+test("routed documentation stage order is generated from the debugger tuple", () => {
+  for (const file of ["README.md", "docs/ARCHITECTURE.md"]) {
+    const text = readFileSync(join(root, file), "utf8")
+      .split("<!-- routed-stages:start -->")[1]
+      .split("<!-- routed-stages:end -->")[0]
+    const names = [...text.matchAll(/^\| \d+ \| (\w+) \|$/gm)].map(
+      (match) => match[1],
+    )
+    assert.deepEqual(
+      names,
+      routedStages.map((stage) => stage.solverName),
+    )
+  }
 })

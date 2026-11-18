@@ -7,6 +7,7 @@ import * as node from "../../src/adapters"
 // (Type-only exports are pinned by `bun run typecheck` of the consumer tests, not here.)
 const ROOT = [
   "RouteTransientSolver",
+  "RoutedPipelineSolver",
   "stackupFromCircuitJson",
   "transmittedBits",
 ]

@@ -1,3 +1,15 @@
+import assert from "node:assert/strict"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+import { Circuit, simulation } from "@tscircuit/core"
+import { type GraphicsObject, getSvgFromGraphicsObject } from "graphics-debug"
+import React from "react"
+import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
+import type { CircuitJson } from "../../src/board"
+import { formatSpiceVectors } from "../../src/observation"
+import { RoutedPipelineSolver } from "../../src/pipeline"
+import type { SolverContext } from "../../src/solver"
+
 /** Build the synthetic 3.3 V model with the specified package resistance in ohms. */
 function singleEndedIbis({
   packageResistanceOhms,
@@ -117,3 +129,140 @@ export const separateClampIbis = routedVisualIbis
 10 0.1 0.1 0.1
 `,
   )
+
+const fixtures = new Map<number, Promise<{ root: RoutedPipelineSolver }>>()
+
+/** Solve real TwoTraceBoard TSX with original drawing-only model tables, once per test file. */
+export function routedVisualFixture(
+  blocks = 1,
+): Promise<{ root: RoutedPipelineSolver }> {
+  const existing = fixtures.get(blocks)
+  if (existing) return existing
+  const fixture = (async () => {
+    const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
+    const board = TwoTraceBoard({
+      "bit-rate": "400Mbps",
+      "duration-seconds": 4e-9,
+    })
+    const tree =
+      blocks === 1
+        ? board
+        : React.cloneElement(
+            board,
+            {},
+            ...React.Children.toArray(board.props.children).filter(
+              (child) =>
+                !React.isValidElement(child) ||
+                child.type !== simulation.pcbtransientchannelsimulation,
+            ),
+            ...[0, 1].map((i) => (
+              <simulation.pcbtransientchannelsimulation
+                key={i}
+                name={`BLOCK${i}`}
+                bitRate="400Mbps"
+                duration={4e-9}
+              >
+                <simulation.pcbdriverreceiverchannel
+                  name={`DATA${i}`}
+                  driverRef={`.TX${i} > .Y`}
+                  receiverRef={`.RX${i} > .A`}
+                  pattern="01"
+                />
+              </simulation.pcbtransientchannelsimulation>
+            )),
+          )
+    circuit.add(tree)
+    await circuit.renderUntilSettled()
+    // Synthetic engine IO for drawing only; these curves are not solver evidence.
+    const context: SolverContext = {
+      progress: (): void => undefined,
+      runSolver: async (request) => {
+        const deck = request.files["simulation.cir"]
+        const duration = Number(/^\.tran\s+\S+\s+(\S+)/m.exec(deck)![1])
+        const saved = /^\.save (.+)$/m.exec(deck)![1]
+        const names = [
+          ...new Set(
+            [...saved.matchAll(/v\(([^)]+)\)/g)].map((match) => match[1]),
+          ),
+        ]
+        return {
+          stdout: "",
+          stderr: "",
+          files: {
+            "waveform.raw": formatSpiceVectors([
+              {
+                name: "time",
+                type: "time",
+                values: [
+                  0,
+                  duration * 0.2,
+                  duration * 0.21,
+                  duration * 0.25,
+                  duration,
+                ],
+              },
+              ...names.map((name, i) => ({
+                name: `v(${name})`,
+                type: "voltage",
+                values:
+                  i === 0
+                    ? [0, 0.8, 2.1, 1.5, 1.5]
+                    : i === 1
+                      ? [0, 0.1, -0.5, 0.05, 0]
+                      : [3.3, 3.3, 3.3, 3.3, 3.3],
+              })),
+            ]),
+          },
+        }
+      },
+    }
+    const root = new RoutedPipelineSolver(
+      {
+        circuitJson: circuit.getCircuitJson() as CircuitJson,
+        ibisSources: { "models/sn74lvc1g04.ibs": routedVisualIbis },
+        scopeDistanceMm: 1,
+      },
+      context,
+    )
+    await root.solveAsync()
+    return { root }
+  })()
+  fixtures.set(blocks, fixture)
+  return fixture
+}
+
+/** Compare actual exported SVG, including explicit text and fills; snapshots contain no vendor data. */
+export function assertRouteVisual(
+  drawing: GraphicsObject,
+  module: string,
+  name: string,
+): void {
+  const path = join(
+    import.meta.dirname,
+    "..",
+    module,
+    "__snapshots__",
+    `${name}.snap.svg`,
+  )
+  // Ignore sub-micro-atlas-unit V8/JavaScriptCore rounding in display coordinates only.
+  const normalized: GraphicsObject = JSON.parse(
+    JSON.stringify(drawing, (_key, value) =>
+      typeof value === "number" ? Number(value.toFixed(6)) : value,
+    ),
+  )
+  const svg = getSvgFromGraphicsObject(normalized, {
+    svgWidth: 1100,
+    svgHeight: 800,
+    backgroundColor: "white",
+    includeTextLabels: false,
+  })
+  if (process.env.UPDATE_ROUTED_VISUALS === "1") {
+    mkdirSync(join(path, ".."), { recursive: true })
+    writeFileSync(path, svg)
+  }
+  assert.equal(
+    svg,
+    readFileSync(path, "utf8"),
+    `${module}/${name} SVG changed; inspect PNGs before updating snapshots`,
+  )
+}
