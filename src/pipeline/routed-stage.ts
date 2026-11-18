@@ -4,9 +4,12 @@ import { type Produced, snapshot } from "../kernel"
 
 type ItemSolver<I, O> = BaseSolver & {
   getOutput(): Produced<O>
-  getConstructorParams(): [I]
+  getConstructorParams(): ConstructorParameters<ItemClass<I, O>>
 }
 type ItemClass<I, O> = new (input: I) => ItemSolver<I, O>
+
+/** A flat stage constructor with its domain solver already bound. */
+type RoutedStageClass<I, O> = new (inputs: I[]) => RoutedStageSolver<I, O>
 
 /** One flat stage drains the domain algorithm one item at a time across all admitted blocks. */
 export class RoutedStageSolver<I, O> extends BaseSolver {
@@ -120,7 +123,9 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
     return this.output
   }
   /** Retain each original domain input for constructor downloads and focused diagnostics. */
-  override getConstructorParams(): [I[]] {
+  override getConstructorParams(): ConstructorParameters<
+    RoutedStageClass<I, O>
+  > {
     return [this.inputs]
   }
   /** Keep the last block's physical drawing after its stage completes; with no admitted blocks there is nothing to overlay. */
@@ -132,9 +137,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
 /** Bind a domain algorithm once in the static stage tuple, with no runtime stage creation. */
 export function routedStage<I, O>(
   solverClass: ItemClass<I, O>,
-): new (
-  inputs: I[],
-) => RoutedStageSolver<I, O> {
+): RoutedStageClass<I, O> {
   return class extends RoutedStageSolver<I, O> {
     /** One immutable input per admitted block; the stage owns its ordered work queue. */
     constructor(inputs: I[]) {

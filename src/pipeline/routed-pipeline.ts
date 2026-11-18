@@ -183,7 +183,9 @@ export class RoutedPipelineSolver extends BasePipelineSolver<RoutedProblem> {
     return this.output
   }
   /** Exact source inputs plus the injected execution capability. */
-  override getConstructorParams(): [RoutedProblem, SolverContext] {
+  override getConstructorParams(): ConstructorParameters<
+    typeof RoutedPipelineSolver
+  > {
     return [this.inputProblem, this.context]
   }
 }
