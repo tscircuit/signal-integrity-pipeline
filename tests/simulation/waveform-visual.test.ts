@@ -99,7 +99,7 @@ test("pending, running and failed captures draw empty axes, an amber hatch and a
   assert.equal(failed.lines!.filter((line) => line.label === "DATA").length, 0)
 })
 
-test("a long capture folds into a two-UI eye at the channel bit period; above six probes an envelope keeps one worst curve", async () => {
+test("a long capture folds into an eye spanning two unit intervals at the channel bit period; above six probes an envelope keeps one worst curve", async () => {
   const { root } = await routedVisualFixture()
   const board = root.stageOutput("RouteSectionsSolver").value[0]
   const ports = root

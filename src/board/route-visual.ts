@@ -5,7 +5,10 @@ import type {
   Point,
   Viewbox,
 } from "graphics-debug"
-import { connectedSourceIds } from "./connectivity"
+import {
+  getSourcePortConnectivityMapFromCircuitJson,
+  sourceNetMembers,
+} from "./connectivity"
 import type { CopperScope } from "./geometry/scope"
 import type { SourcePort } from "./geometry/types"
 import type { CircuitJson } from "./schema"
@@ -228,6 +231,7 @@ function routeViewNets(
   circuit: CircuitJson,
   order: SourceTraceId[],
 ): Pick<RouteView, "sources" | "ports"> {
+  const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
   const nets: { ids: Set<string>; sources: string[] }[] = []
   const sourceTraces = circuit.filter(
     (record) => record.type === "source_trace",
@@ -246,7 +250,7 @@ function routeViewNets(
       net.sources.push(id)
       continue
     }
-    nets.push({ ids: connectedSourceIds(circuit, seed), sources: [id] })
+    nets.push({ ids: sourceNetMembers(connectivity, seed), sources: [id] })
   }
   const channels = new Map<
     SignalName,

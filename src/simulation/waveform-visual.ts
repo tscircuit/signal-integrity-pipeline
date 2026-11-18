@@ -270,7 +270,7 @@ function excursion({
 
 /**
  * Probe marks on the board and a waveform pane beside it.
- * Long captures fold into a two-UI eye; short ones start just before the first activity. Above six far-end probes,
+ * Long captures fold into an eye spanning two unit intervals; short ones start just before the first activity. Above six far-end probes,
  * an envelope and the worst curve replace the rainbow. IBIS receiver thresholds are a band; amber hatching means ngspice is running.
  */
 export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
@@ -588,7 +588,7 @@ function plotY(
   )
 }
 
-/** Draw the time scale for a transient capture or two-UI eye. */
+/** Draw the time scale for a transient capture or an eye spanning two unit intervals. */
 function drawTimeAxis(
   drawing: GraphicsObject,
   {
