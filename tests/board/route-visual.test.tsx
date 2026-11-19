@@ -1,6 +1,9 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
+import { simulation } from "@tscircuit/core"
 import type { GraphicsObject } from "graphics-debug"
+import React from "react"
+import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
 import {
   routeBoardDrawing,
   routeDisplayItems,
@@ -9,24 +12,24 @@ import {
   routeStrip,
   routeStroke,
   routeView,
-  type SimulationPcbDriverReceiverChannel,
 } from "../../src/board"
-import { routedCopper } from "../support/routed-fixture"
+import { routedCopper } from "../fixtures/routed-copper"
 import {
   assertRouteVisual,
   routedVisualFixture,
-} from "../support/routed-visual-fixture"
+} from "../fixtures/routed-visual"
+import { renderCoreSignals } from "../support/core-render"
 
 test("one camera frames connected copper, its endpoint parts and a pane", async () => {
   const { root } = await routedVisualFixture()
   const { circuitJson, scope } = root.stageOutput("RouteSectionsSolver")
     .value[0]
-  const view = routeView(circuitJson, scope)
+  const view = routeView({ circuit: circuitJson, scope })
   const nets = new Set(view.sources.values())
   assert.equal(nets.size, 2)
   assert.notEqual([...nets][0].hue, [...nets][1].hue)
   assert.equal(
-    routeView(circuitJson, scope),
+    routeView({ circuit: circuitJson, scope }),
     view,
     "cached per problem, so every stage shares it",
   )
@@ -50,7 +53,12 @@ test("one camera frames connected copper, its endpoint parts and a pane", async 
   )
   const copper = await routedCopper()
   assert.equal(
-    new Set(routeView(copper.circuitJson, copper.scope).sources.values()).size,
+    new Set(
+      routeView({
+        circuit: copper.circuitJson,
+        scope: copper.scope,
+      }).sources.values(),
+    ).size,
     1,
     "a neighbour is context, not a net",
   )
@@ -66,53 +74,37 @@ test("one camera frames connected copper, its endpoint parts and a pane", async 
 
 test("a differential channel colours its two nets as two shades of one hue and carries its bit period", async () => {
   const { root } = await routedVisualFixture()
-  const { circuitJson, scope } = root.stageOutput("RouteSectionsSolver")
-    .value[0]
-  const selected = new Set(
-    circuitJson.flatMap((record) => {
-      if (
-        record.type !== "pcb_trace" ||
-        !scope.selectedPcbTraceIds.includes(record.pcb_trace_id)
-      )
-        return []
-      return [record.source_trace_id]
-    }),
+  const { scope } = root.stageOutput("RouteSectionsSolver").value[0]
+  const board = TwoTraceBoard()
+  const children = React.Children.toArray(board.props.children).filter(
+    (child) =>
+      !React.isValidElement(child) ||
+      child.type !== simulation.pcbtransientchannelsimulation,
   )
-  const ports = circuitJson.flatMap((record) => {
-    if (record.type !== "source_trace" || !selected.has(record.source_trace_id))
-      return []
-    return [record.connected_source_port_ids]
-  })
-  const signal: SimulationPcbDriverReceiverChannel = {
-    type: "simulation_pcb_driver_receiver_channel",
-    simulation_pcb_driver_receiver_channel_id: "pair",
-    simulation_pcb_transient_channel_simulation_id: "block",
-    name: "PAIR",
-    driver: { p_source_port_id: ports[0][0], n_source_port_id: ports[1][0] },
-    receivers: [
-      { p_source_port_id: ports[0][1], n_source_port_id: ports[1][1] },
-    ],
-    bit_rate_bps: 1e8,
-    pattern: "01",
-    seed: 1,
-    offset_ms: 0,
-  }
-  const view = routeView(
-    [
-      ...circuitJson.filter(
-        (record) => record.type !== "simulation_pcb_driver_receiver_channel",
-      ),
-      signal,
-    ],
-    {
-      ...scope,
-    },
+  const circuit = await renderCoreSignals(
+    React.cloneElement(
+      board,
+      {},
+      ...children,
+      <simulation.pcbtransientchannelsimulation
+        name="PAIR_TEST"
+        bitRate="100Mbps"
+      >
+        <simulation.pcbdriverreceiverchannel
+          name="PAIR"
+          driverRef={{ p: ".TX0 > .Y", n: ".TX1 > .Y" }}
+          receiverRef={{ p: ".RX0 > .A", n: ".RX1 > .A" }}
+          pattern="01"
+        />
+      </simulation.pcbtransientchannelsimulation>,
+    ),
   )
+  const view = routeView({ circuit, scope })
   const [p, n] = [...new Set(view.sources.values())]
   assert.equal(p.hue, n.hue)
   assert.notEqual(p.lightness, n.lightness)
   assert.deepEqual(
-    [p.label, n.label, p.unitInterval, p.differential],
+    [p.label, n.label, p.unitIntervalSeconds, p.differential],
     ["PAIR P", "PAIR N", 1e-8, true],
   )
 })
@@ -202,7 +194,7 @@ test("the strip unrolls nets to scale, centred in the pane, with one length labe
   const { root } = await routedVisualFixture()
   const { circuitJson, scope } = root.stageOutput("RouteSectionsSolver")
     .value[0]
-  const view = routeView(circuitJson, scope)
+  const view = routeView({ circuit: circuitJson, scope })
   const drawing: GraphicsObject = { lines: [], polygons: [], texts: [] }
   const nets = [...new Set(view.sources.values())]
   routeStrip({
@@ -226,19 +218,16 @@ test("the strip unrolls nets to scale, centred in the pane, with one length labe
 test("two-trace TSX board drawing SVG snapshot", async () => {
   const { root } = await routedVisualFixture()
   const sections = root.stageOutput("RouteSectionsSolver").value[0]
-  assertRouteVisual(
-    routeBoardDrawing({
-      circuit: root.inputProblem.circuitJson,
-      scope: sections.scope,
-    }),
-    "board",
-    "route-visual-board",
-  )
+  const drawing = routeBoardDrawing({
+    circuit: root.inputProblem.circuitJson,
+    scope: sections.scope,
+  })
+  assertRouteVisual({ drawing, module: "board", name: "route-visual-board" })
 })
 
 test("display sampling bounds object counts and preserves the first and last item", () => {
   const items = Array.from({ length: 10000 }, (_, i) => i)
-  const shown = routeDisplayItems(items)
+  const shown = routeDisplayItems({ items })
   assert.equal(shown.length, 160)
   assert.equal(shown[0], 0)
   assert.equal(shown.at(-1), 9999)

@@ -13,7 +13,7 @@ import { sha256 } from "../../src/kernel"
 import {
   assertRouteVisual,
   routedVisualFixture,
-} from "../support/routed-visual-fixture"
+} from "../fixtures/routed-visual"
 
 // Synthetic drawing data only: irregular sampling and a negative undershoot.
 const capture: RoutedCapture = {
@@ -47,7 +47,7 @@ test("waveform pane draws probe colors, dashed drivers, thresholds and round tic
     threshold: { low: 0.8, high: 2 },
     running: false,
   })
-  assertRouteVisual(drawing, "simulation", "waveform-visual")
+  assertRouteVisual({ drawing, module: "simulation", name: "waveform-visual" })
   assert.deepEqual(capture, original, "pure drawing never mutates results")
   const curves = drawing.lines!.filter((line) => line.layer === "waveform")
   assert.deepEqual(
@@ -77,15 +77,16 @@ test("waveform pane draws probe colors, dashed drivers, thresholds and round tic
 })
 
 test("pending, running and failed captures draw status and empty axes", () => {
-  assertRouteVisual(
-    routeWaveformDrawing({
-      probes,
-      durationSeconds: 1e-9,
-      running: false,
-    }),
-    "simulation",
-    "waveform-visual-pending",
-  )
+  const pending = routeWaveformDrawing({
+    probes,
+    durationSeconds: 1e-9,
+    running: false,
+  })
+  assertRouteVisual({
+    drawing: pending,
+    module: "simulation",
+    name: "waveform-visual-pending",
+  })
   const running = routeWaveformDrawing({
     probes,
     durationSeconds: 1e-9,
@@ -102,7 +103,11 @@ test("pending, running and failed captures draw status and empty axes", () => {
     running: false,
     error: "native timeout",
   })
-  assertRouteVisual(failed, "simulation", "waveform-visual-failed")
+  assertRouteVisual({
+    drawing: failed,
+    module: "simulation",
+    name: "waveform-visual-failed",
+  })
   assert.ok(failed.texts!.some((text) => text.text.includes("native timeout")))
   assert.equal(failed.lines!.filter((line) => line.label === "DATA").length, 0)
 })

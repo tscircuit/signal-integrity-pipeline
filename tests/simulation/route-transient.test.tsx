@@ -181,12 +181,16 @@ import { routeTones } from "../../src/board"
 import {
   assertRouteVisual,
   routedVisualFixture,
-} from "../support/routed-visual-fixture"
+} from "../fixtures/routed-visual"
 
 test("live stage uses the shared waveform atlas for completed samples and failure diagnostics", async () => {
   const { root } = await routedVisualFixture()
   const stage = root.getSolver<RouteTransientSolver>("RouteTransientSolver")!
-  assertRouteVisual(stage.visualize(), "simulation", "route-transient")
+  assertRouteVisual({
+    drawing: stage.visualize(),
+    module: "simulation",
+    name: "route-transient",
+  })
   const curves = stage
     .visualize()
     .lines!.filter((line) => line.layer === "waveform")
@@ -214,14 +218,14 @@ test("live stage uses the shared waveform atlas for completed samples and failur
       .value[0].probes.map((probe) => probe.name),
     ["DATA_0", "VICTIM_0", "VICTIM_1"],
   )
-  const pending = solver(response())
+  const pending = solver(async () => response())
   assert.equal(
     pending.visualize().lines!.filter((line) => line.layer === "waveform")
       .length,
     0,
     "no curves before ngspice returns",
   )
-  const failed = solver(response({ stdout: "fatal: rejected" }))
+  const failed = solver(async () => response({ stdout: "fatal: rejected" }))
   await assert.rejects(failed.solveAsync(), /fatal/)
   assert.ok(
     failed

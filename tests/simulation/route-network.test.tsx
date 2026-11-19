@@ -112,15 +112,17 @@ import { routeTones } from "../../src/board"
 import {
   assertRouteVisual,
   routedVisualFixture,
-} from "../support/routed-visual-fixture"
+} from "../fixtures/routed-visual"
 
 test("two-trace TSX route-network visual SVG snapshot", async () => {
   const { root } = await routedVisualFixture()
-  assertRouteVisual(
-    root.getSolver<RouteNetworkSolver>("RouteNetworkSolver")!.visualize(),
-    "simulation",
-    "route-network",
-  )
+  assertRouteVisual({
+    drawing: root
+      .getSolver<RouteNetworkSolver>("RouteNetworkSolver")!
+      .visualize(),
+    module: "simulation",
+    name: "route-network",
+  })
 })
 
 test("rejected network drawing retains physical context and shows its red reason", async () => {
@@ -141,7 +143,11 @@ test("rejected network drawing retains physical context and shows its red reason
       (text) => text.color === routeTones.failure && text.text.includes("1835"),
     ),
   )
-  assertRouteVisual(drawing, "simulation", "route-network-rejected")
+  assertRouteVisual({
+    drawing,
+    module: "simulation",
+    name: "route-network-rejected",
+  })
 })
 
 /** One unit interval is 2 ns at this rate. */

@@ -11,6 +11,15 @@ import {
 import { routeBoardBox, routeBounds } from "./route-visual"
 import type { CircuitJson, Point } from "./schema"
 
+/** Keep a visible view box for drawings with coincident coordinates. */
+const MINIMUM_EXTENT_MM = 1e-3
+/** Pad drawings without an explicit camera. */
+const DRAWING_MARGIN = 0.04
+/** Include nearby PCB records so their shapes can extend into the camera. */
+const CROP_MARGIN = 0.1
+/** Bound the number of stored crops and SVGs per board. */
+const CACHED_CAMERAS_PER_BOARD = 6
+
 /** Dark, desaturated board colours so bright stage overlays stand out on a realistic top view. */
 export const boardColors = {
   background: "#0c0f12",
@@ -25,6 +34,7 @@ export const boardColors = {
   } satisfies PcbColorOverrides,
 }
 
+/** Aligned SVG layers for the board and the stage drawing. */
 export interface BoardPicture {
   /** The real board from circuit-to-svg, cropped to the camera and letterboxed. */
   board: string
@@ -33,10 +43,13 @@ export interface BoardPicture {
 }
 
 /** The camera: the drawing's `camera` frame, else its bounds with a margin, else the whole board. */
-export function boardPictureView(
-  circuit: CircuitJson,
-  drawing: GraphicsObject,
-): Viewbox {
+export function boardPictureView({
+  circuit,
+  drawing,
+}: {
+  circuit: CircuitJson
+  drawing: GraphicsObject
+}): Viewbox {
   const frame = drawing.rects?.find((rect) => rect.label === "camera")
   if (frame)
     return {
@@ -45,8 +58,10 @@ export function boardPictureView(
       minY: frame.center.y - frame.height / 2,
       maxY: frame.center.y + frame.height / 2,
     }
-  const box = drawingBounds(circuit, drawing)
-  const margin = Math.max(box.maxX - box.minX, box.maxY - box.minY, 1e-3) * 0.04
+  const box = drawingBounds({ circuit, drawing })
+  const margin =
+    Math.max(box.maxX - box.minX, box.maxY - box.minY, MINIMUM_EXTENT_MM) *
+    DRAWING_MARGIN
   return {
     minX: box.minX - margin,
     maxX: box.maxX + margin,
@@ -56,7 +71,13 @@ export function boardPictureView(
 }
 
 /** Use the board's extent when the drawing carries no geometry. */
-function drawingBounds(circuit: CircuitJson, drawing: GraphicsObject): Viewbox {
+function drawingBounds({
+  circuit,
+  drawing,
+}: {
+  circuit: CircuitJson
+  drawing: GraphicsObject
+}): Viewbox {
   if (
     (
       ["lines", "rects", "circles", "polygons", "points", "texts"] as const
@@ -84,6 +105,7 @@ function recordPoints(record: object): Point[] {
   return [record, center, anchor_position, ...pointLists.flat()].filter(isPoint)
 }
 
+/** Serialized camera bounds used to cache cropped Circuit JSON. */
 type CameraKey = string
 const crops = new WeakMap<CircuitJson, Map<CameraKey, CircuitJson>>()
 
@@ -91,11 +113,18 @@ const crops = new WeakMap<CircuitJson, Map<CameraKey, CircuitJson>>()
  * Only records near the camera reach circuit-to-svg, and silkscreen text never does, so the board layer stays
  * small and wordless.
  */
-function cropCircuit(circuit: CircuitJson, view: Viewbox): CircuitJson {
+function cropCircuit({
+  circuit,
+  view,
+}: {
+  circuit: CircuitJson
+  view: Viewbox
+}): CircuitJson {
   const key = JSON.stringify(view)
   const cache = crops.get(circuit) ?? new Map<CameraKey, CircuitJson>()
   crops.set(circuit, cache)
-  const margin = Math.max(view.maxX - view.minX, view.maxY - view.minY) * 0.1
+  const margin =
+    Math.max(view.maxX - view.minX, view.maxY - view.minY) * CROP_MARGIN
   const cropped =
     cache.get(key) ??
     circuit.filter((record) => {
@@ -120,10 +149,12 @@ function cropCircuit(circuit: CircuitJson, view: Viewbox): CircuitJson {
       return overlapsX && overlapsY
     })
   cache.set(key, cropped)
-  if (cache.size > 6) cache.delete(cache.keys().next().value!)
+  if (cache.size > CACHED_CAMERAS_PER_BOARD)
+    cache.delete(cache.keys().next().value!)
   return cropped
 }
 
+/** Serialized bounds and dimensions used to cache board SVGs. */
 type BoardSvgKey = string
 const boards = new WeakMap<CircuitJson, Map<BoardSvgKey, string>>()
 
@@ -145,7 +176,7 @@ function boardSvg({
   const svg =
     cache.get(key) ??
     convertCircuitJsonToPcbSvg(
-      cropCircuit(circuit, view) as Parameters<
+      cropCircuit({ circuit, view }) as Parameters<
         typeof convertCircuitJsonToPcbSvg
       >[0],
       {
@@ -160,10 +191,12 @@ function boardSvg({
       },
     )
   cache.set(key, svg)
-  if (cache.size > 6) cache.delete(cache.keys().next().value!)
+  if (cache.size > CACHED_CAMERAS_PER_BOARD)
+    cache.delete(cache.keys().next().value!)
   return svg
 }
 
+/** The drawing, board and render dimensions for one board picture. */
 interface BoardPictureInput {
   circuit: CircuitJson
   drawing: GraphicsObject
@@ -186,7 +219,7 @@ function cameraRect(svg: string): string {
 }
 
 /** Read a nonempty numeric attribute from a generated SVG tag. */
-function svgNumber(tag: string, name: string): number {
+function svgNumber({ tag, name }: { tag: string; name: string }): number {
   const prefix = ` ${name}="`
   let index = tag.indexOf(prefix)
   while (index >= 0) {
@@ -200,7 +233,7 @@ function svgNumber(tag: string, name: string): number {
 }
 
 /** Replace the generated SVG root's opening tag. */
-function replaceSvgRoot(svg: string, tag: string): string {
+function replaceSvgRoot({ svg, tag }: { svg: string; tag: string }): string {
   const end = svg.indexOf(">")
   if (!svg.startsWith("<svg") || end < 0) return svg
   return `${tag}${svg.slice(end + 1)}`
@@ -217,7 +250,7 @@ export function boardPicture({
   height,
   region,
 }: BoardPictureInput): BoardPicture {
-  const camera = boardPictureView(circuit, drawing)
+  const camera = boardPictureView({ circuit, drawing })
   const view = region ?? camera
   const scale = Math.min(
     width / (view.maxX - view.minX),
@@ -253,20 +286,20 @@ export function boardPicture({
   // Wherever graphics-debug placed the frame, crop the overlay to it: objects outside the camera never move it.
   const rect = cameraRect(raw)
   const [x, y, w, h] = ["x", "y", "width", "height"].map((name) =>
-    svgNumber(rect, name),
+    svgNumber({ tag: rect, name }),
   )
   const unit = w / pictureWidth
-  const dimensions = svgDimensions(width, height)
+  const dimensions = svgDimensions({ width, height })
   const overlayBox = [
     x - left * unit,
     y - top * unit,
     width * unit,
     height * unit,
   ].join(" ")
-  const overlay = replaceSvgRoot(
-    raw,
-    `<svg ${dimensions} viewBox="${overlayBox}">`,
-  )
+  const overlay = replaceSvgRoot({
+    svg: raw,
+    tag: `<svg ${dimensions} viewBox="${overlayBox}">`,
+  })
   const svg = boardSvg({
     circuit,
     view,
@@ -284,7 +317,13 @@ export function boardPicture({
 }
 
 /** SVG root attributes shared by both layers and the composed picture. */
-function svgDimensions(width: number, height: number): string {
+function svgDimensions({
+  width,
+  height,
+}: {
+  width: number
+  height: number
+}): string {
   return `xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"`
 }
 
@@ -301,6 +340,6 @@ export function boardPictureSvg({
     width,
     height,
   })
-  const dimensions = svgDimensions(width, height)
+  const dimensions = svgDimensions({ width, height })
   return `<svg ${dimensions} viewBox="0 0 ${width} ${height}">${picture.board}${picture.overlay}</svg>`
 }

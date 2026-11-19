@@ -1,3 +1,4 @@
+/* eslint-disable local/max-file-lines -- Keep the common route camera, glyphs and pane layouts together. */
 import type {
   GraphicsObject,
   Line,
@@ -10,7 +11,14 @@ import {
   sourceNetMembers,
 } from "./connectivity"
 import type { CopperScope } from "./geometry/scope"
-import type { SourcePortId, SourceTraceId } from "./ids"
+import type {
+  PcbPortId,
+  PcbTraceId,
+  SourceNetId,
+  SourcePortId,
+  SourceTraceId,
+} from "./ids"
+import type { RouteWire } from "./route-sections"
 import type { CircuitJson } from "./schema"
 import {
   type SimulationPcbDriverReceiverChannel,
@@ -41,7 +49,7 @@ export interface RouteNet {
   lightness: number
   color: string
   /** Bit period of the channel that drives this net, when one does. */
-  unitInterval?: number
+  unitIntervalSeconds?: number
   /** One leg of a differential pair. */
   differential: boolean
 }
@@ -54,11 +62,12 @@ export interface RouteFrame {
   unit: number
 }
 
+/** The name of a declared driver/receiver channel. */
 type SignalName = SimulationPcbDriverReceiverChannel["name"]
 
 /** A problem's framing plus its nets, shared by every stage so the camera and colours never move. */
 export interface RouteView extends RouteFrame {
-  traces: Set<string>
+  traces: Set<PcbTraceId>
   sources: Map<SourceTraceId, RouteNet>
   ports: Map<SourcePortId, RouteNet>
 }
@@ -95,8 +104,17 @@ export function routeBounds(points: readonly Point[]): Viewbox | undefined {
   return box
 }
 
+/** Bound the default number of sampled items in dense route drawings. */
+const ROUTE_DISPLAY_LIMIT = 160
+
 /** Deterministic display-only sampling; never changes the admitted copper or solver input. */
-export function routeDisplayItems<T>(items: readonly T[], limit = 160): T[] {
+export function routeDisplayItems<T>({
+  items,
+  limit = ROUTE_DISPLAY_LIMIT,
+}: {
+  items: readonly T[]
+  limit?: number
+}): T[] {
   if (items.length <= limit) return [...items]
   return Array.from(
     { length: limit },
@@ -106,10 +124,23 @@ export function routeDisplayItems<T>(items: readonly T[], limit = 160): T[] {
 
 /** Prefer a roughly 8:5 camera for a board and its stage pane. */
 const CAMERA_ASPECT_RATIO = 1.6
+/** Keep a small border around the copper and separate it from the pane. */
+const CAMERA_BORDER = 0.06
+const CAMERA_GAP = 0.03
+/** Keep the stage pane legible in a compact camera. */
+const MINIMUM_SIDE_PANE_HEIGHT_RATIO = 0.6
+const MINIMUM_BOTTOM_PANE_WIDTH_RATIO = 0.35
+/** Limit contact with large packages and extend the camera to nearby board edges. */
+const FOCUS_REACH_RATIO = 0.25
+/** Resolve a full cycle into 24 points for consistent via and pin outlines. */
+const CIRCLE_SEGMENTS = 24
+/** Keep failure text short enough to fit the stage pane. */
+const FAILURE_LINE_LIMIT = 3
 
 /** A focus box with a pane slot on whichever side brings the camera closest to 1.6:1. */
 export function routeFrame(box: Viewbox): RouteFrame {
-  const margin = Math.max(box.maxX - box.minX, box.maxY - box.minY, 1e-3) * 0.06
+  const margin =
+    Math.max(box.maxX - box.minX, box.maxY - box.minY, 1e-3) * CAMERA_BORDER
   const focus = {
     minX: box.minX - margin,
     maxX: box.maxX + margin,
@@ -118,9 +149,15 @@ export function routeFrame(box: Viewbox): RouteFrame {
   }
   const width = focus.maxX - focus.minX
   const height = focus.maxY - focus.minY
-  const gap = Math.max(width, height) * 0.03
-  const side = Math.max(0.6 * height, CAMERA_ASPECT_RATIO * height - width)
-  const below = Math.max(0.35 * width, width / CAMERA_ASPECT_RATIO - height)
+  const gap = Math.max(width, height) * CAMERA_GAP
+  const side = Math.max(
+    MINIMUM_SIDE_PANE_HEIGHT_RATIO * height,
+    CAMERA_ASPECT_RATIO * height - width,
+  )
+  const below = Math.max(
+    MINIMUM_BOTTOM_PANE_WIDTH_RATIO * width,
+    width / CAMERA_ASPECT_RATIO - height,
+  )
   const sideAspect = (width + gap + side) / height
   const belowAspect = width / (height + gap + below)
   const right =
@@ -159,13 +196,19 @@ const views = new WeakMap<CopperScope, WeakMap<CircuitJson, RouteView>>()
  * Selected copper plus its endpoint components frame the problem; nets follow electrical connectivity, and
  * differential channels pair two nets in one hue.
  */
-export function routeView(circuit: CircuitJson, scope: CopperScope): RouteView {
+export function routeView({
+  circuit,
+  scope,
+}: {
+  circuit: CircuitJson
+  scope: CopperScope
+}): RouteView {
   const cached = views.get(scope)?.get(circuit)
   if (cached) return cached
   const traces = new Set(scope.selectedPcbTraceIds)
   const points: Point[] = []
-  const ends = new Set<string>()
-  const order: string[] = []
+  const ends = new Set<PcbPortId>()
+  const order: SourceTraceId[] = []
   for (const trace of circuit) {
     if (trace.type !== "pcb_trace" || !traces.has(trace.pcb_trace_id)) continue
     if (trace.source_trace_id && !order.includes(trace.source_trace_id))
@@ -185,7 +228,8 @@ export function routeView(circuit: CircuitJson, scope: CopperScope): RouteView {
     maxY: 1,
   }
   const reach =
-    Math.max(copper.maxX - copper.minX, copper.maxY - copper.minY) * 0.25
+    Math.max(copper.maxX - copper.minX, copper.maxY - copper.minY) *
+    FOCUS_REACH_RATIO
   const components = new Set(
     circuit.flatMap((port) => {
       if (
@@ -224,10 +268,8 @@ export function routeView(circuit: CircuitJson, scope: CopperScope): RouteView {
   }
   // A board edge just beyond the problem is framed too, so the camera never cuts a board a few millimetres short.
   const board = routeBoardBox(circuit)
-  const [reachX, reachY] = [
-    (parts.maxX - parts.minX) * 0.25,
-    (parts.maxY - parts.minY) * 0.25,
-  ]
+  const reachX = (parts.maxX - parts.minX) * FOCUS_REACH_RATIO
+  const reachY = (parts.maxY - parts.minY) * FOCUS_REACH_RATIO
   const box = { ...parts }
   if (parts.minX - board.minX <= reachX)
     box.minX = Math.min(board.minX, parts.minX)
@@ -237,23 +279,50 @@ export function routeView(circuit: CircuitJson, scope: CopperScope): RouteView {
     box.minY = Math.min(board.minY, parts.minY)
   if (board.maxY - parts.maxY <= reachY)
     box.maxY = Math.max(board.maxY, parts.maxY)
-  const view = { ...routeFrame(box), traces, ...routeViewNets(circuit, order) }
+  const view = {
+    ...routeFrame(box),
+    traces,
+    ...routeViewNets({ circuit, order }),
+  }
   const byCircuit = views.get(scope) ?? new WeakMap<CircuitJson, RouteView>()
   byCircuit.set(circuit, view)
   views.set(scope, byCircuit)
   return view
 }
 
+/** Drawing styles keyed by source traces and their connected ports. */
+type RouteNetStyles = Pick<RouteView, "sources" | "ports">
+
+/** Selected source traces grouped with their electrically connected IDs. */
+interface RouteSourceNet {
+  ids: Set<SourcePortId | SourceNetId | SourceTraceId>
+  sources: SourceTraceId[]
+}
+
+/** The endpoint ports and bit period used to style a channel. */
+interface RouteChannelPorts {
+  ends: SourcePortId[]
+  legs: SourcePortId[]
+  unitIntervalSeconds: number
+}
+
+/** Nets that share one hue, with an optional channel's name and bit period. */
+interface RouteNetGroup {
+  nets: RouteSourceNet[]
+  name?: SignalName
+  unitIntervalSeconds?: number
+}
+
 /** Resolve selected source traces to net styles, pairing differential legs by signal. */
-function routeViewNets(
-  circuit: CircuitJson,
-  order: SourceTraceId[],
-): Pick<RouteView, "sources" | "ports"> {
+function routeViewNets({
+  circuit,
+  order,
+}: {
+  circuit: CircuitJson
+  order: SourceTraceId[]
+}): RouteNetStyles {
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
-  const nets: {
-    ids: Set<string>
-    sources: string[]
-  }[] = []
+  const nets: RouteSourceNet[] = []
   const sourceTraces = circuit.filter(
     (record) => record.type === "source_trace",
   )
@@ -271,16 +340,9 @@ function routeViewNets(
       net.sources.push(id)
       continue
     }
-    nets.push({ ids: sourceNetMembers(connectivity, seed), sources: [id] })
+    nets.push({ ids: sourceNetMembers({ connectivity, seed }), sources: [id] })
   }
-  const channels = new Map<
-    SignalName,
-    {
-      ends: string[]
-      legs: string[]
-      unitInterval: number
-    }
-  >()
+  const channels = new Map<SignalName, RouteChannelPorts>()
   for (const signal of circuit.filter(
     (record) => record.type === "simulation_pcb_driver_receiver_channel",
   )) {
@@ -288,21 +350,21 @@ function routeViewNets(
     channels.set(signal.name, {
       ends: [...legs, ...signal.receivers.flatMap(signalEndpointPortIds)],
       legs,
-      unitInterval: 1 / signal.bit_rate_bps,
+      unitIntervalSeconds: 1 / signal.bit_rate_bps,
     })
   }
-  const units: {
-    nets: (typeof nets)[number][]
-    name?: string
-    unitInterval?: number
-  }[] = []
+  const units: RouteNetGroup[] = []
   for (const net of nets) {
     if (units.some((unit) => unit.nets.includes(net))) continue
     const [name, channel] =
       [...channels].find(([, entry]) =>
         entry.ends.some((port) => net.ids.has(port)),
       ) ?? []
-    const unit = { nets: [net], name, unitInterval: channel?.unitInterval }
+    const unit = {
+      nets: [net],
+      name,
+      unitIntervalSeconds: channel?.unitIntervalSeconds,
+    }
     if (channel?.legs.length === 2) {
       const [positive, negative] = channel.legs.map((port) =>
         nets.find((entry) => entry.ids.has(port)),
@@ -336,7 +398,7 @@ function routeViewNets(
         hue,
         lightness,
         color: routeHue({ hue, lightness }),
-        unitInterval: unit.unitInterval,
+        unitIntervalSeconds: unit.unitIntervalSeconds,
         differential,
       }
       for (const id of net.sources) sources.set(id, style)
@@ -412,26 +474,28 @@ export function routeStroke({
   ]
 }
 
+/** Contiguous points with the same copper layer and width. */
 interface RouteRun {
   points: Point[]
   layer: string
   width: number
 }
+/** Resolve an optional net to a stroke colour. */
 type RouteNetColor = (net: RouteNet | undefined) => string
 
 /** Emit the current run of one layer and width. */
-function drawRouteRun(
-  {
-    run,
-    net,
-    color,
-  }: {
+function drawRouteRun({
+  style,
+  drawing,
+}: {
+  style: {
     run?: RouteRun
     net?: RouteNet
     color?: RouteNetColor
-  },
-  drawing: GraphicsObject,
-): void {
+  }
+  drawing: GraphicsObject
+}): void {
+  const { run, net, color } = style
   if (!run || run.points.length <= 1) return
   let strokeColor = net?.color ?? routeTones.copper
   if (color) strokeColor = color(net)
@@ -451,7 +515,7 @@ export function routeNets({
   drawing: GraphicsObject
   circuit: CircuitJson
   view: RouteView
-  traceIds?: Set<string>
+  traceIds?: Set<PcbTraceId>
   color?: RouteNetColor
 }): void {
   const fallback =
@@ -464,31 +528,37 @@ export function routeNets({
     let run: RouteRun | undefined
     for (const point of trace.route) {
       if (point.route_type !== "wire") {
-        drawRouteRun({ run, net, color }, drawing)
+        drawRouteRun({ style: { run, net, color }, drawing })
         run = undefined
         continue
       }
       const width = point.width || fallback
       if (!run || run.layer !== point.layer || run.width !== width) {
         const points = run?.points.slice(-1) ?? []
-        drawRouteRun({ run, net, color }, drawing)
+        drawRouteRun({ style: { run, net, color }, drawing })
         run = { points, layer: point.layer, width }
       }
       run.points.push({ x: point.x, y: point.y })
     }
-    drawRouteRun({ run, net, color }, drawing)
+    drawRouteRun({ style: { run, net, color }, drawing })
   }
 }
 
 /** A closed circle outline as polygon points. */
-function circle(center: Point, radius: number): Point[] {
+function circle({
+  center,
+  radius,
+}: {
+  center: Point
+  radius: number
+}): Point[] {
   return Array.from(
     {
-      length: 24,
+      length: CIRCLE_SEGMENTS,
     },
     (_, i) => ({
-      x: center.x + radius * Math.cos((i * Math.PI) / 12),
-      y: center.y + radius * Math.sin((i * Math.PI) / 12),
+      x: center.x + radius * Math.cos((i * Math.PI) / (CIRCLE_SEGMENTS / 2)),
+      y: center.y + radius * Math.sin((i * Math.PI) / (CIRCLE_SEGMENTS / 2)),
     }),
   )
 }
@@ -517,14 +587,14 @@ export function routeMarks({
   )
   for (const mark of marks) {
     drawing.polygons!.push({
-      points: circle(mark.point, radius * 1.25),
+      points: circle({ center: mark.point, radius: radius * 1.25 }),
       fill: routeTones.halo,
       stroke: "none",
       label: mark.label,
     })
     if (mark.driver) {
       drawing.polygons!.push({
-        points: circle(mark.point, radius),
+        points: circle({ center: mark.point, radius }),
         fill: mark.color,
         stroke: "none",
         label: mark.label,
@@ -532,7 +602,7 @@ export function routeMarks({
       continue
     }
     drawing.polygons!.push({
-      points: circle(mark.point, radius * 0.8),
+      points: circle({ center: mark.point, radius: radius * 0.8 }),
       stroke: mark.color,
       strokeWidth: radius * 0.4,
       label: mark.label,
@@ -551,22 +621,25 @@ export function routeVia({
   radius: number
 }): void {
   drawing.polygons!.push({
-    points: circle(center, radius * 1.2),
+    points: circle({ center, radius: radius * 1.2 }),
     stroke: routeTones.halo,
     strokeWidth: radius * 0.5,
   })
   drawing.polygons!.push({
-    points: circle(center, radius),
+    points: circle({ center, radius }),
     stroke: routeTones.via,
     strokeWidth: radius * 0.28,
   })
 }
 
 /** The physical position of a source port. */
-export function routePortPoint(
-  circuit: CircuitJson,
-  sourcePortId: string,
-): Point | undefined {
+export function routePortPoint({
+  circuit,
+  sourcePortId,
+}: {
+  circuit: CircuitJson
+  sourcePortId: SourcePortId
+}): Point | undefined {
   const port = circuit.find(
     (record) =>
       record.type === "pcb_port" && record.source_port_id === sourcePortId,
@@ -636,13 +709,23 @@ export function routePane({
 }
 
 /** Find up to three spans ending at whitespace or the end of the message. */
-function failureLines(message: string, perLine: number): string[] {
+function failureLines({
+  message,
+  perLine,
+}: {
+  message: string
+  perLine: number
+}): string[] {
   const lines: string[] = []
-  // A nonfinite limit used to match a single character followed by the literal count.
-  const literalCount = Number.isFinite(perLine) ? "" : `{1,${perLine}}`
-  const width = literalCount ? 1 : perLine
+  // Preserve the literal-count match when the line width is nonfinite.
+  let literalCount = ""
+  let width = perLine
+  if (!Number.isFinite(perLine)) {
+    literalCount = `{1,${perLine}}`
+    width = 1
+  }
   let start = 0
-  while (start < message.length && lines.length < 3) {
+  while (start < message.length && lines.length < FAILURE_LINE_LIMIT) {
     let boundary = start
     const limit = Math.min(start + width, message.length)
     for (let end = start + 1; end <= limit; end++) {
@@ -659,7 +742,8 @@ function failureLines(message: string, perLine: number): string[] {
     lines.push(message.slice(start, boundary + 1))
     start = boundary + 1
   }
-  return lines.length > 0 ? lines : [message]
+  if (lines.length === 0) return [message]
+  return lines
 }
 
 /** A failure reason in the pane slot (or across the board without one), wrapped to at most three lines that fit. */
@@ -675,7 +759,7 @@ export function routeFailure({
   const width = box.maxX - box.minX
   const size = Math.min((box.maxY - box.minY) * 0.06, width / 40)
   const perLine = Math.max(10, Math.floor((width * 0.9) / (size * 0.6)))
-  const lines = failureLines(message, perLine)
+  const lines = failureLines({ message, perLine })
   for (const [i, line] of lines.entries())
     routeText({
       drawing,
@@ -729,7 +813,7 @@ export function routeBoardDrawing({
   color?: RouteNetColor
 }): GraphicsObject {
   if (!scope) return routeCanvas()
-  const view = routeView(circuit, scope)
+  const view = routeView({ circuit, scope })
   const drawing = routeCanvas(view)
   routeNets({
     drawing,
@@ -874,6 +958,7 @@ export function routeOutline(component: {
   })
 }
 
+/** One unrolled net with its colored sections, node ticks and coupling bands. */
 export interface RouteStripRow {
   net: RouteNet
   length: number
@@ -894,18 +979,18 @@ export interface RouteStripRow {
 }
 
 /** Convert position along a net to its x coordinate in the pane. */
-function routeStripX(
-  position: number,
-  {
-    left,
-    right,
-    longest,
-  }: {
+function routeStripX({
+  position,
+  scale,
+}: {
+  position: number
+  scale: {
     left: number
     right: number
     longest: number
-  },
-): number {
+  }
+}): number {
+  const { left, right, longest } = scale
   return left + (position / longest) * (right - left)
 }
 
@@ -945,8 +1030,20 @@ export function routeStrip({
     for (const band of row.bands ?? [])
       drawing.lines!.push({
         points: [
-          { x: routeStripX(band.from, scale), y: y - bar },
-          { x: routeStripX(band.to, scale), y: y - bar },
+          {
+            x: routeStripX({
+              position: band.from,
+              scale,
+            }),
+            y: y - bar,
+          },
+          {
+            x: routeStripX({
+              position: band.to,
+              scale,
+            }),
+            y: y - bar,
+          },
         ],
         strokeColor: routeTones.coupling,
         strokeWidth: Math.min(
@@ -960,8 +1057,8 @@ export function routeStrip({
       { from: 0, to: row.length, color: row.net.color },
     ]) {
       const points = [
-        { x: routeStripX(part.from, scale), y },
-        { x: routeStripX(part.to, scale), y },
+        { x: routeStripX({ position: part.from, scale }), y },
+        { x: routeStripX({ position: part.to, scale }), y },
       ]
       if (part.casing) {
         drawing.lines!.push({
@@ -980,8 +1077,8 @@ export function routeStrip({
     for (const tick of row.ticks ?? [])
       drawing.lines!.push({
         points: [
-          { x: routeStripX(tick, scale), y: y - bar },
-          { x: routeStripX(tick, scale), y: y + bar },
+          { x: routeStripX({ position: tick, scale }), y: y - bar },
+          { x: routeStripX({ position: tick, scale }), y: y + bar },
         ],
         strokeColor: routeTones.cell,
         strokeWidth: unit * 0.15,
@@ -999,14 +1096,17 @@ export function routeStrip({
     if (buffers)
       glyphs.push(
         {
-          point: { x: routeStripX(0, scale) - unit, y },
+          point: { x: routeStripX({ position: 0, scale }) - unit, y },
           direction: { x: 1, y: 0 },
           color: row.net.color,
           driver: true,
           label: row.net.label,
         },
         {
-          point: { x: routeStripX(row.length, scale) + unit * 0.5, y },
+          point: {
+            x: routeStripX({ position: row.length, scale }) + unit * 0.5,
+            y,
+          },
           direction: { x: -1, y: 0 },
           color: row.net.color,
           driver: false,
@@ -1029,10 +1129,13 @@ export function routeStrip({
 }
 
 /** Each selected net's routed length from its copper, in net order. */
-export function routeLengths(
-  circuit: CircuitJson,
-  view: RouteView,
-): RouteStripRow[] {
+export function routeLengths({
+  circuit,
+  view,
+}: {
+  circuit: CircuitJson
+  view: RouteView
+}): RouteStripRow[] {
   const lengths = new Map<RouteNet, number>()
   for (const trace of circuit) {
     if (trace.type !== "pcb_trace" || !view.traces.has(trace.pcb_trace_id))
@@ -1064,29 +1167,46 @@ type UnrolledRoutePosition = {
 /** The length of each unrolled net and a lookup from a wire position to a net distance. */
 type UnrolledRoutes = {
   lengths: Map<RouteNet, number>
-  along: (id: number, position: number) => UnrolledRoutePosition | undefined
+  along: RoutePositionLookup
+}
+
+/** A wire's starting distance on its net. */
+interface UnrolledWireOffset {
+  net: RouteNet
+  offset: number
+  start: number
+}
+
+/** Resolve a wire position into a distance from the start of its net. */
+type RoutePositionLookup = (location: {
+  id: RouteWire["id"]
+  position: number
+}) => UnrolledRoutePosition | undefined
+
+/** Bind a position lookup to the offsets of one unrolled route. */
+function routePositionLookup(
+  offsets: ReadonlyMap<RouteWire["id"], UnrolledWireOffset>,
+): RoutePositionLookup {
+  return ({
+    id,
+    position,
+  }: Parameters<RoutePositionLookup>[0]): UnrolledRoutePosition | undefined => {
+    const entry = offsets.get(id)
+    if (!entry) return undefined
+    return { net: entry.net, distance: entry.offset + position - entry.start }
+  }
 }
 
 /** Selected section wires laid end to end per net, so a position on a wire becomes a distance along its net. */
-export function routeUnrolled(
-  view: RouteView,
-  wires: readonly {
-    id: number
-    trace: string
-    source: string
-    start: number
-    end: number
-  }[],
-): UnrolledRoutes {
+export function routeUnrolled({
+  view,
+  wires,
+}: {
+  view: RouteView
+  wires: readonly Pick<RouteWire, "id" | "trace" | "source" | "start" | "end">[]
+}): UnrolledRoutes {
   const lengths = new Map<RouteNet, number>()
-  const offsets = new Map<
-    number,
-    {
-      net: RouteNet
-      offset: number
-      start: number
-    }
-  >()
+  const offsets = new Map<RouteWire["id"], UnrolledWireOffset>()
   for (const wire of wires) {
     if (!view.traces.has(wire.trace)) continue
     const net = view.sources.get(wire.source)
@@ -1100,14 +1220,6 @@ export function routeUnrolled(
   }
   return {
     lengths,
-    along: (id, position): UnrolledRoutePosition | undefined => {
-      const entry = offsets.get(id)
-      return (
-        entry && {
-          net: entry.net,
-          distance: entry.offset + position - entry.start,
-        }
-      )
-    },
+    along: routePositionLookup(offsets),
   }
 }

@@ -1,3 +1,4 @@
+/* eslint-disable local/max-file-lines -- Keep transient, eye and envelope drawings on one shared scale. */
 import type { GraphicsObject, Point, Viewbox } from "graphics-debug"
 import {
   type RoutedSections,
@@ -12,14 +13,16 @@ import {
   routeText,
   routeTones,
   routeView,
+  type SourcePortId,
 } from "../board"
 import type { IbisSources, TextRange } from "../buffers"
 import { sha256 } from "../kernel"
 import type { RouteBuffer, RoutedCapture } from "./routed-types"
 
+/** A board port and its transient waveform label. */
 export interface WaveformProbe {
   name: string
-  sourcePortId: string
+  sourcePortId: SourcePortId
   /** The probe sits at the driver: a dot on the board and a thinner dashed curve drawn underneath. */
   near: boolean
 }
@@ -30,6 +33,7 @@ export interface ReceiverThreshold {
   high: number
 }
 
+/** Inputs for drawing a pending, completed or failed transient. */
 export interface WaveformState {
   board?: RoutedSections
   probes: readonly WaveformProbe[]
@@ -54,7 +58,7 @@ const thresholdUnits = new Map([
 ])
 
 /** Advance over contiguous ASCII digits. */
-function digitEnd(text: string, start: number): number {
+function digitEnd({ text, start }: { text: string; start: number }): number {
   let end = start
   while (text[end] >= "0" && text[end] <= "9") end++
   return end
@@ -62,31 +66,38 @@ function digitEnd(text: string, start: number): number {
 
 /** Typical value of an IBIS number with an optional SI suffix (`0.8`, `800m`, `1.2V`). */
 function ibisNumber(text: string): number | undefined {
-  const start = text[0] === "+" || text[0] === "-" ? 1 : 0
-  let end = digitEnd(text, start)
+  let start = 0
+  if (text[0] === "+" || text[0] === "-") start = 1
+  let end = digitEnd({ text, start })
   if (text[end] === ".") {
-    const fraction = digitEnd(text, end + 1)
+    const fraction = digitEnd({ text, start: end + 1 })
     if (fraction > end + 1) end = fraction
   }
   if (end === start) return undefined
   if (text[end] === "e" || text[end] === "E") {
     let exponent = end + 1
     if (text[exponent] === "+" || text[exponent] === "-") exponent++
-    const exponentEnd = digitEnd(text, exponent)
+    const exponentEnd = digitEnd({ text, start: exponent })
     if (exponentEnd > exponent) end = exponentEnd
   }
   return Number(text.slice(0, end)) * (thresholdUnits.get(text[end]) ?? 1)
 }
 
 /** Advance over contiguous whitespace. */
-function skipWhitespace(text: string, start: number): number {
+function skipWhitespace({
+  text,
+  start,
+}: {
+  text: string
+  start: number
+}): number {
   let end = start
   while (end < text.length && text[end].trim() === "") end++
   return end
 }
 
 /** Find the end of a model name or a typical-value token. */
-function tokenEnd(text: string, start: number): number {
+function tokenEnd({ text, start }: { text: string; start: number }): number {
   let end = start
   while (end < text.length && text[end].trim() !== "") end++
   return end
@@ -107,7 +118,7 @@ function ibisLinePrefix({
 }): TextRange | undefined {
   for (let start = from; start < text.length; start++) {
     if (start > 0 && !LINE_ENDINGS.includes(text[start - 1])) continue
-    const keyword = skipWhitespace(text, start)
+    const keyword = skipWhitespace({ text, start })
     const end = keyword + prefix.length
     if (text.slice(keyword, end).toLowerCase() === prefix) return { start, end }
     start = keyword
@@ -116,27 +127,46 @@ function ibisLinePrefix({
 }
 
 /** Find the first section whose initial token is the bound model name. */
-function thresholdModel(text: string, model: string): string | undefined {
+function thresholdModel({
+  text,
+  model,
+}: {
+  text: string
+  model: string
+}): string | undefined {
   const name = model.toLowerCase()
   let start = 0
   while (true) {
     const header = ibisLinePrefix({ text, prefix: "[model]", from: start })
     const end = header?.start ?? text.length
     if (
-      text.slice(start, Math.min(end, tokenEnd(text, start))).toLowerCase() ===
-      name
+      text
+        .slice(
+          start,
+          Math.min(
+            end,
+            tokenEnd({
+              text,
+              start,
+            }),
+          ),
+        )
+        .toLowerCase() === name
     )
       return text.slice(start, end)
     if (!header) return undefined
-    start = skipWhitespace(text, header.end)
+    start = skipWhitespace({ text, start: header.end })
   }
 }
 
 /** One keyword's typical value inside this model's section. */
-function modelThreshold(
-  section: string | undefined,
-  name: "Vinl" | "Vinh",
-): number | undefined {
+function modelThreshold({
+  section,
+  name,
+}: {
+  section: string | undefined
+  name: "Vinl" | "Vinh"
+}): number | undefined {
   if (section === undefined) return undefined
   const keyword = ibisLinePrefix({
     text: section,
@@ -144,9 +174,10 @@ function modelThreshold(
     from: 0,
   })
   if (!keyword) return undefined
-  let start = skipWhitespace(section, keyword.end)
-  if (section[start] === "=") start = skipWhitespace(section, start + 1)
-  return ibisNumber(section.slice(start, tokenEnd(section, start)))
+  let start = skipWhitespace({ text: section, start: keyword.end })
+  if (section[start] === "=")
+    start = skipWhitespace({ text: section, start: start + 1 })
+  return ibisNumber(section.slice(start, tokenEnd({ text: section, start })))
 }
 
 /**
@@ -160,7 +191,7 @@ export function receiverThreshold({
 }: {
   ibisSources: IbisSources
   models: readonly RouteBuffer[]
-  receivers: ReadonlySet<string>
+  receivers: ReadonlySet<SourcePortId>
 }): ReceiverThreshold | undefined {
   const texts = Object.values(ibisSources).map((bytes) => {
     if (typeof bytes === "string") return bytes
@@ -174,10 +205,10 @@ export function receiverThreshold({
     for (const pin of model.metadata.pins) {
       if (!receivers.has(pin.port)) continue
       if (pin.modelType.toLowerCase().includes("diff")) return undefined
-      const section =
-        text === undefined ? undefined : thresholdModel(text, pin.model)
-      const low = modelThreshold(section, "Vinl")
-      const high = modelThreshold(section, "Vinh")
+      if (text === undefined) continue
+      const section = thresholdModel({ text, model: pin.model })
+      const low = modelThreshold({ section, name: "Vinl" })
+      const high = modelThreshold({ section, name: "Vinh" })
       if (low !== undefined && high !== undefined) found.push({ low, high })
     }
   }
@@ -189,7 +220,13 @@ export function receiverThreshold({
 }
 
 /** A round step (1, 2 or 5 × 10ⁿ) giving about `count` intervals. */
-export function roundStep(range: number, count: number): number {
+export function roundStep({
+  range,
+  count,
+}: {
+  range: number
+  count: number
+}): number {
   const raw = Math.max(range, 1e-30) / count
   const power = 10 ** Math.floor(Math.log10(raw))
   return [1, 2, 5, 10]
@@ -213,7 +250,7 @@ export function roundTicks({
   high: number
   count: number
 }): AxisTick[] {
-  const step = roundStep(high - low, count)
+  const step = roundStep({ range: high - low, count })
   const digits = Math.max(0, -Math.floor(Math.log10(step) + 1e-9))
   const first = Math.ceil(low / step - 1e-9)
   return Array.from(
@@ -321,7 +358,8 @@ interface WaveformCurveContext {
  */
 export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
   const { board, probes, capture, durationSeconds } = state
-  const view = board && routeView(board.circuitJson, board.scope)
+  const view =
+    board && routeView({ circuit: board.circuitJson, scope: board.scope })
   const frame =
     view ??
     routeFrame({
@@ -330,13 +368,13 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
       minY: 0,
       maxY: 40,
     })
-  const drawing = waveformCanvas(frame, board)
+  const drawing = waveformCanvas({ frame, board })
   const styles = probes.map((probe, i) => {
     const net = view?.ports.get(probe.sourcePortId)
     return {
       color: net?.color ?? routeHue({ hue: 195 + (i * 360) / probes.length }),
       label: net?.label ?? probe.name,
-      unitInterval: net?.unitInterval,
+      unitIntervalSeconds: net?.unitIntervalSeconds,
       differential: Boolean(net?.differential),
     }
   })
@@ -346,7 +384,10 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
     threshold = state.threshold
   if (board) {
     const marks = probes.flatMap((probe, i) => {
-      const point = routePortPoint(board.circuitJson, probe.sourcePortId)
+      const point = routePortPoint({
+        circuit: board.circuitJson,
+        sourcePortId: probe.sourcePortId,
+      })
       if (!point) return []
       return [
         {
@@ -383,13 +424,13 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
       index: probes.findIndex((probe) => probe.name === entry.name),
     })) ?? []
   const far = series.filter(({ index }) => !probes[index]?.near)
-  const unitInterval = Math.min(
-    ...styles.map((style) => style.unitInterval || Infinity),
+  const unitIntervalSeconds = Math.min(
+    ...styles.map((style) => style.unitIntervalSeconds || Infinity),
   )
   const eye =
     Boolean(capture) &&
-    Number.isFinite(unitInterval) &&
-    durationSeconds / unitInterval >= MINIMUM_EYE_INTERVALS
+    Number.isFinite(unitIntervalSeconds) &&
+    durationSeconds / unitIntervalSeconds >= MINIMUM_EYE_INTERVALS
   const [least, most] = extent(
     series.flatMap(({ entry }) => entry.voltageLevels),
   )
@@ -434,7 +475,7 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
   for (const level of levels) {
     let color: string = routeTones.paneEdge
     if (level.value === 0) color = routeTones.quiet
-    const y = plotY(coordinates, level.value)
+    const y = plotY({ coordinates, voltage: level.value })
     drawing.lines!.push({
       points: [
         { x: plot.minX, y },
@@ -453,7 +494,8 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
       anchor: "center_right",
     })
   }
-  drawTimeAxis(drawing, {
+  drawTimeAxis({
+    drawing,
     coordinates,
     eye,
     start,
@@ -462,10 +504,8 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
     size,
   })
   if (threshold) {
-    const [low, high] = [
-      plotY(coordinates, threshold.low),
-      plotY(coordinates, threshold.high),
-    ]
+    const low = plotY({ coordinates, voltage: threshold.low })
+    const high = plotY({ coordinates, voltage: threshold.high })
     drawing.lines!.push({
       points: [
         { x: plot.minX, y: (low + high) / 2 },
@@ -506,19 +546,17 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
     eye,
   }
   if (far.length > MAX_INDIVIDUAL_PROBES && !eye) {
-    drawEnvelope(drawing, {
-      series: far,
-      curveContext,
-      unit,
-      start,
-      durationSeconds,
+    drawEnvelope({
+      drawing,
+      input: { series: far, curveContext, unit, start, durationSeconds },
     })
-    const worst = greatestExcursion(far, from)
+    const worst = greatestExcursion({ series: far, from })
     const style = styles[worst.index] ?? styles[0]
-    const runs = waveformCurve(
-      { curveLevels: worst.entry.voltageLevels, period: unitInterval },
-      curveContext,
-    )
+    const runs = waveformCurve({
+      curveLevels: worst.entry.voltageLevels,
+      periodSeconds: unitIntervalSeconds,
+      context: curveContext,
+    })
     for (const points of runs) {
       drawing.lines!.push({
         points,
@@ -537,7 +575,7 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
     const style = styles[index] ?? {
       color: routeHue({ hue: 0 }),
       label: entry.name,
-      unitInterval: undefined,
+      unitIntervalSeconds: undefined,
       differential: false,
     }
     let width = 0.3
@@ -546,11 +584,12 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
       width = 0.18
       strokeDash = "6 4"
     }
-    const period = style.unitInterval ?? unitInterval
-    const runs = waveformCurve(
-      { curveLevels: entry.voltageLevels, period },
-      curveContext,
-    )
+    const periodSeconds = style.unitIntervalSeconds ?? unitIntervalSeconds
+    const runs = waveformCurve({
+      curveLevels: entry.voltageLevels,
+      periodSeconds,
+      context: curveContext,
+    })
     for (const points of runs) {
       drawing.lines!.push({
         points,
@@ -574,7 +613,13 @@ interface EnvelopeInput {
 }
 
 /** Shade the full far-end voltage range in each time bucket. */
-function drawEnvelope(drawing: GraphicsObject, input: EnvelopeInput): void {
+function drawEnvelope({
+  drawing,
+  input,
+}: {
+  drawing: GraphicsObject
+  input: EnvelopeInput
+}): void {
   const { series, curveContext, unit, start, durationSeconds } = input
   const { coordinates, times, from } = curveContext
   const { plot, timeSpan } = coordinates
@@ -600,11 +645,11 @@ function drawEnvelope(drawing: GraphicsObject, input: EnvelopeInput): void {
   for (const [i, [low, high]] of columns.entries()) {
     if (!(high >= low)) continue
     const time = start + ((i + 0.5) * duration) / ENVELOPE_COLUMNS
-    const x = plotX(coordinates, time)
+    const x = plotX({ coordinates, time })
     drawing.lines!.push({
       points: [
-        { x, y: plotY(coordinates, low) },
-        { x, y: plotY(coordinates, high) + unit * 0.05 },
+        { x, y: plotY({ coordinates, voltage: low }) },
+        { x, y: plotY({ coordinates, voltage: high }) + unit * 0.05 },
       ],
       strokeColor: routeTones.envelope,
       strokeWidth: columnWidth * 1.05,
@@ -618,10 +663,13 @@ const LOWER_BAND_QUANTILE = 0.05
 const UPPER_BAND_QUANTILE = 0.95
 
 /** Find the far-end waveform that moves farthest outside the common voltage band. */
-function greatestExcursion(
-  series: WaveformSeries[],
-  from: number,
-): WaveformSeries {
+function greatestExcursion({
+  series,
+  from,
+}: {
+  series: WaveformSeries[]
+  from: number
+}): WaveformSeries {
   const levels = series.flatMap(({ entry }) => entry.voltageLevels.slice(from))
   levels.sort((a, b) => a - b)
   const low = levels[Math.floor(levels.length * LOWER_BAND_QUANTILE)]
@@ -651,59 +699,70 @@ interface PlotCoordinates {
 }
 
 /** Use the board drawing when present, otherwise the default frame. */
-function waveformCanvas(
-  frame: ReturnType<typeof routeFrame>,
-  board?: RoutedSections,
-): GraphicsObject {
+function waveformCanvas({
+  frame,
+  board,
+}: {
+  frame: ReturnType<typeof routeFrame>
+  board?: RoutedSections
+}): GraphicsObject {
   if (board)
     return routeBoardDrawing({ circuit: board.circuitJson, scope: board.scope })
   return routeCanvas(frame)
 }
 
 /** Convert seconds, or unit intervals in an eye, to the plot. */
-function plotX(
-  { plot, origin, timeSpan }: PlotCoordinates,
-  time: number,
-): number {
+function plotX({
+  coordinates,
+  time,
+}: {
+  coordinates: PlotCoordinates
+  time: number
+}): number {
+  const { plot, origin, timeSpan } = coordinates
   return plot.minX + ((time - origin) / timeSpan) * (plot.maxX - plot.minX)
 }
 
 /** Convert volts to the plot, bottom to top. */
-function plotY(
-  { plot, bottom, top }: PlotCoordinates,
-  voltage: number,
-): number {
+function plotY({
+  coordinates,
+  voltage,
+}: {
+  coordinates: PlotCoordinates
+  voltage: number
+}): number {
+  const { plot, bottom, top } = coordinates
   return (
     plot.minY + ((voltage - bottom) / (top - bottom)) * (plot.maxY - plot.minY)
   )
 }
 
 /** Draw the time scale for a transient capture or an eye spanning two unit intervals. */
-function drawTimeAxis(
-  drawing: GraphicsObject,
-  {
-    coordinates,
-    eye,
-    start,
-    durationSeconds,
-    unit,
-    size,
-  }: {
-    coordinates: PlotCoordinates
-    eye: boolean
-    start: number
-    durationSeconds: number
-    unit: number
-    size: number
-  },
-): void {
+function drawTimeAxis({
+  drawing,
+  coordinates,
+  eye,
+  start,
+  durationSeconds,
+  unit,
+  size,
+}: {
+  drawing: GraphicsObject
+  coordinates: PlotCoordinates
+  eye: boolean
+  start: number
+  durationSeconds: number
+  unit: number
+  size: number
+}): void {
   const { plot } = coordinates
   if (eye) {
-    for (const tick of [0, 1, 2]) {
+    for (const tick of [0, 1, EYE_INTERVALS]) {
+      const x = plotX({ coordinates, time: tick })
       drawing.lines!.push({
         points: [
-          { x: plotX(coordinates, tick), y: plot.minY },
-          { x: plotX(coordinates, tick), y: plot.maxY },
+          { x, y: plot.minY },
+          { x, y: plot.maxY },
         ],
         strokeColor: routeTones.paneEdge,
         strokeWidth: unit * 0.15,
@@ -712,7 +771,7 @@ function drawTimeAxis(
       if (tick) label = `${tick} UI`
       routeText({
         drawing,
-        x: plotX(coordinates, tick),
+        x,
         y: plot.minY - unit * 1.5,
         text: label,
         color: routeTones.quiet,
@@ -739,11 +798,11 @@ function drawTimeAxis(
     drawing.lines!.push({
       points: [
         {
-          x: plotX(coordinates, tick.value / scale),
+          x: plotX({ coordinates, time: tick.value / scale }),
           y: plot.minY,
         },
         {
-          x: plotX(coordinates, tick.value / scale),
+          x: plotX({ coordinates, time: tick.value / scale }),
           y: plot.minY - unit,
         },
       ],
@@ -752,7 +811,7 @@ function drawTimeAxis(
     })
     routeText({
       drawing,
-      x: plotX(coordinates, tick.value / scale),
+      x: plotX({ coordinates, time: tick.value / scale }),
       y: plot.minY - unit * 1.5,
       text: `${tick.text} ${name}`,
       color: routeTones.quiet,
@@ -770,16 +829,16 @@ const TRANSIENT_SAMPLE_BUCKETS = 700
 const EYE_SAMPLE_BUCKETS = 2500
 
 /** One probe's curve, cut at every fold of the eye. */
-function waveformCurve(
-  {
-    curveLevels,
-    period,
-  }: {
-    curveLevels: readonly number[]
-    period: number
-  },
-  { coordinates, times, from, eye }: WaveformCurveContext,
-): WaveformRun[] {
+function waveformCurve({
+  curveLevels,
+  periodSeconds,
+  context,
+}: {
+  curveLevels: readonly number[]
+  periodSeconds: number
+  context: WaveformCurveContext
+}): WaveformRun[] {
+  const { coordinates, times, from, eye } = context
   if (!eye) {
     const indices = waveformSampleIndices({
       times,
@@ -789,8 +848,8 @@ function waveformCurve(
     })
     return [
       indices.map((j) => ({
-        x: plotX(coordinates, times[j]),
-        y: plotY(coordinates, curveLevels[j]),
+        x: plotX({ coordinates, time: times[j] }),
+        y: plotY({ coordinates, voltage: curveLevels[j] }),
       })),
     ]
   }
@@ -800,7 +859,7 @@ function waveformCurve(
   )
   let origin = 0
   if (crossing > 0) origin = times[crossing]
-  origin -= period / 2
+  origin -= periodSeconds / 2
   const runs: WaveformRun[] = [[]]
   let last = -1
   const indices = waveformSampleIndices({
@@ -810,12 +869,12 @@ function waveformCurve(
     limit: EYE_SAMPLE_BUCKETS,
   })
   for (const j of indices) {
-    const interval = (times[j] - origin) / period
+    const interval = (times[j] - origin) / periodSeconds
     const phase = ((interval % EYE_INTERVALS) + EYE_INTERVALS) % EYE_INTERVALS
     if (phase < last) runs.push([])
     runs.at(-1)!.push({
-      x: plotX(coordinates, phase),
-      y: plotY(coordinates, curveLevels[j]),
+      x: plotX({ coordinates, time: phase }),
+      y: plotY({ coordinates, voltage: curveLevels[j] }),
     })
     last = phase
   }

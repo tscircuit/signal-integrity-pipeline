@@ -26,6 +26,7 @@ const manifest: Record<string, unknown> = {}
 
 /** One stage drawing and its output filename stem. */
 interface StageRender {
+  circuit: CircuitJson
   name: string
   drawing: GraphicsObject
 }
@@ -41,17 +42,21 @@ const stageNames = [
 
 /** How often to report progress during a long stage. */
 const PROGRESS_INTERVAL_MS = 15_000
+/** Rendering uses a common canvas for every stage of the same board. */
+const RENDER_WIDTH = 1600
+const RENDER_HEIGHT = 1100
+/** Time limit for the optional two-trace native capture. */
+const TWO_TRACE_TIMEOUT_MS = 10_000
+/** Include nearby copper in the two-trace stage views. */
+const TWO_TRACE_SCOPE_DISTANCE_MM = 1
 
 /** Rasterize the stage drawing over the real board, exactly as the site composes it. */
-async function render(
-  circuit: CircuitJson,
-  { name, drawing }: StageRender,
-): Promise<void> {
+async function render({ circuit, name, drawing }: StageRender): Promise<void> {
   const svg = boardPictureSvg({
     circuit,
     drawing,
-    width: 1600,
-    height: 1100,
+    width: RENDER_WIDTH,
+    height: RENDER_HEIGHT,
   })
   await writeFile(
     join(output, `${name}.graphics.json`),
@@ -77,16 +82,23 @@ async function render(
 }
 
 /** Record each completed stage as it becomes available, without re-running the field extraction. */
-async function stages(name: string, input: RoutedProblem): Promise<void> {
+async function stages({
+  name,
+  input,
+}: {
+  name: string
+  input: RoutedProblem
+}): Promise<void> {
   const execute =
     name === "two-trace" && process.argv.includes("--native-two-trace")
   const context = {
-    runSolver: createNativeSolver({ timeoutMs: 10_000 }),
+    runSolver: createNativeSolver({ timeoutMs: TWO_TRACE_TIMEOUT_MS }),
     progress: console.log,
   }
-  const root = new RoutedPipelineSolver(input, context)
+  const root = new RoutedPipelineSolver({ input, context })
   const circuit = input.circuitJson
-  await render(circuit, {
+  await render({
+    circuit,
     name: `${name}-root-initial`,
     drawing: root.initialVisualize(),
   })
@@ -94,7 +106,8 @@ async function stages(name: string, input: RoutedProblem): Promise<void> {
   let progress = performance.now()
   while (!root.solved) {
     if (root.getCurrentStageName() === "RouteTransientSolver" && !execute) {
-      await render(circuit, {
+      await render({
+        circuit,
         name: `${name}-5-transient-pending`,
         drawing: root.visualizeStage(6),
       })
@@ -109,13 +122,15 @@ async function stages(name: string, input: RoutedProblem): Promise<void> {
       )
       const solver = root.getSolver(stage)!
       if (stage === "RouteTransientSolver") {
-        await render(circuit, {
+        await render({
+          circuit,
           name: `${name}-5-transient-failed`,
           drawing: solver.visualize(),
         })
         throw error
       }
-      await render(circuit, {
+      await render({
+        circuit,
         name: `${name}-${index}-network-rejected`,
         drawing: solver.visualize(),
       })
@@ -147,7 +162,7 @@ async function stages(name: string, input: RoutedProblem): Promise<void> {
           )
         ) {
           seen.add("fields-coupled")
-          await render(circuit, { name: `${name}-2-fields-coupled`, drawing })
+          await render({ circuit, name: `${name}-2-fields-coupled`, drawing })
         }
       }
       if (!solver?.solved || seen.has(stage.solverName)) continue
@@ -167,7 +182,7 @@ async function stages(name: string, input: RoutedProblem): Promise<void> {
         (entry) => entry.solverName === stage.solverName,
       )
       const filename = `${name}-${index}-${stageNames[index]}`
-      await render(circuit, { name: filename, drawing: solver.visualize() })
+      await render({ circuit, name: filename, drawing: solver.visualize() })
     }
     if (performance.now() - progress > PROGRESS_INTERVAL_MS) {
       const stage = root.getCurrentStageName()
@@ -188,7 +203,8 @@ async function stages(name: string, input: RoutedProblem): Promise<void> {
   }
   // Compile-only renders stop before stage 5; only a completed live run gets a final atlas.
   if (root.solved)
-    await render(circuit, {
+    await render({
+      circuit,
       name: `${name}-root-final`,
       drawing: root.visualize(),
     })
@@ -198,10 +214,13 @@ const twoSource = await readFile(join(models, "sn74lvc1g04.ibs"), "utf8")
 const core = new Circuit({ platform: { partsEngineDisabled: true } })
 core.add(<TwoTraceBoard />)
 await core.renderUntilSettled()
-await stages("two-trace", {
-  circuitJson: core.getCircuitJson() as CircuitJson,
-  ibisSources: { "models/sn74lvc1g04.ibs": twoSource },
-  scopeDistanceMm: 1,
+await stages({
+  name: "two-trace",
+  input: {
+    circuitJson: core.getCircuitJson() as CircuitJson,
+    ibisSources: { "models/sn74lvc1g04.ibs": twoSource },
+    scopeDistanceMm: TWO_TRACE_SCOPE_DISTANCE_MM,
+  },
 })
 
 await writeFile(

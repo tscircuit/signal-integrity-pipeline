@@ -4,15 +4,21 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { Resvg } from "@resvg/resvg-js"
 import type { GraphicsObject } from "graphics-debug"
+import React from "react"
+import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
 import {
   boardPicture,
   boardPictureSvg,
   boardPictureView,
 } from "../../src/board/board-picture"
-import { routedVisualFixture } from "../support/routed-visual-fixture"
+import { routedVisualFixture } from "../fixtures/routed-visual"
+import { renderCoreSignals } from "../support/core-render"
+
+/** The x and y coordinates of a pixel within a drawing. */
+type PixelPoint = [x: number, y: number]
 
 /** Find generated SVG tags with the given opening text. */
-function svgTags(svg: string, opener: string): string[] {
+function svgTags({ svg, opener }: { svg: string; opener: string }): string[] {
   const tags: string[] = []
   let start = svg.indexOf(opener)
   while (start >= 0) {
@@ -25,7 +31,7 @@ function svgTags(svg: string, opener: string): string[] {
 }
 
 /** Read an attribute value from a generated SVG tag. */
-function svgAttribute(tag: string, name: string): string {
+function svgAttribute({ tag, name }: { tag: string; name: string }): string {
   const prefix = `${name}="`
   let index = tag.indexOf(prefix)
   while (index >= 0) {
@@ -39,30 +45,45 @@ function svgAttribute(tag: string, name: string): string {
 }
 
 /** The pixel centre of the first SVG circle containing the given attribute. */
-function centre(svg: string, attribute: string): [number, number] {
-  const element = svgTags(svg, "<circle").find((circle) =>
+function centre({
+  svg,
+  attribute,
+}: {
+  svg: string
+  attribute: string
+}): PixelPoint {
+  const element = svgTags({ svg, opener: "<circle" }).find((circle) =>
     circle.includes(attribute),
   )
   if (!element) throw new TypeError(`Missing SVG circle with ${attribute}`)
   return [
-    Number(svgAttribute(element, "cx")),
-    Number(svgAttribute(element, "cy")),
+    Number(svgAttribute({ tag: element, name: "cx" })),
+    Number(svgAttribute({ tag: element, name: "cy" })),
   ]
 }
 
 /** The x, y offset of the nested board svg inside the letterboxed picture. */
-function offset(board: string): [number, number] {
-  const [nested] = svgTags(board, '<svg x="')
+function offset(board: string): PixelPoint {
+  const [nested] = svgTags({ svg: board, opener: '<svg x="' })
   if (!nested) throw new TypeError("Missing nested board SVG")
-  return [Number(svgAttribute(nested, "x")), Number(svgAttribute(nested, "y"))]
+  return [
+    Number(svgAttribute({ tag: nested, name: "x" })),
+    Number(svgAttribute({ tag: nested, name: "y" })),
+  ]
 }
 
 /** An overlay pixel position after its root viewBox crop. */
-function project(overlay: string, point: [number, number]): [number, number] {
-  const [root] = svgTags(overlay, "<svg")
+function project({
+  overlay,
+  point,
+}: {
+  overlay: string
+  point: PixelPoint
+}): PixelPoint {
+  const [root] = svgTags({ svg: overlay, opener: "<svg" })
   if (!root) throw new TypeError("Missing overlay SVG")
   const [width, height, box] = ["width", "height", "viewBox"].map((name) =>
-    svgAttribute(root, name),
+    svgAttribute({ tag: root, name }),
   )
   const [x, y, w, h] = box.split(" ").map(Number)
   return [
@@ -104,11 +125,14 @@ test("the board and stage overlay place a via at the same pixel", async () => {
       height,
     })
     const [left, top] = offset(picture.board)
-    const board = centre(picture.board, 'data-type="pcb_via"')
-    const overlay = project(
-      picture.overlay,
-      centre(picture.overlay, 'fill="#ff0000"'),
-    )
+    const board = centre({
+      svg: picture.board,
+      attribute: 'data-type="pcb_via"',
+    })
+    const overlay = project({
+      overlay: picture.overlay,
+      point: centre({ svg: picture.overlay, attribute: 'fill="#ff0000"' }),
+    })
     assert.ok(
       Math.hypot(board[0] + left - overlay[0], board[1] + top - overlay[1]) <
         0.5,
@@ -121,7 +145,10 @@ test("the camera uses the stage frame and omits silkscreen text", async () => {
   const { root } = await routedVisualFixture()
   const circuit = root.inputProblem.circuitJson
   const board = circuit.find((record) => record.type === "pcb_board")!
-  const whole = boardPictureView(circuit, { coordinateSystem: "cartesian" })
+  const whole = boardPictureView({
+    circuit,
+    drawing: { coordinateSystem: "cartesian" },
+  })
   assert.ok(
     whole.minX < board.center.x - board.width! / 2 &&
       whole.maxX > board.center.x + board.width! / 2,
@@ -130,28 +157,35 @@ test("the camera uses the stage frame and omits silkscreen text", async () => {
     .visualizeStage(1)
     .rects!.find((rect) => rect.label === "camera")!
   assert.deepEqual(
-    boardPictureView(circuit, root.visualizeStage(4)),
-    boardPictureView(circuit, root.visualizeStage(1)),
+    boardPictureView({ circuit, drawing: root.visualizeStage(4) }),
+    boardPictureView({ circuit, drawing: root.visualizeStage(1) }),
     "every stage shares one camera",
   )
   assert.equal(
-    boardPictureView(circuit, root.visualizeStage(1)).maxX,
+    boardPictureView({ circuit, drawing: root.visualizeStage(1) }).maxX,
     frame.center.x + frame.width / 2,
   )
-  const labelled = [
-    ...circuit,
-    {
-      type: "pcb_silkscreen_text",
-      pcb_silkscreen_text_id: "t",
-      pcb_component_id: "c",
-      text: "REFDES",
-      anchor_position: { x: 0, y: 0 },
-      font: "tscircuit2024",
-      font_size: 1,
-      layer: "top",
-      anchor_alignment: "center",
-    },
-  ] as typeof circuit
+  const tree = TwoTraceBoard()
+  const labelled = await renderCoreSignals(
+    React.cloneElement(
+      tree,
+      {},
+      ...React.Children.toArray(tree.props.children),
+      <silkscreentext
+        text="REFDES"
+        pcbX={0}
+        pcbY={0}
+        fontSize={1}
+        layer="top"
+      />,
+    ),
+  )
+  assert.ok(
+    labelled.some(
+      (record) =>
+        record.type === "pcb_silkscreen_text" && record.text === "REFDES",
+    ),
+  )
   assert.doesNotMatch(
     boardPicture({
       circuit: labelled,
@@ -164,7 +198,15 @@ test("the camera uses the stage frame and omits silkscreen text", async () => {
 })
 
 /** RGBA pixels of a PNG, decoded by rendering it as an SVG image. */
-function pixels(png: Buffer, width: number, height: number): Uint8Array {
+function pixels({
+  png,
+  width,
+  height,
+}: {
+  png: Buffer
+  width: number
+  height: number
+}): Uint8Array {
   const dimensions = `width="${width}" height="${height}"`
   const data = `data:image/png;base64,${png.toString("base64")}`
   const image = `<image ${dimensions} href="${data}"/>`
@@ -199,8 +241,8 @@ test("composed board pictures of every two-trace stage match their PNG snapshots
       writeFileSync(path, png)
     }
     const [actual, expected] = [
-      pixels(png, width, height),
-      pixels(readFileSync(path), width, height),
+      pixels({ png, width, height }),
+      pixels({ png: readFileSync(path), width, height }),
     ]
     let differing = 0
     for (let i = 0; i < actual.length; i += 4) {

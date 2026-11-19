@@ -28,7 +28,13 @@ import type {
 } from "./route-lines"
 
 /** Characteristic impedance of conductor `i` from its self terms. */
-export function sliceImpedance(line: RouteCoefficients, i: number): number {
+export function sliceImpedance({
+  line,
+  i,
+}: {
+  line: RouteCoefficients
+  i: number
+}): number {
   return Math.sqrt(line.L[i][i] / line.C[i][i])
 }
 
@@ -48,13 +54,16 @@ export function impedanceColor({
   )
 }
 
+/** Keep the impedance legend and strip on the same sky, lime and orange scale. */
+const IMPEDANCE_COLOR_STOPS = [
+  [56, 189, 248],
+  [163, 230, 53],
+  [251, 146, 60],
+]
+
 /** Sample the display gradient directly so scale swatches round consistently. */
 function impedanceColorAt(t: number): string {
-  const stops = [
-    [56, 189, 248],
-    [163, 230, 53],
-    [251, 146, 60],
-  ]
+  const stops = IMPEDANCE_COLOR_STOPS
   let start = 1
   let u = t * 2 - 1
   if (t < 0.5) {
@@ -124,7 +133,7 @@ export interface FieldsState {
 export function fieldsDrawing(state: FieldsState): GraphicsObject {
   const { geometry, circuitJson, scope } = state
   let view: RouteView | undefined
-  if (circuitJson && scope) view = routeView(circuitJson, scope)
+  if (circuitJson && scope) view = routeView({ circuit: circuitJson, scope })
   const frame =
     view ??
     routeFrame(
@@ -147,7 +156,7 @@ export function fieldsDrawing(state: FieldsState): GraphicsObject {
   const impedances = state.solved.flatMap((slice) =>
     slice.wires.flatMap((wire, i) => {
       if (view && !view.traces.has(wire.trace)) return []
-      return [sliceImpedance(slice.line, i)]
+      return [sliceImpedance({ line: slice.line, i })]
     }),
   )
   // Never stretch a few ohms across the whole scale: it always spans at least ±10 % of the median.
@@ -159,9 +168,9 @@ export function fieldsDrawing(state: FieldsState): GraphicsObject {
   for (const slice of state.solved)
     for (const [i, wire] of slice.wires.entries()) {
       if (view && !view.traces.has(wire.trace)) continue
-      const z0 = sliceImpedance(slice.line, i)
+      const z0 = sliceImpedance({ line: slice.line, i })
       const points = [slice.start, slice.end].map((position) =>
-        drawingPoint(routePosition(wire, position)),
+        drawingPoint(routePosition({ wire, position })),
       )
       drawing.lines!.push(
         ...routeStroke({
@@ -230,7 +239,7 @@ function drawSlice({
       return {
         color: view?.sources.get(wire.source)?.color ?? routeTones.copper,
       }
-    const z0 = sliceImpedance(line, i)
+    const z0 = sliceImpedance({ line, i })
     return {
       color: impedanceColor({
         impedance: z0,
@@ -275,13 +284,13 @@ function sliceCut({
     [-half, high],
   ].map(([offset, transverse]) =>
     drawingPoint(
-      routePosition(
-        {
+      routePosition({
+        wire: {
           ...slice.wires[0],
           transverse,
         },
-        middle + offset,
-      ),
+        position: middle + offset,
+      }),
     ),
   )
   drawing.polygons!.push({
@@ -294,20 +303,23 @@ function sliceCut({
 }
 
 /** One stack axis in pane coordinates, using the common millimetre scale. */
-function paneCoordinate(
-  mm: number,
-  {
-    center,
-    origin,
-    scale,
-  }: {
+function paneCoordinate({
+  mm,
+  axis,
+}: {
+  mm: number
+  axis: {
     center: number
     origin: number
     scale: number
-  },
-): number {
+  }
+}): number {
+  const { center, origin, scale } = axis
   return center + (mm - origin) * scale
 }
+
+/** Smooth the coupling arc with equally spaced segments. */
+const COUPLING_ARC_SEGMENTS = 16
 
 /** One edge of a coupling band, offset from its center arc. */
 function bandArc({
@@ -325,11 +337,12 @@ function bandArc({
 }): Point[] {
   return Array.from(
     {
-      length: 17,
+      length: COUPLING_ARC_SEGMENTS + 1,
     },
     (_, t) => ({
-      x: from + ((to - from) * t) / 16,
-      y: top + (rise + offset) * Math.sin((Math.PI * t) / 16),
+      x: from + ((to - from) * t) / COUPLING_ARC_SEGMENTS,
+      y:
+        top + (rise + offset) * Math.sin((Math.PI * t) / COUPLING_ARC_SEGMENTS),
     }),
   )
 }
@@ -397,7 +410,10 @@ function stackPane({
     drawing.rects!.push({
       center: {
         x: center.x,
-        y: paneCoordinate(slab.zMm + slab.thicknessMm / 2, heightToPane),
+        y: paneCoordinate({
+          mm: slab.zMm + slab.thicknessMm / 2,
+          axis: heightToPane,
+        }),
       },
       width,
       height: slab.thicknessMm * scale,
@@ -408,7 +424,10 @@ function stackPane({
     Math.max(section.conductors[0]?.thicknessMm ?? 0.035, 1e-3) * scale
   for (const plane of section.planes)
     drawing.rects!.push({
-      center: { x: center.x, y: paneCoordinate(plane.zMm, heightToPane) },
+      center: {
+        x: center.x,
+        y: paneCoordinate({ mm: plane.zMm, axis: heightToPane }),
+      },
       width,
       height: Math.max(copper, unit * 0.3),
       fill: "#b08d57",
@@ -417,8 +436,11 @@ function stackPane({
     const color = conductorDisplay[i]?.color
     drawing.rects!.push({
       center: {
-        x: paneCoordinate(c.xMm, transverseToPane),
-        y: paneCoordinate(c.zMm + c.thicknessMm / 2, heightToPane),
+        x: paneCoordinate({ mm: c.xMm, axis: transverseToPane }),
+        y: paneCoordinate({
+          mm: c.zMm + c.thicknessMm / 2,
+          axis: heightToPane,
+        }),
       },
       width: Math.max(c.widthMm * scale, unit * 0.3),
       height: Math.max(c.thicknessMm * scale, unit * 0.3),
@@ -427,7 +449,7 @@ function stackPane({
     })
   }
   if (!line) return
-  const top = paneCoordinate(zHigh, heightToPane) + unit
+  const top = paneCoordinate({ mm: zHigh, axis: heightToPane }) + unit
   const pairs = section.conductors
     .flatMap((a, i) =>
       section.conductors.slice(i + 1).map((b, offset) => {
@@ -444,9 +466,14 @@ function stackPane({
     )
     .filter((pair) => pair.k >= 0.005)
     .sort((p, q) => q.k - p.k)
-  for (const pair of routeDisplayItems(pairs, 60)) {
+  for (const pair of routeDisplayItems({ items: pairs, limit: 60 })) {
     const [from, to] = [pair.a.xMm, pair.b.xMm]
-      .map((mm) => paneCoordinate(mm, transverseToPane))
+      .map((mm) =>
+        paneCoordinate({
+          mm,
+          axis: transverseToPane,
+        }),
+      )
       .sort((p, q) => p - q)
     const rise = Math.min(unit * 8, (to - from) * 0.4) + unit
     const thickness = unit * (0.3 + 3 * Math.sqrt(Math.min(pair.k, 1)))
@@ -476,7 +503,7 @@ function stackPane({
     if (!display?.label) return []
     return [
       {
-        x: paneCoordinate(c.xMm, transverseToPane),
+        x: paneCoordinate({ mm: c.xMm, axis: transverseToPane }),
         text: display.label,
         color: display.color,
       },
@@ -496,7 +523,7 @@ function stackPane({
     routeText({
       drawing,
       x: entry.x,
-      y: paneCoordinate(zLow, heightToPane) - unit * row,
+      y: paneCoordinate({ mm: zLow, axis: heightToPane }) - unit * row,
       text: entry.text,
       color: entry.color,
       size: unit * 2.8,
