@@ -21,6 +21,11 @@ const MAX_FAILURE_REASON_LENGTH = 240
 const NATIVE_TIMEOUT_MS = 45 * 60 * 1000
 /** Milliseconds between live progress reports. */
 const PROGRESS_INTERVAL_MS = 15000
+/** Keep the completed and failed stage drawings at a common export size. */
+const RENDER_WIDTH = 1800
+const RENDER_HEIGHT = 1400
+/** Include adjacent copper when compiling the DDR3 routes. */
+const ROUTE_SCOPE_DISTANCE_MM = 1
 
 /** Use the first ngspice failure line or a short summary of the error. */
 function ddrFailureReason(error: unknown): string {
@@ -50,12 +55,18 @@ const sourceEntries = await Promise.all(
 const ibisSources = Object.fromEntries(sourceEntries)
 await mkdir(output, { recursive: true })
 /** Save the stage's actual drawing over the real board, including an explicit failed state when no capture exists. */
-async function render(name: string, drawing: GraphicsObject): Promise<void> {
+async function render({
+  name,
+  drawing,
+}: {
+  name: string
+  drawing: GraphicsObject
+}): Promise<void> {
   const svg = boardPictureSvg({
     circuit: circuitJson,
     drawing,
-    width: 1800,
-    height: 1400,
+    width: RENDER_WIDTH,
+    height: RENDER_HEIGHT,
   })
   await writeFile(join(output, `${name}.svg`), svg)
   const png = new Resvg(svg, { font: { defaultFontFamily: "Arial" } })
@@ -63,20 +74,29 @@ async function render(name: string, drawing: GraphicsObject): Promise<void> {
     .asPng()
   await writeFile(join(output, `${name}.png`), png)
 }
-let circuitJson: CircuitJson
-if (process.argv.includes("--addr-cmd")) {
-  const boardFile =
-    process.env.SI_DDR3_BOARD ?? join(directory, "ddr3-board.json")
-  const physical = JSON.parse(await readFile(boardFile, "utf8")) as CircuitJson
-  circuitJson = await withDdr3Signals(physical, { block: "DDR3_ADDR_CMD" })
-} else {
+/** Render the lower-byte example or attach address/command declarations to the supplied board. */
+async function loadBoard(addressCommand: boolean): Promise<CircuitJson> {
+  if (addressCommand) {
+    const boardFile =
+      process.env.SI_DDR3_BOARD ?? join(directory, "ddr3-board.json")
+    const physical = JSON.parse(
+      await readFile(boardFile, "utf8"),
+    ) as CircuitJson
+    return withDdr3Signals({
+      physicalRecords: physical,
+      options: { block: "DDR3_ADDR_CMD" },
+    })
+  }
   const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
   circuit.add(<Board />)
   await circuit.renderUntilSettled()
-  circuitJson = circuit.getCircuitJson() as CircuitJson
-  const errors = circuitJson.filter((record) => record.type.endsWith("_error"))
+  const records = circuit.getCircuitJson() as CircuitJson
+  const errors = records.filter((record) => record.type.endsWith("_error"))
   if (errors.length) throw new Error(JSON.stringify(errors))
+  return records
 }
+
+const circuitJson = await loadBoard(process.argv.includes("--addr-cmd"))
 const native = createNativeSolver({ timeoutMs: NATIVE_TIMEOUT_MS })
 let invocations = 0
 let nativeMilliseconds = 0
@@ -84,9 +104,9 @@ const started = performance.now()
 const timings: Record<string, number> = {}
 const stats: Record<string, unknown> = {}
 let stageStart = started
-const root = new RoutedPipelineSolver(
-  { circuitJson, ibisSources, scopeDistanceMm: 1 },
-  {
+const root = new RoutedPipelineSolver({
+  input: { circuitJson, ibisSources, scopeDistanceMm: ROUTE_SCOPE_DISTANCE_MM },
+  context: {
     progress: console.log,
     runSolver: async (request) => {
       invocations++
@@ -108,7 +128,7 @@ const root = new RoutedPipelineSolver(
       }
     },
   },
-)
+})
 let last = started
 try {
   while (!root.solved) {
@@ -152,7 +172,7 @@ try {
     JSON.stringify(block.compiled.evidence),
   )
   const stage = root.getSolver("RouteTransientSolver")!
-  await render("stage-6", stage.visualize())
+  await render({ name: "stage-6", drawing: stage.visualize() })
   const probes = block.capture.probes.map(({ name, voltageLevels }) => ({
     name,
     minimumV: voltageLevels.reduce(
@@ -179,7 +199,8 @@ try {
 } catch (error) {
   const stage = root.getSolver("RouteTransientSolver")
   const reason = ddrFailureReason(error)
-  if (stage) await render("stage-6-failed", stage.visualize())
+  if (stage)
+    await render({ name: "stage-6-failed", drawing: stage.visualize() })
   await writeFile(join(output, "failure.log"), String(error))
   const failure = {
     stage: root.getCurrentStageName(),

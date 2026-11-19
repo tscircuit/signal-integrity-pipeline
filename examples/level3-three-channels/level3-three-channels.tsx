@@ -1,9 +1,11 @@
 import { simulation } from "@tscircuit/core"
+import type React from "react"
 
 // LEVEL 3: three receiver waveforms; quiet D1 also has a near waveform and near/far idle levels.
 import { Inverter } from "../parts"
 
-export default () => (
+/** Three routed channels with traffic and crosstalk scenarios. */
+export default (): React.JSX.Element => (
   <board
     width="40mm"
     height="24mm"

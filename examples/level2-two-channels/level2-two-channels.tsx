@@ -1,9 +1,11 @@
 import { simulation } from "@tscircuit/core"
+import type React from "react"
 
 // LEVEL 2: two receiver waveforms, including coupling between the channels.
 import { Inverter } from "../parts"
 
-export default () => (
+/** Two routed channels sharing the same board. */
+export default (): React.JSX.Element => (
   <board
     width="40mm"
     height="20mm"

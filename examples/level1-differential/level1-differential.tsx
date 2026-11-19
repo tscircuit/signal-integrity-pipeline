@@ -1,11 +1,12 @@
 import { simulation } from "@tscircuit/core"
-import React from "react"
+import type React from "react"
 
 // LEVEL 1 (differential): one P−N receiver waveform; no separate leg waveforms.
 import { sn65hvd72, transceiverPins } from "../parts"
 import { routes } from "./routes"
 
-export default () => (
+/** A differential channel with a routed receiver termination. */
+export default (): React.JSX.Element => (
   <board
     width="60mm"
     height="20mm"

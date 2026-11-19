@@ -1,9 +1,11 @@
 import { simulation } from "@tscircuit/core"
+import type React from "react"
 
 // LEVEL 1: one single-ended receiver waveform.
 import { Inverter } from "../parts"
 
-export default () => (
+/** One inverter driving a single-ended receiver. */
+export default (): React.JSX.Element => (
   <board
     width="40mm"
     height="20mm"

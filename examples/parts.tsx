@@ -1,11 +1,12 @@
 import { simulation } from "@tscircuit/core"
+import type React from "react"
 
-// Shared TI inverter and transceiver models used by the examples.
+/** Render the example inverter with its model and reference nets. */
 export const Inverter = (props: {
   name: string
   pcbX: number
   pcbY?: number
-}) => (
+}): React.JSX.Element => (
   <>
     <chip
       name={props.name}

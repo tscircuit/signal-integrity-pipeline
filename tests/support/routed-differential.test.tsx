@@ -1,18 +1,21 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
+import type { SourceTrace } from "circuit-json"
 import React from "react"
 import Differential from "../../examples/level1-differential/level1-differential"
 import { RoutedPipelineSolver } from "../../src/pipeline"
+import { prepareBlocks } from "../fixtures/signal-render"
 import { renderCoreSignals } from "./core-render"
-import { prepareBlocks } from "./signal-render"
 
-const modelRequired =
-  "Set IBIS_MODEL_DIR to local vendor sn65hvd72.ibs; vendor bytes are not committed"
-const options = { skip: !process.env.IBIS_MODEL_DIR && modelRequired }
-test(
-  "TSX differential receiver can share its physical pin with a routed termination stub",
-  options,
+/** Evidence for the routed length of one bus leg. */
+interface RouteEvidence {
+  sourceTraceId: SourceTrace["source_trace_id"]
+  length_mm: number
+}
+
+test.skipIf(!process.env.IBIS_MODEL_DIR)(
+  "differential receiver shares its pin with a termination stub",
   async () => {
     const circuit = await renderCoreSignals(<Differential />)
     const sources = {
@@ -33,10 +36,10 @@ test(
         throw new Error("compiler test must not run ngspice")
       },
     }
-    const solver = new RoutedPipelineSolver(
-      { circuitJson: circuit, ibisSources: sources },
-      port,
-    )
+    const solver = new RoutedPipelineSolver({
+      input: { circuitJson: circuit, ibisSources: sources },
+      context: port,
+    })
     solver.solveUntilStage("RouteTransientSolver")
     const result = solver.stageOutput("RouteNetworkSolver").value[0]
     assert.equal(
@@ -49,10 +52,7 @@ test(
       /R.*120/m,
       "physical termination remains in the circuit",
     )
-    const routes = result.evidence.routes as {
-      sourceTraceId: string
-      length_mm: number
-    }[]
+    const routes = result.evidence.routes as RouteEvidence[]
     assert.equal(new Set(routes.map((route) => route.sourceTraceId)).size, 2)
     assert.ok(
       routes.every((route) => route.length_mm > 50),

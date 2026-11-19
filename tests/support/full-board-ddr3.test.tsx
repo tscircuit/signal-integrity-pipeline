@@ -1,22 +1,19 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
-import { addrCmdPins, fullBoardDdr3 } from "./full-board-ddr3"
-import { prepareBlocks } from "./signal-render"
+import { addrCmdPins } from "../../examples/routed/ddr3-signals"
+import { fullBoardDdr3 } from "../fixtures/full-board-ddr3"
+import { prepareBlocks } from "../fixtures/signal-render"
 
 const path = process.env.SI_DDR3_BOARD
 const models = process.env.IBIS_MODEL_DIR
-const localDataRequired =
-  "Set SI_DDR3_BOARD and IBIS_MODEL_DIR to the local physical board and vendor files"
-const options = { skip: (!path || !models) && localDataRequired }
 /** Pin the exact model revision used by the expected capacitance sign-correction diagnostic. */
 const CPU_MODEL_SHA256 =
   "23011a68eb8ff35562615b5b108edcb9f017c5e61f4f68e32f35c5fb88f163be"
 
-const modelSelection =
-  "real DDR3 TSX declarations preserve copper and select the intended write and addr/cmd models"
-test(modelSelection, options, async () => {
-  const circuit = await fullBoardDdr3(path!)
+const modelSelection = "DDR3 declarations preserve copper and select models"
+test.skipIf(!path || !models)(modelSelection, async () => {
+  const circuit = await fullBoardDdr3({ path: path! })
   assert.equal(
     circuit.filter(
       (record) => record.type === "simulation_pcb_driver_receiver_channel",
@@ -54,7 +51,10 @@ test(modelSelection, options, async () => {
     write.settings.copperScope.pcbTraceIds.length > 11,
     "physically relevant neighbours must stay",
   )
-  const addr = await fullBoardDdr3(path!, { block: "DDR3_ADDR_CMD" })
+  const addr = await fullBoardDdr3({
+    path: path!,
+    options: { block: "DDR3_ADDR_CMD" },
+  })
   const original = JSON.parse(await readFile(path!, "utf8")) as typeof addr
   assert.deepEqual(addr.slice(0, original.length), original)
   assert.equal(
@@ -65,7 +65,7 @@ test(modelSelection, options, async () => {
   )
   const [block] = prepareBlocks({ circuit: addr, sources })
   assert.equal(block.block.name, "DDR3_ADDR_CMD")
-  assert.ok(Math.abs(block.duration - 8e-9) <= Number.EPSILON * 8e-9)
+  assert.ok(Math.abs(block.durationSeconds - 8e-9) <= Number.EPSILON * 8e-9)
   const [local] = prepareBlocks({ circuit: addr, sources, distanceMm: 1 })
   assert.equal(local.settings.copperScope!.lateralDistanceMm, 1)
   assert.deepEqual(
@@ -89,8 +89,9 @@ test(modelSelection, options, async () => {
   )
   for (const signal of block.signals) {
     assert.ok("source_port_id" in signal.driver)
-    const expectedDriver =
-      signal.name === "CK" || signal.name === "CKn" ? "Model_343" : "Model_352"
+    let expectedDriver = "Model_352"
+    if (signal.name === "CK" || signal.name === "CKn")
+      expectedDriver = "Model_343"
     assert.equal(
       block.pins.get(signal.driver.source_port_id)!.buffer.name,
       expectedDriver,
@@ -116,15 +117,13 @@ test(modelSelection, options, async () => {
   assert.equal(stack.plated_hole_copper_thickness, 0.018)
 })
 
-const isolatedA4 =
-  "A4 isolation and weaker/slower selectors are real TSX declarations with unchanged board copper"
-test(isolatedA4, options, async () => {
+const isolatedA4 = "A4 isolation preserves DDR3 copper"
+test.skipIf(!path || !models)(isolatedA4, async () => {
   const original = JSON.parse(await readFile(path!, "utf8"))
   for (const driverModel of ["Model_352", "Model_345", "Model_273"] as const) {
-    const circuit = await fullBoardDdr3(path!, {
-      block: "DDR3_ADDR_CMD",
-      pattern: "isolated-a4",
-      driverModel,
+    const circuit = await fullBoardDdr3({
+      path: path!,
+      options: { block: "DDR3_ADDR_CMD", pattern: "isolated-a4", driverModel },
     })
     assert.deepEqual(circuit.slice(0, original.length), original)
     const signals = circuit.filter(
@@ -142,18 +141,16 @@ test(isolatedA4, options, async () => {
     )
     for (const signal of signals) {
       assert.ok("source_port_id" in signal.driver)
-      const expectedDriver =
-        signal.name === "CK" || signal.name === "CKn"
-          ? "Model_343"
-          : driverModel
+      let expectedDriver: string = driverModel
+      if (signal.name === "CK" || signal.name === "CKn")
+        expectedDriver = "Model_343"
       assert.equal(signal.driver.ibis_model_name, expectedDriver)
     }
   }
   const selected = ["A4", "A5", "A7", "A9", "A11", "CASn"]
-  const reduced = await fullBoardDdr3(path!, {
-    block: "DDR3_ADDR_CMD",
-    nets: selected,
-    pattern: "victim-even",
+  const reduced = await fullBoardDdr3({
+    path: path!,
+    options: { block: "DDR3_ADDR_CMD", nets: selected, pattern: "victim-even" },
   })
   assert.deepEqual(reduced.slice(0, original.length), original)
   const reducedSignals = reduced.filter(

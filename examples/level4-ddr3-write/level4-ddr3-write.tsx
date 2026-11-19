@@ -1,6 +1,6 @@
 import { simulation } from "@tscircuit/core"
 import type { SimulationIbisModelProps, TraceProps } from "@tscircuit/props"
-import React from "react"
+import type React from "react"
 import { cpuFootprint, dramFootprint } from "../ddr3-parts"
 import { routes } from "./routes"
 
@@ -37,11 +37,16 @@ type IbisReferencePortLabels = NonNullable<
   SimulationIbisModelProps["ibisPinNameToReferencePortLabels"]
 >
 
-const references = (
-  balls: string[],
-  high: string,
-  low: string,
-): IbisReferencePortLabels =>
+/** Use the supplied high and low ports for every reference on each ball. */
+const references = ({
+  balls,
+  high,
+  low,
+}: {
+  balls: string[]
+  high: string
+  low: string
+}): IbisReferencePortLabels =>
   Object.fromEntries(
     balls.map((ball) => [
       ball,
@@ -59,6 +64,7 @@ type SavedRouteProps = Required<
   Pick<TraceProps, "pcbPathRelativeTo" | "thickness" | "pcbPaths">
 >
 
+/** Translate one saved PCB route into the trace props used by core. */
 const route = (key: string): SavedRouteProps => ({
   pcbPathRelativeTo: routes[key].anchor,
   thickness: routes[key].width,
@@ -76,7 +82,8 @@ const route = (key: string): SavedRouteProps => ({
   ),
 })
 
-export default () => (
+/** The DDR3 lower-write byte with its differential data strobe. */
+export default (): React.JSX.Element => (
   <board
     pcbStyle={{ viaHoleDiameter: 0.15, viaPadDiameter: 0.3 }}
     width="40mm"
@@ -121,11 +128,11 @@ export default () => (
       ibisPinNameToModelName={Object.fromEntries(
         cpuDq.map((ball) => [ball, "Model_257"]),
       )}
-      ibisPinNameToReferencePortLabels={references(
-        [...cpuDq, "P1", "P2"],
-        "VDDS_DDR",
-        "VSS",
-      )}
+      ibisPinNameToReferencePortLabels={references({
+        balls: [...cpuDq, "P1", "P2"],
+        high: "VDDS_DDR",
+        low: "VSS",
+      })}
     />
     <simulation.ibismodel
       componentRef=".DRAM"
@@ -139,11 +146,11 @@ export default () => (
       ibisPinNameToModelName={Object.fromEntries(
         dramDq.map((ball) => [ball, "ODT_off"]),
       )}
-      ibisPinNameToReferencePortLabels={references(
-        [...dramDq, "F3", "G3"],
-        "VDDQ",
-        "VSSQ",
-      )}
+      ibisPinNameToReferencePortLabels={references({
+        balls: [...dramDq, "F3", "G3"],
+        high: "VDDQ",
+        low: "VSSQ",
+      })}
     />
     <trace {...route("CPU_VDDQ")} from=".CPU > .VDDS_DDR" to="net.VDDQ" />
     <trace {...route("DRAM_VDDQ")} from=".DRAM > .VDDQ" to="net.VDDQ" />
