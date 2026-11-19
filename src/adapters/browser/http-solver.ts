@@ -2,7 +2,7 @@ import type { RunSolver, SolverResult } from '../../solver'
 import { fail } from '../diagnostics'
 
 export interface HttpSolverOptions {
-  fetch?: typeof globalThis.fetch
+  fetch?: (url: string, options: RequestInit) => Promise<Response>
   signal?: AbortSignal
 }
 

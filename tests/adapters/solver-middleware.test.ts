@@ -1,8 +1,7 @@
-import test from 'node:test'
+import { onTestFinished, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { createServer, get } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import type { TestContext } from 'node:test'
 import { mkdtemp, rm, writeFile, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -20,7 +19,7 @@ const request = {
 }
 const result = { stdout: 'out', stderr: '', files: { 'waveform.raw': 'raw' } }
 /** Bind a real HTTP boundary to an ephemeral loopback port, with deterministic solver IO. */
-async function server(t: TestContext, options: SolverMiddlewareOptions = {}): Promise<string> {
+async function server(options: SolverMiddlewareOptions = {}): Promise<string> {
   const middleware = createSolverMiddleware({
     runSolver: async () => result,
     detectSolvers: async () => ({ ngspice: { available: true, version: 'ngspice-test' } }),
@@ -33,7 +32,7 @@ async function server(t: TestContext, options: SolverMiddlewareOptions = {}): Pr
     }),
   )
   await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
-  t.after(
+  onTestFinished(
     () =>
       new Promise<void>((resolve, reject) => {
         http.close((error) => (error ? reject(error) : resolve()))
@@ -51,9 +50,9 @@ async function post(url: string, body: unknown): Promise<Response> {
   })
 }
 
-test('reports ngspice only, caches version probes and returns the solver result unchanged', async (t) => {
+test('reports ngspice only, caches version probes and returns the solver result unchanged', async () => {
   let probes = 0
-  const url = await server(t, {
+  const url = await server({
     detectSolvers: async () => {
       probes++
       return { ngspice: { available: true, version: 'ngspice-test' } }
@@ -75,9 +74,9 @@ test('reports ngspice only, caches version probes and returns the solver result 
 const rejectedRequests = `rejects unsupported solvers, executable/cwd options, ${
   'unsafe paths and unsafe ngspice commands before execution'
   }`
-test(rejectedRequests, async (t) => {
+test(rejectedRequests, async () => {
   let calls = 0
-  const url = await server(t, {
+  const url = await server({
     runSolver: async () => {
       calls++
       return result
@@ -105,8 +104,8 @@ test(rejectedRequests, async (t) => {
   assert.equal(calls, 0)
 })
 
-test('bounds body size, rejects malformed JSON/content types and rejects foreign hosts/origins', async (t) => {
-  const url = await server(t, { maxRequestBytes: 512 })
+test('bounds body size, rejects malformed JSON/content types and rejects foreign hosts/origins', async () => {
+  const url = await server({ maxRequestBytes: 512 })
   assert.equal((await post(url, { ...request, files: { 'simulation.cir': 'x'.repeat(1024) } })).status, 413)
   assert.equal(
     (
@@ -129,10 +128,10 @@ test('bounds body size, rejects malformed JSON/content types and rejects foreign
   assert.equal(status, 403)
 })
 
-test('serializes requests, including version probes, and releases the slot after failure', async (t) => {
+test('serializes requests, including version probes, and releases the slot after failure', async () => {
   let active = 0
   let calls = 0
-  const url = await server(t, {
+  const url = await server({
     detectSolvers: async () => {
       assert.equal(active, 0)
       return { ngspice: { available: false } }
@@ -159,11 +158,11 @@ test('serializes requests, including version probes, and releases the slot after
   assert.equal(calls, 3)
 })
 
-test('loads only fixed local asset names and reports missing paths without exposing arbitrary files', async (t) => {
+test('loads only fixed local asset names and reports missing paths without exposing arbitrary files', async () => {
   const root = await mkdtemp(join(tmpdir(), 'solver-assets-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
   await writeFile(join(root, 'sn74lvc1g04.ibs'), 'test asset')
-  const url = await server(t, { modelDirectory: root })
+  const url = await server({ modelDirectory: root })
   assert.deepEqual(await (await fetch(`${url}/api/local-assets/sn74lvc1g04.ibs`)).json(), { text: 'test asset' })
   assert.match(
     ((await (await fetch(`${url}/api/local-assets/sn65hvd72.ibs`)).json()) as { error: string }).error,
@@ -179,10 +178,10 @@ test('loads only fixed local asset names and reports missing paths without expos
   )
 })
 
-test('detects only the fixed ngspice executable on PATH and reports its version or absence', async (t) => {
+test('detects only the fixed ngspice executable on PATH and reports its version or absence', async () => {
   const root = await mkdtemp(join(tmpdir(), 'solver-path-'))
   const previous = process.env.PATH
-  t.after(async () => {
+  onTestFinished(async () => {
     process.env.PATH = previous
     await rm(root, { recursive: true, force: true })
   })
@@ -193,14 +192,14 @@ test('detects only the fixed ngspice executable on PATH and reports its version 
   assert.deepEqual(await detectLocalSolvers(), { ngspice: { available: true, version: 'ngspice-test' } })
 })
 
-test('rejects an overfull queue and admits later work after a failed process', { timeout: 3000 }, async (t) => {
+test('rejects an overfull queue and admits later work after a failed process', async () => {
   let release!: () => void
   const blocked = new Promise<void>((resolve) => {
     release = resolve
   })
-  t.after(() => release())
+  onTestFinished(() => release())
   let calls = 0
-  const url = await server(t, {
+  const url = await server({
     runSolver: async () => {
       const call = ++calls
       if (call === 1) {
@@ -217,12 +216,12 @@ test('rejects an overfull queue and admits later work after a failed process', {
   const replies = await Promise.all(pending)
   assert.deepEqual(replies.map((reply) => reply.status).sort(), [200, 200, 200, 429, 502])
   assert.equal((await post(url, request)).status, 200)
-})
+}, 3000)
 
-test('admits a routed DDR-sized deck above the old 16 MiB body limit', async (t) => {
+test('admits a routed DDR-sized deck above the old 16 MiB body limit', async () => {
   const deck = `title\n*${'x'.repeat(17 * 1024 * 1024)}\n.tran 1e-11 8e-9\n.end`
   let calls = 0
-  const url = await server(t, { runSolver: async value => {
+  const url = await server({ runSolver: async value => {
       calls++
       assert.equal(value.files['simulation.cir'], deck)
       return result

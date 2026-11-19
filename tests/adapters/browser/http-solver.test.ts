@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { createHttpSolver } from '../../../src/adapters/browser'
 import type { SolverRequest } from '../../../src/solver'
