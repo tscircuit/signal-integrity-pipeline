@@ -1,6 +1,7 @@
 import type { RunSolver, SolverResult } from "../../solver"
 import { fail } from "../diagnostics"
 
+/** Browser transport and cancellation options for a solver run. */
 export interface HttpSolverOptions {
   fetch?: (url: string, options: RequestInit) => Promise<Response>
   signal?: AbortSignal

@@ -1,3 +1,4 @@
+/* eslint-disable local/max-file-lines -- Keep the debugger controls and their atlas rendering together. */
 import { Circuit } from "@tscircuit/core"
 import {
   GenericSolverDebugger,
@@ -102,11 +103,14 @@ function zoomedRegion({
   }
 }
 
+/** Dim other labels while retaining enough contrast to see the routed context. */
+const UNFOCUSED_LABEL_OPACITY = 0.2
+
 /** Dim labels other than the one under the cursor while keeping the camera visible. */
 function atlasHoverStyle(label: string): string {
   const labelledLayer =
     '.routed-atlas-layers [data-label]:not([data-label=""]):not([data-label="camera"])'
-  return `${labelledLayer}:not([data-label=${JSON.stringify(label)}]) { opacity: 0.2 }`
+  return `${labelledLayer}:not([data-label=${JSON.stringify(label)}]) { opacity: ${UNFOCUSED_LABEL_OPACITY} }`
 }
 
 /** Mount the generated SVG as inline DOM so its labels participate in pointer events. */
@@ -141,7 +145,7 @@ function RoutedAtlas({
     x: number
     y: number
   }>()
-  const camera = boardPictureView(circuit, graphics)
+  const camera = boardPictureView({ circuit, drawing: graphics })
   const view = region ?? camera
   const cameraWidth = camera.maxX - camera.minX
   const cameraHeight = camera.maxY - camera.minY
@@ -251,19 +255,22 @@ function RoutedAtlas({
   )
 }
 
-const drawings = new WeakMap<
-  RoutedPipelineSolver,
-  {
-    key: string
-    graphics: GraphicsObject
-  }
->()
+/** Graphics cached against a stage and solver state. */
+interface CachedStageDrawing {
+  key: string
+  graphics: GraphicsObject
+}
+
+const drawings = new WeakMap<RoutedPipelineSolver, CachedStageDrawing>()
 
 /** Draw a stage once per solver state. */
-function stageDrawing(
-  root: RoutedPipelineSolver,
-  number: number,
-): GraphicsObject {
+function stageDrawing({
+  root,
+  number,
+}: {
+  root: RoutedPipelineSolver
+  number: number
+}): GraphicsObject {
   const solver = root.getSolver(root.pipelineDef[number - 1]?.solverName ?? "")
   const key = `${number}:${root.iterations}:${solver?.iterations}:${solver?.solved}:${solver?.failed}`
   const cached = drawings.get(root)
@@ -274,11 +281,14 @@ function stageDrawing(
 }
 
 /** Render the stage with a fresh camera when the stage number changes. */
-function renderStage(
-  root: RoutedPipelineSolver,
-  number: number,
-): React.JSX.Element {
-  const graphics = stageDrawing(root, number)
+function renderStage({
+  root,
+  number,
+}: {
+  root: RoutedPipelineSolver
+  number: number
+}): React.JSX.Element {
+  const graphics = stageDrawing({ root, number })
   return (
     <RoutedAtlas
       key={number}
@@ -288,6 +298,7 @@ function renderStage(
   )
 }
 
+/** TSX or Circuit JSON board input and the model assets required by the debugger. */
 export interface BoardPageProps {
   "board-tree"?: React.ReactElement
   "load-board"?: () => Promise<CircuitJson>
@@ -317,6 +328,18 @@ async function renderBoard(tree: React.ReactElement): Promise<CircuitJson> {
   return records
 }
 
+/** Load Circuit JSON through the fixture's selected input. */
+function loadCircuitJson({
+  loadBoard,
+  boardTree,
+}: {
+  loadBoard?: BoardPageProps["load-board"]
+  boardTree?: BoardPageProps["board-tree"]
+}): Promise<CircuitJson> {
+  if (loadBoard) return loadBoard()
+  return renderBoard(boardTree!)
+}
+
 /** Include copper within one millimetre of each signal route in the debugger. */
 const SCOPE_DISTANCE_MM = 1
 
@@ -340,9 +363,7 @@ async function loadBoardSolver({
     if (ibisSources[path]) continue
     ibisSources[path] = await localAsset(model)
   }
-  let circuitJson: CircuitJson
-  if (loadBoard) circuitJson = await loadBoard()
-  else circuitJson = await renderBoard(boardTree!)
+  const circuitJson = await loadCircuitJson({ loadBoard, boardTree })
   if (signal.aborted) return
   const runSolver = createHttpSolver({ signal })
   for (const record of circuitJson) {
@@ -356,9 +377,12 @@ async function loadBoardSolver({
     scopeDistanceMm: SCOPE_DISTANCE_MM,
   }
   onReady(
-    new RoutedPipelineSolver(problem, {
-      runSolver,
-      progress: (): void => undefined,
+    new RoutedPipelineSolver({
+      input: problem,
+      context: {
+        runSolver,
+        progress: (): void => undefined,
+      },
     }),
   )
 }
@@ -376,6 +400,9 @@ type PublicDebuggerSolver = Omit<
 function asDebuggerSolver(solver: PublicDebuggerSolver): DebuggerSolver {
   return solver as DebuggerSolver
 }
+
+/** The debugger can select any of the six routed stages. */
+const ROUTED_STAGE_COUNT = 6
 
 /** Show a fixture's routed stages using the local ngspice HTTP execution port. */
 export function BoardPage({
@@ -406,7 +433,7 @@ export function BoardPage({
       iteration = ready.solver.iterations
       index = ready.solver.currentPipelineStageIndex
       if (iteration === 0) return setStep(0)
-      setStep(Math.min(index + 1, 6))
+      setStep(Math.min(index + 1, ROUTED_STAGE_COUNT))
     })
     observer.observe(debuggerElement.current, {
       childList: true,
@@ -462,7 +489,7 @@ export function BoardPage({
             const row = target.closest("tbody > tr")
             if (!row) return
             const index = Array.from(row.parentElement!.children).indexOf(row)
-            if (index < 0 || index >= 6) return
+            if (index < 0 || index >= ROUTED_STAGE_COUNT) return
             setStep(index + 1)
           }}
         >
@@ -472,13 +499,18 @@ export function BoardPage({
               aria-label="Step"
               type="number"
               min={0}
-              max={6}
+              max={ROUTED_STAGE_COUNT}
               step={1}
               value={step}
               onChange={(event) => {
                 const enteredStep = event.currentTarget.valueAsNumber
                 if (!Number.isFinite(enteredStep)) return setStep(0)
-                setStep(Math.min(6, Math.max(0, Math.trunc(enteredStep))))
+                setStep(
+                  Math.min(
+                    ROUTED_STAGE_COUNT,
+                    Math.max(0, Math.trunc(enteredStep)),
+                  ),
+                )
               }}
             />
           </label>
@@ -486,7 +518,7 @@ export function BoardPage({
             key={ready.revision}
             customRenderer={{
               name: "Routed stage",
-              render: () => renderStage(ready.solver, step),
+              render: () => renderStage({ root: ready.solver, number: step }),
               getDownload: () => ready.solver.visualizeStage(step),
             }}
             solver={asDebuggerSolver(ready.solver)}

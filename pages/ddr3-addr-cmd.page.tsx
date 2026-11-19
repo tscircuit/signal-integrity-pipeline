@@ -5,8 +5,11 @@ import type { CircuitJson } from "../src/board"
 
 /** Keep the physical board local; preserve its copper while appending TSX addr/cmd declarations. */
 async function loadBoard(): Promise<CircuitJson> {
-  return withDdr3Signals(JSON.parse(await localAsset("ddr3-board.json")), {
-    block: "DDR3_ADDR_CMD",
+  return withDdr3Signals({
+    physicalRecords: JSON.parse(await localAsset("ddr3-board.json")),
+    options: {
+      block: "DDR3_ADDR_CMD",
+    },
   })
 }
 

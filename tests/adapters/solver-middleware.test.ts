@@ -37,14 +37,23 @@ async function server(options: SolverMiddlewareOptions = {}): Promise<string> {
   onTestFinished(
     () =>
       new Promise<void>((resolve, reject) => {
-        http.close((error) => (error ? reject(error) : resolve()))
+        http.close((error) => {
+          if (error) return reject(error)
+          resolve()
+        })
         http.closeAllConnections()
       }),
   )
   return `http://127.0.0.1:${(http.address() as AddressInfo).port}`
 }
 /** Send a JSON solver request through the same route used by the browser. */
-async function post(url: string, body: unknown): Promise<Response> {
+async function post({
+  url,
+  body,
+}: {
+  url: string
+  body: unknown
+}): Promise<Response> {
   return fetch(`${url}/api/run-solver`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -69,7 +78,7 @@ test("reports ngspice only, caches version probes and returns the solver result 
   })
   await fetch(`${url}/api/solvers`)
   assert.equal(probes, 1)
-  assert.deepEqual(await (await post(url, request)).json(), result)
+  assert.deepEqual(await (await post({ url, body: request })).json(), result)
   assert.equal((await fetch(`${url}/api/run-solver`)).status, 405)
 })
 
@@ -99,7 +108,7 @@ test(rejectedRequests, async () => {
       ".osdi /tmp/module",
     ].map((deck) => ({ ...request, files: { "simulation.cir": deck } })),
   ]) {
-    assert.equal((await post(url, value)).status, 400)
+    assert.equal((await post({ url, body: value })).status, 400)
   }
   assert.equal(calls, 0)
 })
@@ -108,9 +117,12 @@ test("bounds body size, rejects malformed JSON/content types and rejects foreign
   const url = await server({ maxRequestBytes: 512 })
   assert.equal(
     (
-      await post(url, {
-        ...request,
-        files: { "simulation.cir": "x".repeat(1024) },
+      await post({
+        url,
+        body: {
+          ...request,
+          files: { "simulation.cir": "x".repeat(1024) },
+        },
       })
     ).status,
     413,
@@ -172,10 +184,10 @@ test("serializes requests, including version probes, and releases the slot after
     },
   })
   const replies = await Promise.all([
-    post(url, request),
-    post(url, request),
+    post({ url, body: request }),
+    post({ url, body: request }),
     fetch(`${url}/api/solvers`),
-    post(url, request),
+    post({ url, body: request }),
   ])
   assert.deepEqual(
     replies.map((reply) => reply.status),
@@ -253,7 +265,7 @@ test("rejects an overfull queue and admits later work after a failed process", a
       return result
     },
   })
-  const pending = Array.from({ length: 5 }, () => post(url, request))
+  const pending = Array.from({ length: 5 }, () => post({ url, body: request }))
   const extra = await Promise.race(pending)
   release()
   assert.equal(extra.status, 429)
@@ -262,7 +274,7 @@ test("rejects an overfull queue and admits later work after a failed process", a
     replies.map((reply) => reply.status).sort(),
     [200, 200, 200, 429, 502],
   )
-  assert.equal((await post(url, request)).status, 200)
+  assert.equal((await post({ url, body: request })).status, 200)
 }, 3000)
 
 test("admits a routed DDR-sized deck above the old 16 MiB body limit", async () => {
@@ -276,7 +288,12 @@ test("admits a routed DDR-sized deck above the old 16 MiB body limit", async () 
     },
   })
   assert.equal(
-    (await post(url, { ...request, files: { "simulation.cir": deck } })).status,
+    (
+      await post({
+        url,
+        body: { ...request, files: { "simulation.cir": deck } },
+      })
+    ).status,
     200,
   )
   assert.equal(calls, 1)
