@@ -1,11 +1,13 @@
-import React from 'react'
-import { withDdr3Signals } from '../examples/routed/ddr3-signals'
-import { BoardPage, localAsset } from '../site/debugger'
-import type { CircuitJson } from '../src/board'
+import type React from "react"
+import { withDdr3Signals } from "../examples/routed/ddr3-signals"
+import { BoardPage, localAsset } from "../site/debugger"
+import type { CircuitJson } from "../src/board"
 
 /** Keep the physical board local; preserve its copper while appending TSX addr/cmd declarations. */
 async function loadBoard(): Promise<CircuitJson> {
-  return withDdr3Signals(JSON.parse(await localAsset('ddr3-board.json')), { block: 'DDR3_ADDR_CMD' })
+  return withDdr3Signals(JSON.parse(await localAsset("ddr3-board.json")), {
+    block: "DDR3_ADDR_CMD",
+  })
 }
 
 /** Keep the fixture callable so Cosmos 6 can load React 19 elements. */
@@ -13,7 +15,7 @@ export default function Page(): React.JSX.Element {
   return (
     <BoardPage
       load-board={loadBoard}
-      models={['sprm552c.ibs', 'W631GG6MB-12.ibs']}
+      models={["sprm552c.ibs", "W631GG6MB-12.ibs"]}
     />
   )
 }

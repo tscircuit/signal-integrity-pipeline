@@ -1,21 +1,29 @@
-import { defineConfig, type UserConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { createSolverMiddleware } from './src/adapters/solver-middleware'
+import react from "@vitejs/plugin-react"
+import { defineConfig, type UserConfig } from "vite"
+import { createSolverMiddleware } from "./src/adapters/solver-middleware"
 
 export default defineConfig({
-  optimizeDeps: { exclude: ['@resvg/resvg-js'] },
+  optimizeDeps: { exclude: ["@resvg/resvg-js"] },
   plugins: [
     react(),
     {
-      name: 'local-ngspice',
+      name: "local-ngspice",
       // Cosmos 6 passes host=0.0.0.0 inline, so enforce loopback after that merge.
       config: (): UserConfig => ({
         server: {
-          host: '127.0.0.1',
-          open: 'http://127.0.0.1:5000',
+          host: "127.0.0.1",
+          open: "http://127.0.0.1:5000",
           strictPort: true,
           cors: false,
-          fs: { deny: ['**/models/**', '**/*.ibs', '**/*.circuit.json', '**/.env*', '**/.git/**'] },
+          fs: {
+            deny: [
+              "**/models/**",
+              "**/*.ibs",
+              "**/*.circuit.json",
+              "**/.env*",
+              "**/.git/**",
+            ],
+          },
         },
       }),
       configureServer: (server) => {

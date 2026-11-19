@@ -1,32 +1,39 @@
-import React, { useMemo, useState } from 'react'
-import { BoardPage } from '../site/debugger'
-import type { CircuitJson } from '../src/board'
+import type React from "react"
+import { useMemo, useState } from "react"
+import { BoardPage } from "../site/debugger"
+import type { CircuitJson } from "../src/board"
 
 /** Collect each declared model basename once, in board order. */
 function collectModelNames(records: CircuitJson | undefined): string[] {
   const models = new Set<string>()
   for (const record of records ?? []) {
-    if (record.type !== 'simulation_ibis_model') continue
+    if (record.type !== "simulation_ibis_model") continue
     const path = record.ibis_model_asset?.project_relative_path
-    if (typeof path !== 'string') continue
-    models.add(path.split('/').at(-1)!)
+    if (typeof path !== "string") continue
+    models.add(path.split("/").at(-1)!)
   }
   return [...models]
 }
 
 /** Paste or upload records without inventing geometry or simulation declarations. */
 export default function CircuitJsonPage(): React.JSX.Element {
-  const [text, setText] = useState('[]')
+  const [text, setText] = useState("[]")
   const [records, setRecords] = useState<CircuitJson>()
   const [error, setError] = useState<string>()
   const models = useMemo(() => collectModelNames(records), [records])
-  const loadBoard = useMemo(() => async (): Promise<CircuitJson> => records!, [records])
+  const loadBoard = useMemo(
+    () => async (): Promise<CircuitJson> => records!,
+    [records],
+  )
   return (
     <>
       <h1>Paste / upload Circuit JSON</h1>
-      <p>Include physical copper, stackup, IBIS declarations and transient channel blocks.</p>
+      <p>
+        Include physical copper, stackup, IBIS declarations and transient
+        channel blocks.
+      </p>
       <label>
-        Circuit JSON file{' '}
+        Circuit JSON file{" "}
         <input
           type="file"
           accept=".json"
@@ -40,16 +47,25 @@ export default function CircuitJsonPage(): React.JSX.Element {
           }}
         />
       </label>
-      <textarea aria-label="Circuit JSON" value={text} onChange={(event) => setText(event.target.value)} />
+      <textarea
+        aria-label="Circuit JSON"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+      />
       <button
         onClick={() => {
           try {
             const parsedRecords: unknown = JSON.parse(text)
             if (
               !Array.isArray(parsedRecords) ||
-              parsedRecords.some((record) => !record || typeof record !== 'object' || typeof record.type !== 'string')
+              parsedRecords.some(
+                (record) =>
+                  !record ||
+                  typeof record !== "object" ||
+                  typeof record.type !== "string",
+              )
             )
-              throw new Error('Expected an array of Circuit JSON records')
+              throw new Error("Expected an array of Circuit JSON records")
             setRecords(parsedRecords as CircuitJson)
             setError(undefined)
           } catch (cause) {

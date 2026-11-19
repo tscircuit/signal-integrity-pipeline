@@ -1,28 +1,30 @@
-import { onTestFinished, test } from 'bun:test'
-import assert from 'node:assert/strict'
-import { createServer, get } from 'node:http'
-import type { AddressInfo } from 'node:net'
-import { mkdtemp, rm, writeFile, chmod } from 'node:fs/promises'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { onTestFinished, test } from "bun:test"
+import assert from "node:assert/strict"
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { createServer, get } from "node:http"
+import type { AddressInfo } from "node:net"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import {
   createSolverMiddleware,
   detectLocalSolvers,
   type SolverMiddlewareOptions,
-} from '../../src/adapters/solver-middleware'
+} from "../../src/adapters/solver-middleware"
 
 const request = {
-  solver: 'ngspice',
-  files: { 'simulation.cir': 'title\n.tran 1e-11 4e-8\n.end' },
-  args: ['-n', '-b', '-r', 'waveform.raw', 'simulation.cir'],
-  outputFiles: ['waveform.raw'],
+  solver: "ngspice",
+  files: { "simulation.cir": "title\n.tran 1e-11 4e-8\n.end" },
+  args: ["-n", "-b", "-r", "waveform.raw", "simulation.cir"],
+  outputFiles: ["waveform.raw"],
 }
-const result = { stdout: 'out', stderr: '', files: { 'waveform.raw': 'raw' } }
+const result = { stdout: "out", stderr: "", files: { "waveform.raw": "raw" } }
 /** Bind a real HTTP boundary to an ephemeral loopback port, with deterministic solver IO. */
 async function server(options: SolverMiddlewareOptions = {}): Promise<string> {
   const middleware = createSolverMiddleware({
     runSolver: async () => result,
-    detectSolvers: async () => ({ ngspice: { available: true, version: 'ngspice-test' } }),
+    detectSolvers: async () => ({
+      ngspice: { available: true, version: "ngspice-test" },
+    }),
     ...options,
   })
   const http = createServer((request, response) =>
@@ -31,7 +33,7 @@ async function server(options: SolverMiddlewareOptions = {}): Promise<string> {
       response.end()
     }),
   )
-  await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
+  await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve))
   onTestFinished(
     () =>
       new Promise<void>((resolve, reject) => {
@@ -44,18 +46,18 @@ async function server(options: SolverMiddlewareOptions = {}): Promise<string> {
 /** Send a JSON solver request through the same route used by the browser. */
 async function post(url: string, body: unknown): Promise<Response> {
   return fetch(`${url}/api/run-solver`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
 }
 
-test('reports ngspice only, caches version probes and returns the solver result unchanged', async () => {
+test("reports ngspice only, caches version probes and returns the solver result unchanged", async () => {
   let probes = 0
   const url = await server({
     detectSolvers: async () => {
       probes++
-      return { ngspice: { available: true, version: 'ngspice-test' } }
+      return { ngspice: { available: true, version: "ngspice-test" } }
     },
     runSolver: async (value) => {
       assert.deepEqual(value, request)
@@ -63,7 +65,7 @@ test('reports ngspice only, caches version probes and returns the solver result 
     },
   })
   assert.deepEqual(await (await fetch(`${url}/api/solvers`)).json(), {
-    ngspice: { available: true, version: 'ngspice-test' },
+    ngspice: { available: true, version: "ngspice-test" },
   })
   await fetch(`${url}/api/solvers`)
   assert.equal(probes, 1)
@@ -71,9 +73,7 @@ test('reports ngspice only, caches version probes and returns the solver result 
   assert.equal((await fetch(`${url}/api/run-solver`)).status, 405)
 })
 
-const rejectedRequests = `rejects unsupported solvers, executable/cwd options, ${
-  'unsafe paths and unsafe ngspice commands before execution'
-  }`
+const rejectedRequests = `rejects unsupported solvers, executable/cwd options, ${"unsafe paths and unsafe ngspice commands before execution"}`
 test(rejectedRequests, async () => {
   let calls = 0
   const url = await server({
@@ -84,51 +84,74 @@ test(rejectedRequests, async () => {
   })
   for (const value of [
     null,
-    { ...request, solver: 'fasthenry' },
-    { ...request, solver: 'fastercap' },
-    { ...request, cwd: '/tmp' },
-    { ...request, executable: '/bin/sh' },
-    { ...request, files: { '../escape': '' } },
-    { ...request, outputFiles: ['/tmp/escape'] },
-    { ...request, args: ['-c', '/tmp/elsewhere'] },
+    { ...request, solver: "fasthenry" },
+    { ...request, solver: "fastercap" },
+    { ...request, cwd: "/tmp" },
+    { ...request, executable: "/bin/sh" },
+    { ...request, files: { "../escape": "" } },
+    { ...request, outputFiles: ["/tmp/escape"] },
+    { ...request, args: ["-c", "/tmp/elsewhere"] },
     ...[
-      '.control\nshell touch /tmp/escape\n.endc',
-      '.control ignored-argument\nshell touch /tmp/escape\n.endc',
-      '.include /tmp/secret',
-      '.control\ncd /tmp\n.endc',
-      '.osdi /tmp/module',
-    ].map((deck) => ({ ...request, files: { 'simulation.cir': deck } })),
+      ".control\nshell touch /tmp/escape\n.endc",
+      ".control ignored-argument\nshell touch /tmp/escape\n.endc",
+      ".include /tmp/secret",
+      ".control\ncd /tmp\n.endc",
+      ".osdi /tmp/module",
+    ].map((deck) => ({ ...request, files: { "simulation.cir": deck } })),
   ]) {
     assert.equal((await post(url, value)).status, 400)
   }
   assert.equal(calls, 0)
 })
 
-test('bounds body size, rejects malformed JSON/content types and rejects foreign hosts/origins', async () => {
+test("bounds body size, rejects malformed JSON/content types and rejects foreign hosts/origins", async () => {
   const url = await server({ maxRequestBytes: 512 })
-  assert.equal((await post(url, { ...request, files: { 'simulation.cir': 'x'.repeat(1024) } })).status, 413)
+  assert.equal(
+    (
+      await post(url, {
+        ...request,
+        files: { "simulation.cir": "x".repeat(1024) },
+      })
+    ).status,
+    413,
+  )
   assert.equal(
     (
       await fetch(`${url}/api/run-solver`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{',
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{",
       })
     ).status,
     400,
   )
-  assert.equal((await fetch(`${url}/api/run-solver`, { method: 'POST', body: '{}' })).status, 415)
-  assert.equal((await fetch(`${url}/api/solvers`, { headers: { Origin: 'https://example.com' } })).status, 403)
+  assert.equal(
+    (await fetch(`${url}/api/run-solver`, { method: "POST", body: "{}" }))
+      .status,
+    415,
+  )
+  assert.equal(
+    (
+      await fetch(`${url}/api/solvers`, {
+        headers: { Origin: "https://example.com" },
+      })
+    ).status,
+    403,
+  )
   const status = await new Promise<number | undefined>((resolve, reject) => {
-    get(`${url}/api/solvers`, { headers: { Host: 'example.com' } }, (response) => {
-      response.resume()
-      resolve(response.statusCode)
-    }).on('error', reject)
+    get(
+      `${url}/api/solvers`,
+      { headers: { Host: "example.com" } },
+      (response) => {
+        response.resume()
+        resolve(response.statusCode)
+      },
+    ).on("error", reject)
   })
   assert.equal(status, 403)
 })
 
-test('serializes requests, including version probes, and releases the slot after failure', async () => {
+test("serializes requests, including version probes, and releases the slot after failure", async () => {
   let active = 0
   let calls = 0
   const url = await server({
@@ -141,7 +164,10 @@ test('serializes requests, including version probes, and releases the slot after
       const call = ++calls
       await new Promise<void>((resolve) => setTimeout(resolve, 20))
       active--
-      if (call === 1) throw Object.assign(new Error('native timeout'), { code: 'native_timeout' })
+      if (call === 1)
+        throw Object.assign(new Error("native timeout"), {
+          code: "native_timeout",
+        })
       return result
     },
   })
@@ -158,41 +184,59 @@ test('serializes requests, including version probes, and releases the slot after
   assert.equal(calls, 3)
 })
 
-test('loads only fixed local asset names and reports missing paths without exposing arbitrary files', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'solver-assets-'))
+test("loads only fixed local asset names and reports missing paths without exposing arbitrary files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solver-assets-"))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
-  await writeFile(join(root, 'sn74lvc1g04.ibs'), 'test asset')
+  await writeFile(join(root, "sn74lvc1g04.ibs"), "test asset")
   const url = await server({ modelDirectory: root })
-  assert.deepEqual(await (await fetch(`${url}/api/local-assets/sn74lvc1g04.ibs`)).json(), { text: 'test asset' })
+  assert.deepEqual(
+    await (await fetch(`${url}/api/local-assets/sn74lvc1g04.ibs`)).json(),
+    { text: "test asset" },
+  )
   assert.match(
-    ((await (await fetch(`${url}/api/local-assets/sn65hvd72.ibs`)).json()) as { error: string }).error,
+    (
+      (await (await fetch(`${url}/api/local-assets/sn65hvd72.ibs`)).json()) as {
+        error: string
+      }
+    ).error,
     /missing local asset: .*sn65hvd72.ibs/,
   )
   assert.equal((await fetch(`${url}/api/local-assets/secret.txt`)).status, 404)
-  await writeFile(join(root, 'ddr3-board.json'), 'local board')
-  assert.deepEqual(await (await fetch(`${url}/api/local-assets/ddr3-board.json`)).json(), { text: 'local board' })
-  await rm(join(root, 'ddr3-board.json'))
+  await writeFile(join(root, "ddr3-board.json"), "local board")
+  assert.deepEqual(
+    await (await fetch(`${url}/api/local-assets/ddr3-board.json`)).json(),
+    { text: "local board" },
+  )
+  await rm(join(root, "ddr3-board.json"))
   assert.match(
-    ((await (await fetch(`${url}/api/local-assets/ddr3-board.json`)).json()) as { error: string }).error,
+    (
+      (await (
+        await fetch(`${url}/api/local-assets/ddr3-board.json`)
+      ).json()) as { error: string }
+    ).error,
     /ddr3-board.json/,
   )
 })
 
-test('detects only the fixed ngspice executable on PATH and reports its version or absence', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'solver-path-'))
+test("detects only the fixed ngspice executable on PATH and reports its version or absence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solver-path-"))
   const previous = process.env.PATH
   onTestFinished(async () => {
     process.env.PATH = previous
     await rm(root, { recursive: true, force: true })
   })
   process.env.PATH = root
-  assert.deepEqual(await detectLocalSolvers(), { ngspice: { available: false } })
-  await writeFile(join(root, 'ngspice'), '#!/bin/sh\necho ngspice-test\n')
-  await chmod(join(root, 'ngspice'), 0o755)
-  assert.deepEqual(await detectLocalSolvers(), { ngspice: { available: true, version: 'ngspice-test' } })
+  assert.deepEqual(await detectLocalSolvers(), {
+    ngspice: { available: false },
+  })
+  await writeFile(join(root, "ngspice"), "#!/bin/sh\necho ngspice-test\n")
+  await chmod(join(root, "ngspice"), 0o755)
+  assert.deepEqual(await detectLocalSolvers(), {
+    ngspice: { available: true, version: "ngspice-test" },
+  })
 })
 
-test('rejects an overfull queue and admits later work after a failed process', async () => {
+test("rejects an overfull queue and admits later work after a failed process", async () => {
   let release!: () => void
   const blocked = new Promise<void>((resolve) => {
     release = resolve
@@ -204,7 +248,7 @@ test('rejects an overfull queue and admits later work after a failed process', a
       const call = ++calls
       if (call === 1) {
         await blocked
-        throw new Error('ngspice failed')
+        throw new Error("ngspice failed")
       }
       return result
     },
@@ -214,18 +258,26 @@ test('rejects an overfull queue and admits later work after a failed process', a
   release()
   assert.equal(extra.status, 429)
   const replies = await Promise.all(pending)
-  assert.deepEqual(replies.map((reply) => reply.status).sort(), [200, 200, 200, 429, 502])
+  assert.deepEqual(
+    replies.map((reply) => reply.status).sort(),
+    [200, 200, 200, 429, 502],
+  )
   assert.equal((await post(url, request)).status, 200)
 }, 3000)
 
-test('admits a routed DDR-sized deck above the old 16 MiB body limit', async () => {
-  const deck = `title\n*${'x'.repeat(17 * 1024 * 1024)}\n.tran 1e-11 8e-9\n.end`
+test("admits a routed DDR-sized deck above the old 16 MiB body limit", async () => {
+  const deck = `title\n*${"x".repeat(17 * 1024 * 1024)}\n.tran 1e-11 8e-9\n.end`
   let calls = 0
-  const url = await server({ runSolver: async value => {
+  const url = await server({
+    runSolver: async (value) => {
       calls++
-      assert.equal(value.files['simulation.cir'], deck)
+      assert.equal(value.files["simulation.cir"], deck)
       return result
-    } })
-  assert.equal((await post(url, { ...request, files: { 'simulation.cir': deck } })).status, 200)
+    },
+  })
+  assert.equal(
+    (await post(url, { ...request, files: { "simulation.cir": deck } })).status,
+    200,
+  )
   assert.equal(calls, 1)
 })
