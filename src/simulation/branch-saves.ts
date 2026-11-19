@@ -1,5 +1,6 @@
 import { spiceSubcircuitName, spiceWords } from "./spice-header"
 
+/** A name used to resolve a SPICE subcircuit definition. */
 type SubcircuitName = string
 
 /** Stop expanding branch names beyond this SPICE instance nesting depth. */
@@ -29,29 +30,33 @@ export function branchSaves({
       current.push(line)
   }
   const saved: string[] = []
-  collectBranchSaves(
-    { name: wrapper, path: instance.toLowerCase(), depth: 0 },
-    { definitions, saved },
-  )
+  collectBranchSaves({
+    name: wrapper,
+    path: instance.toLowerCase(),
+    depth: 0,
+    context: { definitions, saved },
+  })
   return saved
 }
 
+/** The parsed definitions and accumulated ngspice branch saves. */
+interface BranchSaveContext {
+  definitions: ReadonlyMap<SubcircuitName, string[]>
+  saved: string[]
+}
+
 /** ngspice prefixes subcircuit voltage devices with v.<instance path>.<device name>. */
-function collectBranchSaves(
-  {
-    name,
-    path,
-    depth,
-  }: {
-    name: SubcircuitName
-    path: string
-    depth: number
-  },
-  context: {
-    definitions: ReadonlyMap<SubcircuitName, string[]>
-    saved: string[]
-  },
-): void {
+function collectBranchSaves({
+  name,
+  path,
+  depth,
+  context,
+}: {
+  name: SubcircuitName
+  path: string
+  depth: number
+  context: BranchSaveContext
+}): void {
   if (depth > MAX_SUBCIRCUIT_DEPTH)
     throw new Error("Recursive/deep SPICE library cannot be saved safely")
   for (const line of context.definitions.get(name.toLowerCase()) ?? []) {
@@ -59,9 +64,11 @@ function collectBranchSaves(
     const device = tokens[0].toLowerCase()
     if (device.startsWith("v")) context.saved.push(`i(v.${path}.${device})`)
     if (!device.startsWith("x")) continue
-    collectBranchSaves(
-      { name: tokens.at(-1)!, path: `${path}.${device}`, depth: depth + 1 },
+    collectBranchSaves({
+      name: tokens.at(-1)!,
+      path: `${path}.${device}`,
+      depth: depth + 1,
       context,
-    )
+    })
   }
 }

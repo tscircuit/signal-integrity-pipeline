@@ -10,7 +10,7 @@ import {
 
 /** Assemble in reverse order to verify dense-compatible column ordering. */
 function energy(values: number[][]): RouteEnergy {
-  const result = new RouteEnergy(values.length)
+  const result = new RouteEnergy({ size: values.length })
   for (let i = values.length - 1; i >= 0; i--) {
     for (let j = values.length - 1; j >= 0; j--) {
       result.add({ row: i, column: j, coefficient: values[i][j] })
@@ -20,12 +20,18 @@ function energy(values: number[][]): RouteEnergy {
 }
 
 /** Read the last field of a stamped SPICE element. */
-function elementValue(lines: string[], name: string): number {
+function elementValue({
+  lines,
+  name,
+}: {
+  lines: string[]
+  name: string
+}): number {
   const line = lines.find((line) => line.startsWith(`${name} `))!
   return Number(line.split(" ").at(-1))
 }
 
-test("sparse series realization equals dense self and signed mutual coefficients", () => {
+test("stamps self and signed mutual inductance", () => {
   const matrix = energy([
     [4e-9, 1e-9, 0],
     [1e-9, 9e-9, -3e-9],
@@ -46,6 +52,14 @@ test("sparse series realization equals dense self and signed mutual coefficients
     "LT2 c f 1.6e-8",
     "KT0_1 LT0 LT1 0.166666666667",
     "KT1_2 LT1 LT2 -0.25",
+  ])
+})
+
+test("stores and scales only nonzero coefficients", () => {
+  const matrix = energy([
+    [4e-9, 1e-9, 0],
+    [1e-9, 9e-9, -3e-9],
+    [0, -3e-9, 16e-9],
   ])
   assert.equal(
     matrix.rows.reduce((sum, row) => sum + row.size, 0),
@@ -103,6 +117,9 @@ test("normalized reciprocal resistance obeys V = R I down to tiny Foster voltage
     assert.ok(Math.abs(residual.get(node)! / currents[i] - 1) < 1e-11)
     assert.ok(Math.abs(residual.get(`Tr${i}`)!) < 1e-22)
   }
+})
+
+test("stamps uncoupled resistors directly", () => {
   const diagonal: string[] = []
   seriesEnergy({
     lines: diagonal,
@@ -118,7 +135,7 @@ test("normalized reciprocal resistance obeys V = R I down to tiny Foster voltage
   assert.deepEqual(diagonal, ["RD0 a c 0.0001", "RD1 b d 0.0002"])
 })
 
-test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps uncoupled rows scalar", () => {
+test("normalizes the coupled skin multiport", () => {
   // No conductor-wall share: the whole S is the unshifted remainder multiport.
   const matrix = [
     [4e-6, 1e-6, 0],
@@ -218,7 +235,8 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
       }
     }
     for (const [node, value] of residual) {
-      const index = node.length ? "abc".indexOf(node[0]) : -1
+      let index = -1
+      if (node.length) index = "abc".indexOf(node[0])
       let expected = 0
       if (index !== -1 && node.length === 1) expected = currents[index]
       if (index !== -1 && node.length === 2 && node[1] === "8")
@@ -230,14 +248,19 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
         )
     }
   }
+})
+
+/** Two real poles isolate the shifted conductor-wall response in a small matrix. */
+const toyPoles = [
+  { rate: 10, skin: 2, dielectric: 0 },
+  { rate: 100, skin: 3, dielectric: 0 },
+]
+
+test("separates shifted and unshifted skin chains", () => {
   const diagonal: string[] = []
   // Row b: conductor-wall share 1.5e-4 of S = 2e-4, R_dc chosen so its own crossover is 90 rad/s: a shifted chain
   // b -> g -> h with stages (rate 100, skin 2 * 10/100) and (190, 3 * 100/190), then the 0.5e-4 remainder h -> d -> f.
   const dc = 1.5e-4 * Math.sqrt(90 / Math.PI)
-  const toy = [
-    { rate: 10, skin: 2, dielectric: 0 },
-    { rate: 100, skin: 3, dielectric: 0 },
-  ]
   assert.equal(
     skinEnergy({
       lines: diagonal,
@@ -255,7 +278,7 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
         [1e-4, 0],
         [0, 2e-4],
       ]),
-      poles: toy,
+      poles: toyPoles,
       dc: [1, dc],
       strip: [0, 1.5e-4],
     }),
@@ -290,12 +313,15 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
     ["RDS00", 1e-4 * 2],
   ] as const
   for (const [name, expected] of expectedCoefficients) {
-    const actual = elementValue(diagonal, name)
+    const actual = elementValue({ lines: diagonal, name })
     assert.ok(
       Math.abs(actual / expected - 1) < 1e-9,
       `${name}: ${actual} vs ${expected}`,
     )
   }
+})
+
+test("caps conductor-wall loss to keep the remainder passive", () => {
   // A coupled pair caps each own share at S_ii - |S_ij| so the shared remainder stays diagonally dominant (passive).
   const capped: string[] = []
   assert.equal(
@@ -315,25 +341,25 @@ test("one coupled skin multiport obeys V = z(jw) S I at every pole and keeps unc
         [1e-4, 3e-5],
         [3e-5, 1e-4],
       ]),
-      poles: toy,
+      poles: toyPoles,
       dc: [1e-3, 1e-3],
       strip: [9e-5, 5e-5],
     }),
     1,
   )
-  const scale = elementValue(capped, "GCSI0")
+  const scale = elementValue({ lines: capped, name: "GCSI0" })
   assert.ok(
     Math.abs(scale - 1 / Math.sqrt(3e-5)) < 1e-6,
     "row a keeps a 3e-5 remainder",
   )
-  const mutual = elementValue(capped, "GCS0_1")
+  const mutual = elementValue({ lines: capped, name: "GCS0_1" })
   assert.ok(
     Math.abs(mutual - 3e-5 / Math.sqrt(3e-5 * 5e-5)) < 1e-9,
     "normalized mutual over the remainders",
   )
 })
 
-test("sparse Maxwell shunts preserve dense row sums, pair ordering and Foster loss", () => {
+test("stamps Maxwell shunts in matrix order", () => {
   const lines: string[] = []
   shuntEnergy({
     lines,
@@ -352,6 +378,9 @@ test("sparse Maxwell shunts preserve dense row sums, pair ordering and Foster lo
     "CTS3 a b 1e-12",
     "CTS4 b c 2e-12",
   ])
+})
+
+test("stamps a dielectric relaxation branch", () => {
   const loss: string[] = []
   shuntEnergy({
     lines: loss,
@@ -364,7 +393,7 @@ test("sparse Maxwell shunts preserve dense row sums, pair ordering and Foster lo
 })
 
 test("memory admission counts actual entries, including hybrid dense couplings, rather than cells", () => {
-  const sparse = new RouteEnergy(2000)
+  const sparse = new RouteEnergy({ size: 2000 })
   for (let i = 0; i < 2000; i++)
     sparse.add({ row: i, column: i, coefficient: 1 })
   assert.equal(
@@ -372,7 +401,7 @@ test("memory admission counts actual entries, including hybrid dense couplings, 
     2000,
   )
   const budget = { entries: 499999 }
-  const bounded = new RouteEnergy(2, budget)
+  const bounded = new RouteEnergy({ size: 2, budget })
   bounded.add({ row: 0, column: 0, coefficient: 1 })
   bounded.add({ row: 0, column: 0, coefficient: 1 })
   assert.throws(

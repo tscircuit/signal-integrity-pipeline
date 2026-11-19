@@ -1,4 +1,4 @@
-import type { LayerRef, PcbSmtPad, Point } from "circuit-json"
+import type { LayerRef, PcbSmtPad, PcbVia, Point } from "circuit-json"
 import {
   type CircuitJson,
   type CopperScope,
@@ -10,6 +10,8 @@ import {
   routeContactFrame,
   routeReferences,
   type SectionGeometry,
+  type SourceNetId,
+  type SourcePortId,
   sourceNetMembers,
 } from "../board"
 import { type Matrix, validateMatrix } from "../extraction"
@@ -23,20 +25,38 @@ const COPPER_CONDUCTIVITY = 5.8e7
 const MM_PER_METRE = 1000
 /** Match via centers and layer heights within their respective tolerances (mm). */
 const VIA_POSITION_TOLERANCE = 1e-5
+/** Minimum separation between copper heights treated as distinct (mm). */
 const LAYER_HEIGHT_TOLERANCE = 1e-6
 /** Default clearance diameter increase over the copper pad (mm). */
 const ANTIPAD_ALLOWANCE_MM = 0.2
 /** Assumed ground stitch geometry when the board does not specify one. */
 const GROUND_VIA_DISTANCE_MM = 10
+/** Assumed drill diameter when no ground stitch is present. */
 const GROUND_VIA_HOLE_MM = 0.15
+/** Matrix validator tolerance for the line and terminal inductances. */
+const TERMINAL_MATRIX_TOLERANCE = 1e-10
+/** Filament-inductance scale in henries per millimetre. */
+const FILAMENT_INDUCTANCE_PER_MM = 0.1e-9
+/** Scale for the short via and rectangular post expressions in henries per millimetre. */
+const POST_INDUCTANCE_PER_MM = 0.2e-9
+/** Constant term of Grover's rectangular post self-inductance approximation. */
+const RECTANGULAR_POST_OFFSET = 0.5
+/** Cross-section correction in Grover's rectangular post self-inductance approximation. */
+const RECTANGULAR_POST_CORRECTION = 0.2235
+/** Diameter-to-radius and square-millimetre conversion in the plated annulus resistance. */
+const ANNULUS_AREA_DIVISOR = 4e6
+/** Aspect-ratio multiplier in the regularized short via approximation. */
+const BARREL_ASPECT_MULTIPLIER = 4
 
+/** Evidence for a stamped via or surface-mount pad. */
 export interface RouteTransition {
   kind: string
-  id: string
+  id: PcbVia["pcb_via_id"] | PcbSmtPad["pcb_smtpad_id"]
   inductanceH?: number
   capacitanceF?: number
   [key: string]: unknown
 }
+/** Stamps and evidence emitted by the route discontinuity models. */
 export interface RouteTransitions {
   lines: string[]
   records: RouteTransition[]
@@ -75,37 +95,56 @@ export function terminalInductance({
   }
   if (perLength.length !== positions.length)
     throw new Error("Terminal and line matrix dimensions disagree")
-  validateMatrix(perLength, "Terminal line L", 1e-10)
+  validateMatrix({
+    a: perLength,
+    name: "Terminal line L",
+    tolerance: TERMINAL_MATRIX_TOLERANCE,
+  })
   const matrix = positions.map((point, i) =>
     positions.map((other, j) => {
       const spacing = Math.hypot(point[0] - other[0], point[1] - other[1])
       if (i !== j && spacing < width)
         throw new Error("Vertical terminal posts overlap")
       const image = 2 * height
-      const deficit = 0.1e-9 * (Math.hypot(spacing, image) - spacing)
+      const deficit =
+        FILAMENT_INDUCTANCE_PER_MM * (Math.hypot(spacing, image) - spacing)
       if (i === j) {
         const self =
-          0.2e-9 *
+          POST_INDUCTANCE_PER_MM *
           height *
           (Math.log((2 * image) / (width + depth)) +
-            0.5 +
-            (0.2235 * (width + depth)) / image)
-        return self - deficit - (perLength[i][j] * depth) / 2000
+            RECTANGULAR_POST_OFFSET +
+            (RECTANGULAR_POST_CORRECTION * (width + depth)) / image)
+        return self - deficit - (perLength[i][j] * depth) / (2 * MM_PER_METRE)
       }
       const mutual =
-        0.1e-9 *
+        FILAMENT_INDUCTANCE_PER_MM *
         (image * Math.asinh(image / spacing) -
           Math.hypot(image, spacing) +
           spacing)
-      return mutual - deficit - (perLength[i][j] * depth) / 2000
+      return mutual - deficit - (perLength[i][j] * depth) / (2 * MM_PER_METRE)
     }),
   )
-  return validateMatrix(matrix, "Vertical terminal L", 1e-10).matrix
+  return validateMatrix({
+    a: matrix,
+    name: "Vertical terminal L",
+    tolerance: TERMINAL_MATRIX_TOLERANCE,
+  }).matrix
 }
 
 /** Regularized TI short via approximation, h/d in mm, result H; the original uses inches and 5.08 nH. */
-export function barrelInductance(height: number, diameter: number): number {
-  return 0.2e-9 * height * (Math.log(1 + (4 * height) / diameter) + 1)
+export function barrelInductance({
+  height,
+  diameter,
+}: {
+  height: number
+  diameter: number
+}): number {
+  return (
+    POST_INDUCTANCE_PER_MM *
+    height *
+    (Math.log(1 + (BARREL_ASPECT_MULTIPLIER * height) / diameter) + 1)
+  )
 }
 
 /** Coaxial short open stub, with explicit assumed clearance diameter when aperture data are absent. */
@@ -144,19 +183,25 @@ function padArea(pad: PcbSmtPad): number {
 }
 
 /** Copper layer mid-height in mm. */
-function layerHeight(
-  layers: SectionGeometry["stack"]["copperLayers"],
-  name: string,
-): number {
+function layerHeight({
+  layers,
+  name,
+}: {
+  layers: SectionGeometry["stack"]["copperLayers"]
+  name: RouteReference["layer"]
+}): number {
   const layer = layers.find((layer) => layer.name === name)!
   return (layer.zMinMm + layer.zMaxMm) / 2
 }
 
 /** Average the adjacent references, falling back to the via's copper end. */
-function referenceHeight(
-  references: RouteReference[],
-  fallback: number,
-): number {
+function referenceHeight({
+  references,
+  fallback,
+}: {
+  references: RouteReference[]
+  fallback: number
+}): number {
   if (!references.length) return fallback
   return (
     references.reduce((sum, reference) => sum + reference.z, 0) /
@@ -165,18 +210,17 @@ function referenceHeight(
 }
 
 /** Reference immediately adjacent to this via, rather than the first section on its layer. */
-function adjacentReferences(
-  {
-    wire,
-    layer,
-    via,
-  }: {
-    wire: RouteWire
-    layer: LayerRef
-    via: Point
-  },
-  geometry: SectionGeometry,
-): RouteReference[] {
+function adjacentReferences({
+  wire,
+  layer,
+  via,
+  geometry,
+}: {
+  wire: RouteWire
+  layer: LayerRef
+  via: Point
+  geometry: SectionGeometry
+}): RouteReference[] {
   const slices = geometry.slices.filter((slice) => {
     return slice.wires.some(
       (candidate) =>
@@ -220,12 +264,12 @@ export function routeTransitions({
   scope: CopperScope
   geometry: SectionGeometry
   endpoint: RouteEndpoint
-  groundPort: string
+  groundPort: SourcePortId | SourceNetId
 }): RouteTransitions {
   const output: RouteTransitions = { lines: [], records: [], warnings: [] }
   const layers = geometry.stack.copperLayers
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
-  const ground = sourceNetMembers(connectivity, groundPort)
+  const ground = sourceNetMembers({ connectivity, seed: groundPort })
   const sources = circuit.filter((record) => record.type === "source_trace")
   const vias = circuit.filter((record) => record.type === "pcb_via")
   const groundVias = vias.filter((via) => {
@@ -251,7 +295,7 @@ export function routeTransitions({
       (wire) => wire.trace === trace.pcb_trace_id,
     )
     if (!wire) continue
-    const route = resolveRouteVias(circuit, trace)
+    const route = resolveRouteVias({ circuit, trace })
     for (const via of route.filter((point) => point.route_type === "via")) {
       const physical = vias.find((record) => {
         const matchingTrace =
@@ -266,32 +310,48 @@ export function routeTransitions({
       if (!physical)
         throw new Error(`${trace.pcb_trace_id}: missing physical via barrel`)
       const tag = `VT${output.records.length}`
-      const a = endpoint({ ...wire, layer: via.from_layer }, [via.x, via.y])
-      const b = endpoint({ ...wire, layer: via.to_layer }, [via.x, via.y])
-      const fromLayerHeight = layerHeight(layers, via.from_layer)
-      const toLayerHeight = layerHeight(layers, via.to_layer)
+      const a = endpoint({
+        wire: { ...wire, layer: via.from_layer },
+        point: [via.x, via.y],
+      })
+      const b = endpoint({
+        wire: { ...wire, layer: via.to_layer },
+        point: [via.x, via.y],
+      })
+      const fromLayerHeight = layerHeight({ layers, name: via.from_layer })
+      const toLayerHeight = layerHeight({ layers, name: via.to_layer })
       const h = Math.abs(fromLayerHeight - toLayerHeight)
       const diameter = physical.hole_diameter + 2 * geometry.stack.viaPlatingMm!
       const antipad = physical.outer_diameter + ANTIPAD_ALLOWANCE_MM
       const er = geometry.stack.relativePermittivity!
-      const inductanceH = barrelInductance(h, diameter)
+      const inductanceH = barrelInductance({ height: h, diameter })
       const capacitanceF = barrelCapacitance({
         height: h,
         diameter,
         antipad,
         er,
       })
-      const before = adjacentReferences(
-        { wire, layer: via.from_layer, via },
+      const before = adjacentReferences({
+        wire,
+        layer: via.from_layer,
+        via,
         geometry,
-      )
-      const after = adjacentReferences(
-        { wire, layer: via.to_layer, via },
+      })
+      const after = adjacentReferences({
+        wire,
+        layer: via.to_layer,
+        via,
         geometry,
-      )
+      })
       const references = [...before, ...after]
-      const fromHeight = referenceHeight(before, fromLayerHeight)
-      const toHeight = referenceHeight(after, toLayerHeight)
+      const fromHeight = referenceHeight({
+        references: before,
+        fallback: fromLayerHeight,
+      })
+      const toHeight = referenceHeight({
+        references: after,
+        fallback: toLayerHeight,
+      })
       const padAreaMm2 = Math.max(
         0,
         (Math.PI * (physical.outer_diameter ** 2 - diameter ** 2)) / 4,
@@ -316,11 +376,11 @@ export function routeTransitions({
       const referenceLayers = [...new Set(references.map((ref) => ref.layer))]
       const candidates = groundVias
         .filter((v) => {
-          const depths = v.layers.map((name) => layerHeight(layers, name))
+          const depths = v.layers.map((name) => layerHeight({ layers, name }))
           const bottom = Math.min(...depths) - LAYER_HEIGHT_TOLERANCE
           const top = Math.max(...depths) + LAYER_HEIGHT_TOLERANCE
           return referenceLayers.every((name) => {
-            const height = layerHeight(layers, name)
+            const height = layerHeight({ layers, name })
             return height >= bottom && height <= top
           })
         })
@@ -337,11 +397,15 @@ export function routeTransitions({
       if (!(heightDifference < LAYER_HEIGHT_TOLERANCE)) {
         const hole = nearest?.hole_diameter ?? GROUND_VIA_HOLE_MM
         returnInductanceH =
-          0.2e-9 * heightDifference * Math.log(1 + (2 * distance) / hole)
+          POST_INDUCTANCE_PER_MM *
+          heightDifference *
+          Math.log(1 + (2 * distance) / hole)
       }
       const annulus = diameter ** 2 - physical.hole_diameter ** 2
       const resistance =
-        h / MM_PER_METRE / ((COPPER_CONDUCTIVITY * Math.PI * annulus) / 4e6)
+        h /
+        MM_PER_METRE /
+        ((COPPER_CONDUCTIVITY * Math.PI * annulus) / ANNULUS_AREA_DIVISOR)
       output.lines.push(
         `R${tag} ${a} ${tag}r ${resistance}`,
         `L${tag} ${tag}r ${b} ${inductanceH + returnInductanceH}`,
@@ -350,7 +414,7 @@ export function routeTransitions({
       )
       const lo = Math.min(fromLayerHeight, toLayerHeight)
       const hi = Math.max(fromLayerHeight, toLayerHeight)
-      const spans = physical.layers.map((name) => layerHeight(layers, name))
+      const spans = physical.layers.map((name) => layerHeight({ layers, name }))
       const stubs = [
         Math.max(0, lo - Math.min(...spans)),
         Math.max(0, Math.max(...spans) - hi),
@@ -361,7 +425,7 @@ export function routeTransitions({
         let tap = b
         if (Math.abs(fromLayerHeight - stubStart) < LAYER_HEIGHT_TOLERANCE)
           tap = a
-        const inductance = barrelInductance(stub, diameter)
+        const inductance = barrelInductance({ height: stub, diameter })
         const capacitance = barrelCapacitance({
           height: stub,
           diameter,
@@ -438,7 +502,7 @@ export function routeTransitions({
       gap /
       MM_PER_METRE
     output.lines.push(
-      `CPAD${output.records.length} ${endpoint(wire, [port.x, port.y])} 0 ${capacitanceF}`,
+      `CPAD${output.records.length} ${endpoint({ wire, point: [port.x, port.y] })} 0 ${capacitanceF}`,
     )
     output.records.push({
       kind: "pad",

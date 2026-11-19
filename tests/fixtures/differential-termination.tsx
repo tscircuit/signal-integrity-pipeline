@@ -1,7 +1,7 @@
-import React from "react"
+import type React from "react"
 
 /** Core autorouter reproduction: a two-chip pair with a receiver termination tap. No SI or IBIS is needed. */
-export default () => (
+export default (): React.JSX.Element => (
   <board width={60} height={20} layers={2} schematicDisabled>
     <chip name="TX" footprint="soic8" pcbX={-25} />
     <chip name="RX" footprint="soic8" pcbX={20} />

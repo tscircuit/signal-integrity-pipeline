@@ -16,14 +16,25 @@ const SKIN_REMAINDER_TOLERANCE = 1e-12
 /** A stored column and its coefficient in a sparse route energy row. */
 type RouteEnergyEntry = [column: number, coefficient: number]
 
+/** Counts stored entries across the energy matrices of a route. */
+interface RouteEnergyBudget {
+  entries: number
+}
+
 /** Sparse energy rows retain only terms integrated from a common physical slice. */
 export class RouteEnergy {
   readonly rows: Map<number, number>[]
-  /** Share a bound across the five assembled matrices, independent of raw cell count. */
-  constructor(
-    size: number,
-    private readonly budget: { entries: number } = { entries: 0 },
-  ) {
+  private readonly budget: RouteEnergyBudget
+
+  /** Share a bound across the assembled matrices, independent of raw cell count. */
+  constructor({
+    size,
+    budget = { entries: 0 },
+  }: {
+    size: number
+    budget?: RouteEnergyBudget
+  }) {
+    this.budget = budget
     this.rows = Array.from({ length: size }, () => new Map())
   }
   /** Preserve integration order exactly; structural zeros consume no storage. */
@@ -60,14 +71,16 @@ export class RouteEnergy {
       if (entries.delete(column)) this.budget.entries--
       return
     }
-    if (!entries.has(column)) {
-      if (this.budget.entries >= MAX_MATRIX_ENTRIES) {
-        throw new Error(
-          `Route energy exceeds sparse-memory limit of ${MAX_MATRIX_ENTRIES} matrix entries`,
-        )
-      }
-      this.budget.entries++
+    if (entries.has(column)) {
+      entries.set(column, coefficient)
+      return
     }
+    if (this.budget.entries >= MAX_MATRIX_ENTRIES) {
+      throw new Error(
+        `Route energy exceeds sparse-memory limit of ${MAX_MATRIX_ENTRIES} matrix entries`,
+      )
+    }
+    this.budget.entries++
     entries.set(column, coefficient)
   }
   /** Stable column order preserves the dense deck's text and floating-point summation. */
@@ -76,7 +89,7 @@ export class RouteEnergy {
   }
   /** Temporary scaled matrices share the assembled sparsity, without dense allocation. */
   scaled(scale: number): RouteEnergy {
-    const result = new RouteEnergy(this.rows.length)
+    const result = new RouteEnergy({ size: this.rows.length })
     for (const [i, row] of this.rows.entries()) {
       for (const [j, coefficient] of row) {
         result.rows[i].set(j, coefficient * scale)
@@ -85,6 +98,9 @@ export class RouteEnergy {
     return result
   }
 }
+
+/** SPICE node names indexed first by loss pole and then by cell. */
+type SkinStageNodes = string[][]
 
 /** Stable SPICE precision, bounded far beyond board tolerances. */
 function spiceCoefficient(coefficient: number): string {
@@ -189,8 +205,8 @@ export function skinEnergy({
   lines: string[]
   tag: string
   before: string[]
-  stripStages: string[][]
-  stages: string[][]
+  stripStages: SkinStageNodes
+  stages: SkinStageNodes
   matrix: RouteEnergy
   poles: LossPole[]
   dc: number[]
@@ -227,9 +243,13 @@ export function skinEnergy({
     if (rest[i] > 0 || terms[i].length) return stripStages.at(-1)![i]
     return after[i]
   })
-  const shifted = own.map((coefficient, i) =>
-    crossoverPoles(poles, skinCrossover(dc[i], coefficient)),
-  )
+  const shifted = own.map((coefficient, i) => {
+    const shift = skinCrossover({
+      dcResistance: dc[i],
+      skinResistance: coefficient,
+    })
+    return crossoverPoles({ poles, shift })
+  })
   for (let p = 0; p < poles.length; p++) {
     for (const kind of ["RQ", "LQ"] as const) {
       for (let i = 0; i < before.length; i++) {
@@ -292,6 +312,13 @@ export function skinEnergy({
   return own.filter((coefficient, i) => coefficient < strip[i]).length
 }
 
+/** Numerical tolerance for energy pivots and diagonal dominance. */
+const NEGATIVE_ENERGY_TOLERANCE = 1e-20
+/** Tiny modal pivots carry negligible energy and are omitted. */
+const MIN_MODAL_CAPACITANCE = 1e-24
+/** Ignore modal voltage and current weights below this magnitude. */
+const MIN_MODAL_WEIGHT = 1e-12
+
 /** Exact sparse realization for symmetric diagonally dominant energy matrices, including positive mutual entries. */
 export function shuntEnergy({
   lines,
@@ -314,7 +341,9 @@ export function shuntEnergy({
     }, 0)
     return self - coupling
   })
-  if (remainder.some((coefficient) => coefficient < -1e-20)) {
+  if (
+    remainder.some((coefficient) => coefficient < -NEGATIVE_ENERGY_TOLERANCE)
+  ) {
     modalShunt({
       lines,
       tag,
@@ -395,15 +424,16 @@ function modalShunt({
   )
   for (let mode = 0; mode < nodes.length; mode++) {
     const capacitance = residual[mode][mode]
-    if (capacitance < -1e-20) throw new Error(`${tag}: negative energy pivot`)
-    if (capacitance <= 1e-24) continue
+    if (capacitance < -NEGATIVE_ENERGY_TOLERANCE)
+      throw new Error(`${tag}: negative energy pivot`)
+    if (capacitance <= MIN_MODAL_CAPACITANCE) continue
     const weights = residual.map((row, i) => {
       if (i < mode) return 0
       return row[mode] / capacitance
     })
     const expression = weights
       .flatMap((weight, i) => {
-        if (nodes[i] === "0" || Math.abs(weight) < 1e-12) return []
+        if (nodes[i] === "0" || Math.abs(weight) < MIN_MODAL_WEIGHT) return []
         return [`${spiceCoefficient(weight)}*v(${nodes[i]})`]
       })
       .join("+")
@@ -421,7 +451,8 @@ function modalShunt({
           `R${name} ${name}c 0 ${spiceCoefficient(1 / (rate * capacitance))}`,
         )
       for (const [i, weight] of weights.entries()) {
-        if (nodes[i] === "0" || !(Math.abs(weight) >= 1e-12)) continue
+        if (nodes[i] === "0" || !(Math.abs(weight) >= MIN_MODAL_WEIGHT))
+          continue
         lines.push(
           `F${name}_${i} ${nodes[i]} 0 V${name} ${spiceCoefficient(weight)}`,
         )

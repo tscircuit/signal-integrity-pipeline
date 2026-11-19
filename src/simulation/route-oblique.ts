@@ -8,6 +8,7 @@ import {
 } from "../extraction"
 import type { RouteLadder } from "./route-ladder"
 
+/** Serialized cross-section geometry used to reuse capacitance solves. */
 type CrossSectionKey = string
 
 /** Tolerance for locating contacts on the extracted geometry (mm). */
@@ -20,6 +21,12 @@ const PLANE_TOLERANCE = 1e-9
 const MIN_OBLIQUE_CAPACITANCE = 1e-23
 /** Micrometres per millimetre, used to round gaps outward. */
 const MICROMETRES_PER_MM = 1000
+/** Millimetres in a metre, for converting the integration length. */
+const MM_PER_METRE = 1000
+/** Panel count used when the route does not specify a field resolution. */
+const DEFAULT_OBLIQUE_PANELS = 12
+/** The approximation estimates coupling on the same or adjacent copper layers only. */
+const MAX_OBLIQUE_LAYER_DISTANCE = 1
 
 /** An electrical ladder node and its distance from the requested position in millimetres. */
 type NearestRouteNode = {
@@ -28,16 +35,15 @@ type NearestRouteNode = {
 }
 
 /** Nearest existing electrical ladder node; the spatial-error distance is recorded per encounter. */
-function nearestRouteNode(
-  {
-    wire,
-    point,
-  }: {
-    wire: RouteWire
-    point: RouteXY
-  },
-  wireNodes: RouteLadder["wireNodes"],
-): NearestRouteNode {
+function nearestRouteNode({
+  wire,
+  point,
+  wireNodes,
+}: {
+  wire: RouteWire
+  point: RouteXY
+  wireNodes: RouteLadder["wireNodes"]
+}): NearestRouteNode {
   const position = point[0] * wire.u[0] + point[1] * wire.u[1]
   const nodes = [...wireNodes.get(wire.id)!]
   const node = nodes.sort(
@@ -46,10 +52,22 @@ function nearestRouteNode(
   return { node: node.node, errorMm: Math.abs(node.position - position) }
 }
 
+/** Report one pair of wires considered by the oblique approximation. */
+interface ObliqueEncounter {
+  wires: [RouteWire["id"], RouteWire["id"]]
+  policy: string
+  distanceMm: number
+  references?: ExtractedRoutes["slices"][number]["references"]
+  angleSine?: number
+  lengthMm?: number
+  capacitanceF?: number
+  nodePlacementErrorMm?: [first: number, second: number]
+}
+
 /** SPICE lines, encounter records and solve statistics for oblique route coupling. */
 type ObliqueRouteCorrection = {
   lines: string[]
-  records: Record<string, unknown>[]
+  records: ObliqueEncounter[]
   solveMilliseconds: number
   solves: number
 }
@@ -61,7 +79,7 @@ export function routeOblique({
   ladder,
   scope,
   materials,
-  panels = 12,
+  panels = DEFAULT_OBLIQUE_PANELS,
 }: {
   geometry: SectionGeometry
   extracted: ExtractedRoutes
@@ -71,7 +89,7 @@ export function routeOblique({
   panels?: number
 }): ObliqueRouteCorrection {
   const lines: string[] = []
-  const records: Record<string, unknown>[] = []
+  const records: ObliqueEncounter[] = []
   const cache = new Map<CrossSectionKey, number>()
   let solveMilliseconds = 0
   const active = geometry.wires.filter((wire) => ladder.wireNodes.has(wire.id))
@@ -90,7 +108,7 @@ export function routeOblique({
       const layers = geometry.stack.copperLayers
       const la = layers.findIndex((layer) => layer.name === a.layer)
       const lb = layers.findIndex((layer) => layer.name === b.layer)
-      if (Math.abs(la - lb) > 1) continue
+      if (Math.abs(la - lb) > MAX_OBLIQUE_LAYER_DISTANCE) continue
       const position = near.first[0] * a.u[0] + near.first[1] * a.u[1]
       const slice = extracted.slices.find((slice) => {
         const inSlice =
@@ -151,7 +169,10 @@ export function routeOblique({
         try {
           capacitancePerM = Math.max(
             0,
-            -solveSectionCapacitance(section, { panelsPerEdge: panels })[0][1],
+            -solveSectionCapacitance({
+              section,
+              options: { panelsPerEdge: panels },
+            })[0][1],
           )
         } catch (error) {
           throw Object.assign(error as Error, {
@@ -173,15 +194,17 @@ export function routeOblique({
         b.end - b.start,
         (2 * referenceGap) / sine,
       )
-      const first = nearestRouteNode(
-        { wire: a, point: near.first },
-        ladder.wireNodes,
-      )
-      const second = nearestRouteNode(
-        { wire: b, point: near.second },
-        ladder.wireNodes,
-      )
-      const capacitanceF = (capacitancePerM * lengthMm) / 1000
+      const first = nearestRouteNode({
+        wire: a,
+        point: near.first,
+        wireNodes: ladder.wireNodes,
+      })
+      const second = nearestRouteNode({
+        wire: b,
+        point: near.second,
+        wireNodes: ladder.wireNodes,
+      })
+      const capacitanceF = (capacitancePerM * lengthMm) / MM_PER_METRE
       if (
         first.node !== second.node &&
         capacitanceF > MIN_OBLIQUE_CAPACITANCE

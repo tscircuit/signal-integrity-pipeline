@@ -5,12 +5,18 @@ import {
   type RouteXY,
   routeContactFrame,
   routePosition,
+  type SourcePortId,
   sourceNetMembers,
 } from "../board"
 import { type Produced, rootScope, sha256, snapshot } from "../kernel"
 import { branchSaves } from "./branch-saves"
 import { namespaceSpice } from "./netlist"
-import { type RouteLadder, routeLadderSteps } from "./route-ladder"
+import {
+  type RouteContactKey,
+  type RouteLadder,
+  routeContactKey,
+  routeLadderSteps,
+} from "./route-ladder"
 import { routeOblique } from "./route-oblique"
 import { routedRequest } from "./route-transient"
 import { routeTransitions } from "./route-transitions"
@@ -24,8 +30,14 @@ const JOIN_RESISTANCE = "1e-6"
 const BIAS_RESISTANCE = "1e9"
 /** Default SPICE current convergence tolerance (amperes). */
 const DEFAULT_CURRENT_TOLERANCE = 1e-9
-/** Decimal places used to match coordinates in millimetres. */
-const JUNCTION_PRECISION = 6
+/** Relative convergence tolerance for transient voltages and currents. */
+const RELATIVE_TOLERANCE = "1e-4"
+/** Absolute voltage convergence tolerance in volts. */
+const VOLTAGE_TOLERANCE = "1e-6"
+/** Restrict Gear integration to second order. */
+const GEAR_MAX_ORDER = 2
+/** Relative pivot threshold used by ngspice during sparse elimination. */
+const PIVOT_TOLERANCE = "0.1"
 
 /** Physical node identity, coupled ladders, corrections and the single deck assembly. */
 export class RouteNetworkSolver extends BaseSolver {
@@ -45,10 +57,9 @@ export class RouteNetworkSolver extends BaseSolver {
       cells: this.ladder?.cells ?? 0,
       maximumCellDelaySeconds: this.ladder?.maximumDelaySeconds ?? 0,
     }
-    if (result.done) {
-      this.output = result.value
-      this.solved = true
-    }
+    if (!result.done) return
+    this.output = result.value
+    this.solved = true
   }
   /** Preserve the original compiler's exact node and SPICE ordering. */
   private *build(): Generator<void, Produced<RoutedDeck>> {
@@ -65,7 +76,7 @@ export class RouteNetworkSolver extends BaseSolver {
       (record) => record.type === "pcb_port",
     )
     const aliases: string[] = []
-    const known = new Map<RouteJunctionKey, string>()
+    const known = new Map<RouteContactKey, string>()
     for (const port of ports) {
       for (const layer of port.layers) {
         const point: RouteXY = [port.x, port.y]
@@ -78,8 +89,11 @@ export class RouteNetworkSolver extends BaseSolver {
           })
         )
           continue
-        const id = junctionKey(layer, point)
-        const portNode = routedNode(bindings.nodeMap, port.source_port_id)
+        const id = routeContactKey({ layer, point })
+        const portNode = routedNode({
+          nodeMap: bindings.nodeMap,
+          id: port.source_port_id,
+        })
         const previous = known.get(id)
         if (previous && previous !== portNode) {
           aliases.push(
@@ -90,11 +104,11 @@ export class RouteNetworkSolver extends BaseSolver {
         known.set(id, portNode)
       }
     }
-    const endpoint = createRouteEndpoint(scope, known)
+    const endpoint = createRouteEndpoint({ scope, known })
     for (const wire of geometry.wires) {
       for (const join of wire.joins ?? []) {
-        const from = endpoint(wire, join.from)
-        const to = endpoint(wire, join.to)
+        const from = endpoint({ wire, point: join.from })
+        const to = endpoint({ wire, point: join.to })
         if (from !== to)
           aliases.push(
             `RJOIN${aliases.length} ${from} ${to} ${JOIN_RESISTANCE}`,
@@ -133,8 +147,8 @@ export class RouteNetworkSolver extends BaseSolver {
     })
     const currentTolerance =
       options.currentToleranceA ?? DEFAULT_CURRENT_TOLERANCE
-    const convergence = `klu reltol=1e-4 abstol=${currentTolerance} vntol=1e-6`
-    const integration = "method=gear maxord=2 pivrel=0.1"
+    const convergence = `klu reltol=${RELATIVE_TOLERANCE} abstol=${currentTolerance} vntol=${VOLTAGE_TOLERANCE}`
+    const integration = `method=gear maxord=${GEAR_MAX_ORDER} pivrel=${PIVOT_TOLERANCE}`
     const lines = [
       "Routed quasi-TEM coupled 2D extraction; JLC standard stackup (assumed)",
       `.options ${convergence} ${integration}`,
@@ -142,11 +156,17 @@ export class RouteNetworkSolver extends BaseSolver {
     ]
     const saved: string[] = []
     for (const [i, model] of models.entries()) {
-      const namespaced = namespaceSpice(model.source, `I${i}`)
+      const namespaced = namespaceSpice({
+        source: model.source,
+        prefix: `I${i}`,
+      })
       const header = spiceSubcircuitHeader(model.source)!
-      const nodes = spiceWords(header[1]).map((terminal) =>
-        routedNode(bindings.nodeMap, model.spicePinMapping[terminal]),
-      )
+      const nodes = spiceWords(header[1]).map((terminal) => {
+        return routedNode({
+          nodeMap: bindings.nodeMap,
+          id: model.spicePinMapping[terminal],
+        })
+      })
       saved.push(
         ...branchSaves({
           source: namespaced.source,
@@ -172,7 +192,7 @@ export class RouteNetworkSolver extends BaseSolver {
     )
     const modelNodes = models.flatMap((model) => {
       return Object.values(model.spicePinMapping).map((port) =>
-        routedNode(bindings.nodeMap, port),
+        routedNode({ nodeMap: bindings.nodeMap, id: port }),
       )
     })
     const biasNodes = [...new Set([...routeNodes, ...modelNodes])].filter(
@@ -211,14 +231,17 @@ export class RouteNetworkSolver extends BaseSolver {
     lines.push(
       ...routedControl({
         saved: save,
-        step: options.stepSeconds,
-        duration: options.durationSeconds,
+        stepSeconds: options.stepSeconds,
+        durationSeconds: options.durationSeconds,
       }),
     )
     const connectivity = getSourcePortConnectivityMapFromCircuitJson(
       bindings.circuitJson,
     )
-    const ground = sourceNetMembers(connectivity, bindings.groundSourcePortId)
+    const ground = sourceNetMembers({
+      connectivity,
+      seed: bindings.groundSourcePortId,
+    })
     const powerReferences = geometry.slices.flatMap((slice) => {
       return slice.references
         .filter((plane) => !ground.has(plane.net))
@@ -297,8 +320,8 @@ export class RouteNetworkSolver extends BaseSolver {
     ]
     const endpointNodes = Object.fromEntries(
       mappings.flatMap(({ from, to }) => [
-        [from, routedNode(bindings.nodeMap, from)],
-        [to, routedNode(bindings.nodeMap, to)],
+        [from, routedNode({ nodeMap: bindings.nodeMap, id: from })],
+        [to, routedNode({ nodeMap: bindings.nodeMap, id: to })],
       ]),
     )
     const evidence = {
@@ -357,7 +380,10 @@ export class RouteNetworkSolver extends BaseSolver {
       slices: extracted.slices.map((slice) => ({
         start: slice.start,
         end: slice.end,
-        point: routePosition(slice.wires[0], (slice.start + slice.end) / 2),
+        point: routePosition({
+          wire: slice.wires[0],
+          position: (slice.start + slice.end) / 2,
+        }),
         wires: slice.wires.map((wire) => wire.id),
         references: slice.references,
         key: slice.key,
@@ -366,7 +392,7 @@ export class RouteNetworkSolver extends BaseSolver {
     evidence.warnings.unshift(...this.input.warnings)
     const deck = `${lines.join("\n")}\n`
     const request = routedRequest({ deck })
-    const compiled = snapshot({
+    const compiled = snapshot<RoutedDeck>({
       blockId: this.input.blockId,
       name: this.input.name,
       deck,
@@ -398,40 +424,41 @@ export class RouteNetworkSolver extends BaseSolver {
   }
 }
 
-type RouteJunctionKey = string
-
 /** Every physical port was allocated by declarations before binding completed. */
-function routedNode(
-  nodeMap: RouteNetworkInput["bindings"]["nodeMap"],
-  id: string,
-): string {
+function routedNode({
+  nodeMap,
+  id,
+}: {
+  nodeMap: RouteNetworkInput["bindings"]["nodeMap"]
+  id: SourcePortId
+}): string {
   const node = nodeMap[id]
   if (node === undefined)
     throw new Error(`Unknown routed electrical port ${id}`)
   return node
 }
 
-/** Coordinates join actual physical copper only. */
-function junctionKey(layer: string, point: RouteXY): RouteJunctionKey {
-  return `${layer}:${point.map((n) => n.toFixed(JUNCTION_PRECISION)).join(",")}`
-}
-
 /** Resolves a physical point on a routed wire to its electrical node. */
-export type RouteEndpoint = (wire: RouteWire, point: RouteXY) => string
+export type RouteEndpoint = (input: {
+  wire: RouteWire
+  point: RouteXY
+}) => string
 
 /** Rail wires are explicit ideal AC electrodes; all other route junctions share physical coordinates. */
-function createRouteEndpoint(
-  scope: RouteNetworkInput["bindings"]["scope"],
-  known: Map<RouteJunctionKey, string>,
-): RouteEndpoint {
-  return (wire, point) => {
+function createRouteEndpoint({
+  scope,
+  known,
+}: {
+  scope: RouteNetworkInput["bindings"]["scope"]
+  known: Map<RouteContactKey, string>
+}): RouteEndpoint {
+  return ({ wire, point }) => {
     if (scope.nonReferenceRailTraceIds.includes(wire.trace)) return "0"
-    const id = junctionKey(wire.layer, point)
-    let node = known.get(id)
-    if (!node) {
-      node = `route${known.size}`
-      known.set(id, node)
-    }
+    const id = routeContactKey({ layer: wire.layer, point })
+    const existing = known.get(id)
+    if (existing) return existing
+    const node = `route${known.size}`
+    known.set(id, node)
     return node
   }
 }

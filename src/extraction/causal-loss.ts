@@ -1,3 +1,5 @@
+const DEFAULT_CAUSAL_LOSS_SHIFT = 0
+
 /** Positive-real Foster quadrature: sqrt(s), and a finite-band constant-loss-tangent dielectric. */
 export interface LossPole {
   rate: number
@@ -14,6 +16,7 @@ const skinWeights = [
   0.617084, 0.126051, 0.234089, 0.215091, 0.222717, 0.215633, 0.232706,
   0.127446, 0.617523,
 ]
+/** Dielectric weights from the same fit, in pole order. */
 const dielectricWeights = [
   1.22314, 0.743928, 0.775148, 0.781415, 0.776727, 0.781436, 0.774987, 0.743842,
   1.22581,
@@ -44,16 +47,25 @@ export function causalLossPoles(): LossPole[] {
  * impedance becomes sqrt(R_dc^2 + S^2 s / pi): exactly R_dc at DC, rising as f^2 just above it, and S (1 + j) sqrt(f)
  * once skin effect dominates. The plain sum R_dc + S z(s) counts both asymptotes at once through the crossover.
  */
-export function skinCrossover(
-  dcResistance: number,
-  skinResistance: number,
-): number {
+export function skinCrossover({
+  dcResistance,
+  skinResistance,
+}: {
+  dcResistance: number
+  skinResistance: number
+}): number {
   if (!(skinResistance > 0)) return 0
   return Math.PI * (dcResistance / skinResistance) ** 2
 }
 
 /** Foster stages of z(s + shift) - z(shift): every R || L stage keeps positive elements, so it stays passive. */
-export function crossoverPoles(poles: LossPole[], shift: number): LossPole[] {
+export function crossoverPoles({
+  poles,
+  shift,
+}: {
+  poles: LossPole[]
+  shift: number
+}): LossPole[] {
   return poles.map((pole) => ({
     rate: pole.rate + shift,
     skin: (pole.skin * pole.rate) / (pole.rate + shift),
@@ -70,13 +82,16 @@ type CausalLossResponse = {
 }
 
 /** AC response of the shifted unit skin impedance and the unit dielectric admittance, for fit evidence. */
-export function causalLossResponse(
-  frequency: number,
-  shift = 0,
-): CausalLossResponse {
+export function causalLossResponse({
+  frequency,
+  shift = DEFAULT_CAUSAL_LOSS_SHIFT,
+}: {
+  frequency: number
+  shift?: number
+}): CausalLossResponse {
   const omega = 2 * Math.PI * frequency
   const poles = causalLossPoles()
-  const skin = crossoverPoles(poles, shift)
+  const skin = crossoverPoles({ poles, shift })
   return {
     skinReal: skin.reduce(
       (sum, pole) =>
