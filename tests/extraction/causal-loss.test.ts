@@ -1,6 +1,12 @@
 import { setDefaultTimeout, test } from "bun:test"
 import assert from "node:assert/strict"
-import { causalLossPoles, causalLossResponse } from "../../src/extraction"
+import {
+  causalLossPoles,
+  causalLossResponse,
+  crossoverPoles,
+  skinCrossover,
+  solveCrossSection,
+} from "../../src/extraction"
 import {
   conductorLossTolerance,
   filamentImpedance,
@@ -28,6 +34,16 @@ test("fits positive-real loss over the DDR edge band", () => {
   }
 })
 
+/** Sample a dozen frequency decades from 1 Hz through 1 THz at 20 points per decade. */
+const PASSIVITY_SWEEP_STEPS = 240
+const PASSIVITY_STEPS_PER_DECADE = 20
+/** Sweep the 10 MHz to 5 GHz fit band logarithmically. */
+const LOSS_BAND_START_HZ = 1e7
+const LOSS_BAND_RATIO = 500
+const LOSS_BAND_STEPS = 50
+/** Use the same 5% tolerance for the skin phase and the local dielectric slope. */
+const LOSS_RELATIVE_TOLERANCE = 0.05
+
 test("golden invariants: causal-loss poles are stable and every Foster branch is passive", () => {
   // Foster RL/RC branches with positive elements are positive-real (Guillemin, Synthesis of Passive Networks, ch. 4):
   // every pole s = -rate lies in the left half-plane and every weight is positive, so Re Z(jw) >= 0 and
@@ -41,9 +57,9 @@ test("golden invariants: causal-loss poles are stable and every Foster branch is
     (pole) => pole.skin > 0 && pole.skin / pole.rate > 0 && pole.dielectric > 0,
   )
   assert.ok(positiveElements, "every R, L, G and C element is positive")
-  for (let i = 0; i <= 240; i++) {
-    const frequency = 10 ** (i / 20)
-    const response = causalLossResponse(frequency)
+  for (let i = 0; i <= PASSIVITY_SWEEP_STEPS; i++) {
+    const frequency = 10 ** (i / PASSIVITY_STEPS_PER_DECADE)
+    const response = causalLossResponse({ frequency })
     const passive =
       response.skinReal >= 0 &&
       response.dielectricReal >= 0 &&
@@ -53,15 +69,15 @@ test("golden invariants: causal-loss poles are stable and every Foster branch is
   // The DC-to-skin crossover shift keeps the same form for any shift >= 0: rate + shift > 0, skin rate/(rate +
   // shift) > 0.
   for (const shift of [1e6, 1e8, 1e10]) {
-    const shifted = crossoverPoles(poles, shift)
+    const shifted = crossoverPoles({ poles, shift })
     assert.ok(
       shifted.every((pole) => -pole.rate < 0 && pole.skin > 0),
       `shift ${shift}: every element is positive`,
     )
-    for (let i = 0; i <= 240; i++) {
-      const frequency = 10 ** (i / 20)
+    for (let i = 0; i <= PASSIVITY_SWEEP_STEPS; i++) {
+      const frequency = 10 ** (i / PASSIVITY_STEPS_PER_DECADE)
       assert.ok(
-        causalLossResponse(frequency, shift).skinReal >= 0,
+        causalLossResponse({ frequency, shift }).skinReal >= 0,
         `shift ${shift}: passive at ${frequency} Hz`,
       )
     }
@@ -72,11 +88,13 @@ test("golden invariants: causal-loss poles are stable and every Foster branch is
 test("golden stage 3: causal skin loss has the good-conductor 45 degree phase", () => {
   // A good conductor's surface impedance is Zs = (1 + j) Rs (Ramo, Whinnery & Van Duzer, Fields and Waves,
   // section 5.4), so the internal reactance equals the skin resistance.
-  for (let i = 0; i <= 50; i++) {
-    const response = causalLossResponse(1e7 * 500 ** (i / 50))
+  for (let i = 0; i <= LOSS_BAND_STEPS; i++) {
+    const response = causalLossResponse({
+      frequency: LOSS_BAND_START_HZ * LOSS_BAND_RATIO ** (i / LOSS_BAND_STEPS),
+    })
     const reactanceToResistance = response.skinImaginary / response.skinReal
     assert.ok(
-      Math.abs(reactanceToResistance - 1) <= 0.05,
+      Math.abs(reactanceToResistance - 1) <= LOSS_RELATIVE_TOLERANCE,
       `X/R ${reactanceToResistance}`,
     )
   }
@@ -85,30 +103,37 @@ test("golden stage 3: causal skin loss has the good-conductor 45 degree phase", 
 test("golden stage 3: causal dielectric loss obeys the Kramers–Kronig slope locally", () => {
   // A constant loss tangent over a wide band forces dC/d ln(w) = -(2/pi) G/w by Kramers–Kronig (Djordjevic, Biljic,
   // Likar-Smiljanic & Sarkar, IEEE Trans. EMC 43 (2001) 662–667).
-  for (let i = 0; i <= 50; i++) {
-    const frequency = 1e7 * 500 ** (i / 50)
-    const response = causalLossResponse(frequency)
+  for (let i = 0; i <= LOSS_BAND_STEPS; i++) {
+    const frequency =
+      LOSS_BAND_START_HZ * LOSS_BAND_RATIO ** (i / LOSS_BAND_STEPS)
+    const response = causalLossResponse({ frequency })
     /** Evaluate the derivative with respect to log frequency by increasing frequency one percent. */
     const frequencyRatio = 1.01
-    const higherCapacitance = causalLossResponse(
-      frequency * frequencyRatio,
-    ).dielectricCapacitance
+    const higherCapacitance = causalLossResponse({
+      frequency: frequency * frequencyRatio,
+    }).dielectricCapacitance
     const slope =
       (higherCapacitance - response.dielectricCapacitance) /
       Math.log(frequencyRatio)
     const expected =
       ((-2 / Math.PI) * response.dielectricReal) / (2 * Math.PI * frequency)
     assert.ok(
-      Math.abs(slope / expected - 1) <= 0.05,
+      Math.abs(slope / expected - 1) <= LOSS_RELATIVE_TOLERANCE,
       `${frequency} Hz: ${slope} vs ${expected}`,
     )
   }
 })
 
+/** Case label and centred strip dimensions in millimetres. */
+type ConductorLossStrip = readonly [
+  label: string,
+  widthMm: number,
+  thicknessMm: number,
+  planeSpacingMm: number,
+]
+
 /** Simulated per-metre R of centred striplines against the filament reference, under check 27's banded bound. */
-function conductorLoss(
-  strips: readonly (readonly [string, number, number, number])[],
-): string[] {
+function conductorLoss(strips: readonly ConductorLossStrip[]): string[] {
   // The ladder's series resistance per metre for one conductor: R_dc + a Re[z(jw + w_c) - z(w_c)] + (S - a) Re z(jw),
   // a = the conductor-wall Wheeler share, w_c = skinCrossover(R_dc, a) (route-energy.ts skinEnergy). Reference: the
   // independent filament solve of the strip between perfect planes, with plane loss added by the finite-thickness
@@ -128,30 +153,32 @@ function conductorLoss(
   const failures: string[] = []
   for (const [label, w, t, b] of strips) {
     const line = solveCrossSection({
-      conductors: [
-        {
-          id: "s",
-          xMm: 0,
-          zMm: (b - t) / 2,
-          widthMm: w,
-          thicknessMm: t,
-        },
-      ],
-      planes: [{ zMm: 0 }, { zMm: b }],
-      dielectrics: [
-        {
-          zMm: 0,
-          thicknessMm: b,
-          er: 4.1,
-          lossTangent: 0,
-        },
-      ],
+      section: {
+        conductors: [
+          {
+            id: "s",
+            xMm: 0,
+            zMm: (b - t) / 2,
+            widthMm: w,
+            thicknessMm: t,
+          },
+        ],
+        planes: [{ zMm: 0 }, { zMm: b }],
+        dielectrics: [
+          {
+            zMm: 0,
+            thicknessMm: b,
+            er: 4.1,
+            lossTangent: 0,
+          },
+        ],
+      },
     })
     const dc = line.dcResistance[0][0]
     const skin = line.skinResistance[0][0]
     const own = Math.min(line.stripSkinResistance[0][0], skin)
-    const reference = filamentImpedance(
-      {
+    const reference = filamentImpedance({
+      line: {
         strips: [
           {
             xM: 0,
@@ -164,13 +191,14 @@ function conductorLoss(
         planeThicknessM: t * 1e-3,
         conductivity: 5.8e7,
       },
-      { frequencies },
-    )
+      frequencies,
+    })
     for (const { frequency, R } of reference) {
-      const crossover = skinCrossover(dc, own)
-      const wallLoss = own * causalLossResponse(frequency, crossover).skinReal
+      const crossover = skinCrossover({ dcResistance: dc, skinResistance: own })
+      const wallLoss =
+        own * causalLossResponse({ frequency, shift: crossover }).skinReal
       const remainingLoss =
-        (skin - own) * causalLossResponse(frequency).skinReal
+        (skin - own) * causalLossResponse({ frequency }).skinReal
       const realized = dc + wallLoss + remainingLoss
       const error = realized / R[0][0] - 1
       rows.push({

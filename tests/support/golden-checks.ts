@@ -1,31 +1,11 @@
-// Shared helpers for the golden known-answer checks (docs/golden-checks.md). They only measure;
+// Shared helpers for the golden known-answer checks. They only measure;
 // every expected value and tolerance lives beside its check, with its source.
 import { accessSync, constants } from "node:fs"
-import { readFile } from "node:fs/promises"
 import { delimiter, join } from "node:path"
-import type { TestContext } from "node:test"
 import { createNativeSolver } from "../../src/adapters"
 import type { Matrix } from "../../src/extraction"
 
-/** Local vendor IBIS bytes are never committed: skip cleanly unless IBIS_MODEL_DIR holds `file`. */
-export async function vendorText(
-  context: TestContext,
-  file: string,
-): Promise<string | undefined> {
-  if (!process.env.IBIS_MODEL_DIR) {
-    context.skip(
-      `Set IBIS_MODEL_DIR to local vendor ${file}; vendor bytes are not committed`,
-    )
-    return
-  }
-  try {
-    return await readFile(join(process.env.IBIS_MODEL_DIR, file), "utf8")
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-    context.skip(`Local vendor ${file} is unavailable`)
-    return
-  }
-}
+const NO_DIAGNOSTIC_CHARACTER = ""
 
 /** Bound the cyclic Jacobi solve to a fixed number of sweeps. */
 const MAX_JACOBI_SWEEPS = 60
@@ -128,7 +108,9 @@ const MATRIX_TOLERANCE = 1e-12
 const MAXWELL_ROW_SUM_TOLERANCE = 1e-9
 /** Below and at 50 MHz the interpolation of the conductor crossover has a wider error band. */
 const CROSSOVER_BAND_LIMIT_HZ = 5e7
+/** Allow 10% where the reference and ladder use different crossover approximations. */
 const CROSSOVER_ERROR = 0.1
+/** Allow 5% once both models approach the same high-frequency coefficient. */
 const HIGH_FREQUENCY_ERROR = 0.05
 
 /** Positive definite energy matrix with every pairwise coupling strictly below one. */
@@ -141,10 +123,13 @@ export function isPositiveDefinite(facts: EnergyFacts): boolean {
 }
 
 /** Grounded Maxwell capacitance with nonnegative row sums and the requested off-diagonal bound. */
-export function isGroundedMaxwell(
-  facts: MaxwellFacts,
-  strictOffDiagonalLimit?: number,
-): boolean {
+export function isGroundedMaxwell({
+  facts,
+  strictOffDiagonalLimit,
+}: {
+  facts: MaxwellFacts
+  strictOffDiagonalLimit?: number
+}): boolean {
   let validOffDiagonal = facts.maximumOffDiagonal <= 0
   if (strictOffDiagonalLimit !== undefined)
     validOffDiagonal = facts.maximumOffDiagonal < strictOffDiagonalLimit
@@ -156,10 +141,13 @@ export function isGroundedMaxwell(
 }
 
 /** Positive semidefinite loss matrix to floating-point tolerance, with nonnegative diagonal. */
-export function hasNonnegativeLoss(
-  matrix: readonly (readonly number[])[],
-  facts: EnergyFacts,
-): boolean {
+export function hasNonnegativeLoss({
+  matrix,
+  facts,
+}: {
+  matrix: readonly (readonly number[])[]
+  facts: EnergyFacts
+}): boolean {
   const minimum = -MATRIX_TOLERANCE * Math.abs(facts.maximumEigenvalue)
   return (
     matrix.every((row, i) => row[i] >= 0) && facts.minimumEigenvalue >= minimum
@@ -211,7 +199,9 @@ export function ngspiceAvailable(): boolean {
 }
 
 /** ASCII letters, digits and underscore count as part of a diagnostic word. */
-function isDiagnosticWordCharacter(character = ""): boolean {
+function isDiagnosticWordCharacter(
+  character: string = NO_DIAGNOSTIC_CHARACTER,
+): boolean {
   return (
     (character >= "a" && character <= "z") ||
     (character >= "A" && character <= "Z") ||
@@ -257,12 +247,18 @@ function parseGoldenRow(line: string): number[] {
   return values
 }
 
+/** Rows from ngspice wrdata with a scale value followed by the saved vectors. */
+export type GoldenRows = number[][]
+
+/** Allow up to two minutes for a sequential native golden deck. */
+const GOLDEN_TIMEOUT_MS = 120_000
+
 /**
  * Run one small deck through the repo's sequential native adapter (OMP_NUM_THREADS=1) and return
  * its `wrdata golden.dat ...` rows: time (or sweep) first, then each saved vector.
  */
-export async function runGoldenDeck(deck: string): Promise<number[][]> {
-  const run = createNativeSolver({ timeoutMs: 120_000 })
+export async function runGoldenDeck(deck: string): Promise<GoldenRows> {
+  const run = createNativeSolver({ timeoutMs: GOLDEN_TIMEOUT_MS })
   const output = await run({
     solver: "ngspice",
     files: { "golden.cir": deck },
@@ -276,34 +272,46 @@ export async function runGoldenDeck(deck: string): Promise<number[][]> {
   return text.trim().split("\n").slice(1).map(parseGoldenRow)
 }
 
-/** Linear interpolation of column `column` at `time` over ascending time rows. */
-export function valueAt(
-  rows: number[][],
-  column: number,
-  time: number,
-): number {
-  if (time <= rows[0][0]) return rows[0][column]
-  for (let i = 1; i < rows.length; i++)
-    if (rows[i][0] >= time) {
-      const span = rows[i][0] - rows[i - 1][0]
-      if (!span) return rows[i][column]
-      const before = rows[i - 1][column]
-      const change = rows[i][column] - before
-      const elapsed = time - rows[i - 1][0]
-      return before + (change * elapsed) / span
-    }
+/** Linear interpolation of column `column` at `timeSeconds` over ascending time rows. */
+export function valueAt({
+  rows,
+  column,
+  timeSeconds,
+}: {
+  rows: GoldenRows
+  column: number
+  timeSeconds: number
+}): number {
+  if (timeSeconds <= rows[0][0]) return rows[0][column]
+  for (let i = 1; i < rows.length; i++) {
+    if (!(rows[i][0] >= timeSeconds)) continue
+    const span = rows[i][0] - rows[i - 1][0]
+    if (!span) return rows[i][column]
+    const before = rows[i - 1][column]
+    const change = rows[i][column] - before
+    const elapsed = timeSeconds - rows[i - 1][0]
+    return before + (change * elapsed) / span
+  }
   return rows.at(-1)![column]
 }
 
-/** First time after `after` at which column `column` crosses `level` (linear interpolation), or NaN. */
-export function crossingTime(
-  rows: number[][],
-  column: number,
-  level: number,
-  after = -Infinity,
-): number {
+/** Search from the first interval when no lower time bound is supplied. */
+const EARLIEST_CROSSING_TIME = -Infinity
+
+/** First time after `afterSeconds` at which column `column` crosses `level` (linear interpolation), or NaN. */
+export function crossingTime({
+  rows,
+  column,
+  level,
+  afterSeconds = EARLIEST_CROSSING_TIME,
+}: {
+  rows: GoldenRows
+  column: number
+  level: number
+  afterSeconds?: number
+}): number {
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0] <= after) continue
+    if (rows[i][0] <= afterSeconds) continue
     const a = rows[i - 1][column] - level
     const b = rows[i][column] - level
     if (a === 0) return rows[i - 1][0]
@@ -339,7 +347,15 @@ export interface FilamentCells {
 }
 
 /** Geometric cell edges on [0, length], `count` cells (even), finest at both ends with growth `ratio`. */
-function gradedEdges(length: number, count: number, ratio: number): number[] {
+function gradedEdges({
+  length,
+  count,
+  ratio,
+}: {
+  length: number
+  count: number
+  ratio: number
+}): number[] {
   const half = Array.from({ length: count / 2 }, (_, i) => ratio ** i)
   const sizes = [...half, ...[...half].reverse()]
   const total = sizes.reduce((sum, size) => sum + size, 0)
@@ -348,15 +364,22 @@ function gradedEdges(length: number, count: number, ratio: number): number[] {
   return edges
 }
 
+/** Constant term of the closed-form fourth antiderivative of ln r. */
+const LOG_PRIMITIVE_OFFSET = 25 / 12
+
 /** Fourth antiderivative of ln r: d^4 F / dx^2 dz^2 = ln sqrt(x^2 + z^2). */
-function logPrimitive(x: number, z: number): number {
+function logPrimitive({ x, z }: { x: number; z: number }): number {
   const r2 = x * x + z * z
-  const log = r2 > 0 ? Math.log(r2) / 2 : 0
-  const a = x !== 0 ? Math.atan(z / x) : 0
-  const b = z !== 0 ? Math.atan(x / z) : 0
+  let log = 0
+  if (r2 > 0) log = Math.log(r2) / 2
+  let a = 0
+  if (x !== 0) a = Math.atan(z / x)
+  let b = 0
+  if (z !== 0) b = Math.atan(x / z)
+  const quartic = x ** 4 - 6 * x * x * z * z + z ** 4
   return (
     -(
-      (x ** 4 - 6 * x * x * z * z + z ** 4) * (log - 25 / 12) -
+      quartic * (log - LOG_PRIMITIVE_OFFSET) -
       4 * x ** 3 * z * a -
       4 * x * z ** 3 * b
     ) / 24
@@ -371,21 +394,32 @@ interface FilamentCell {
   z1: number
 }
 
+/** At large separations the centre distance avoids cancellation between corner terms. */
+const MIN_FAR_CELL_RATIO = 40
+
 /**
  * Exact mean of ln r between two rectangles: the closed-form primitive differenced over the 16 corner pairs, exact
  * for any aspect ratio (the self term is Maxwell's geometric mean distance). Far pairs, where the differences
  * cancel, use the centre distance.
  */
-function meanLogDistance(a: FilamentCell, c: FilamentCell): number {
+function meanLogDistance({
+  a,
+  c,
+}: {
+  a: FilamentCell
+  c: FilamentCell
+}): number {
   const distance = Math.hypot(
     (a.x0 + a.x1 - c.x0 - c.x1) / 2,
     (a.z0 + a.z1 - c.z0 - c.z1) / 2,
   )
-  if (
-    distance >
-    40 * Math.max(a.x1 - a.x0, a.z1 - a.z0, c.x1 - c.x0, c.z1 - c.z0)
+  const largestSpan = Math.max(
+    a.x1 - a.x0,
+    a.z1 - a.z0,
+    c.x1 - c.x0,
+    c.z1 - c.z0,
   )
-    return Math.log(distance)
+  if (distance > MIN_FAR_CELL_RATIO * largestSpan) return Math.log(distance)
   let total = 0
   for (const [ax, sa] of [
     [a.x0, 1],
@@ -403,7 +437,7 @@ function meanLogDistance(a: FilamentCell, c: FilamentCell): number {
           [c.z0, 1],
           [c.z1, -1],
         ]) {
-          total += sa * sc * ta * tc * logPrimitive(ax - cx, az - cz)
+          total += sa * sc * ta * tc * logPrimitive({ x: ax - cx, z: az - cz })
         }
       }
     }
@@ -418,10 +452,15 @@ interface ComplexRows {
 }
 
 /** Complex Gaussian elimination of A X = B (A n x n, B n x m, split real/imaginary rows, overwritten); returns X. */
-function complexSolve(
-  { re, im }: ComplexRows,
-  { re: bre, im: bim }: ComplexRows,
-): ComplexRows {
+function complexSolve({
+  matrix,
+  rightHandSide,
+}: {
+  matrix: ComplexRows
+  rightHandSide: ComplexRows
+}): ComplexRows {
+  const { re, im } = matrix
+  const { re: bre, im: bim } = rightHandSide
   const n = re.length
   const m = bre[0].length
   for (let k = 0; k < n; k++) {
@@ -463,12 +502,6 @@ function complexSolve(
   return { re: xre, im: xim }
 }
 
-/** Frequency sweep and optional mesh for the independent filament reference. */
-interface FilamentSweep {
-  frequencies: number[]
-  cells?: FilamentCells
-}
-
 /** Series resistance and inductance per metre at one frequency. */
 interface FilamentImpedancePoint {
   frequency: number
@@ -484,6 +517,48 @@ const DEFAULT_FILAMENT_CELLS: FilamentCells = {
   zRatio: 1.3,
 }
 
+/** A meshed filament cell with its centre and strip index. */
+interface StripCell extends FilamentCell {
+  x: number
+  z: number
+  strip: number
+}
+
+/** Vacuum permeability in henries per metre for the independent reference. */
+const mu0 = 1.25663706212e-6
+/** Use the finite limit below this squared distance to avoid cancellation. */
+const MIN_IMAGE_DISTANCE_SQUARED = 1e-30
+/** Beyond 40 skin depths a finite plane has the half-space surface impedance. */
+const HALF_SPACE_SKIN_DEPTHS = 40
+/** Integrate the plane perturbation from 12 spacings left to 12 spacings right. */
+const PLANE_HALF_SPAN = 12
+/** Use 200 quadrature steps per plane spacing. */
+const PLANE_STEPS_PER_SPACING = 200
+/** Include both endpoints of the 24-spacing quadrature interval. */
+const PLANE_SAMPLE_COUNT = 4801
+
+/** Image sum minus the free-space singularity, finite as r approaches zero. */
+function imageInductance({
+  a,
+  c,
+  p,
+}: {
+  a: StripCell
+  c: StripCell
+  p: number
+}): number {
+  const r2 = (a.x - c.x) ** 2 + (a.z - c.z) ** 2
+  let near = (p * p) / 2
+  if (!(r2 < MIN_IMAGE_DISTANCE_SQUARED)) {
+    near = (Math.cosh(p * (a.x - c.x)) - Math.cos(p * (a.z - c.z))) / r2
+  }
+  return (
+    (mu0 / (4 * Math.PI)) *
+    (Math.log(Math.cosh(p * (a.x - c.x)) - Math.cos(p * (a.z + c.z))) -
+      Math.log(near))
+  )
+}
+
 /**
  * Per-unit-length series impedance matrix of `line.strips` by the filament (PEEC) method of Weeks, Wu, McAllister &
  * Singh, "Resistive and inductive skin effect in rectangular conductors", IBM J. Res. Dev. 23 (1979) 652–660.
@@ -495,27 +570,30 @@ const DEFAULT_FILAMENT_CELLS: FilamentCells = {
  * K(x) = I sin(a)/(2b (cosh(pi dx/b) - cos a)) on each plane, and a plane of thickness t_p has surface impedance
  * Zs = (1 + j)/(sigma delta) coth((1 + j) t_p/delta), so Z_plane = Zs ∫ K^H K dx. Returns R (ohm/m) and L (H/m).
  */
-export function filamentImpedance(
-  line: FilamentLine,
-  sweep: FilamentSweep,
-): FilamentImpedancePoint[] {
-  const { frequencies, cells = DEFAULT_FILAMENT_CELLS } = sweep
-  const mu0 = 1.25663706212e-6
+export function filamentImpedance({
+  line,
+  frequencies,
+  cells = DEFAULT_FILAMENT_CELLS,
+}: {
+  line: FilamentLine
+  frequencies: number[]
+  cells?: FilamentCells
+}): FilamentImpedancePoint[] {
   const b = line.spacingM
   const p = Math.PI / b
   const count = line.strips.length
-  const parts: (FilamentCell & {
-    x: number
-    z: number
-    strip: number
-  })[] = []
+  const parts: StripCell[] = []
   for (const [k, strip] of line.strips.entries()) {
-    const xs = gradedEdges(strip.widthM, cells.x, cells.xRatio).map(
-      (x) => x + strip.xM - strip.widthM / 2,
-    )
-    const zs = gradedEdges(strip.thicknessM, cells.z, cells.zRatio).map(
-      (z) => z + strip.bottomM,
-    )
+    const xs = gradedEdges({
+      length: strip.widthM,
+      count: cells.x,
+      ratio: cells.xRatio,
+    }).map((x) => x + strip.xM - strip.widthM / 2)
+    const zs = gradedEdges({
+      length: strip.thicknessM,
+      count: cells.z,
+      ratio: cells.zRatio,
+    }).map((z) => z + strip.bottomM)
     for (let i = 0; i < cells.x; i++) {
       for (let j = 0; j < cells.z; j++) {
         parts.push({
@@ -531,42 +609,21 @@ export function filamentImpedance(
     }
   }
   const n = parts.length
-  /** Image sum minus the free-space singularity, finite as r -> 0. */
-  const images = (
-    a: {
-      x: number
-      z: number
-    },
-    c: {
-      x: number
-      z: number
-    },
-  ): number => {
-    const r2 = (a.x - c.x) ** 2 + (a.z - c.z) ** 2
-    const near =
-      r2 < 1e-30
-        ? (p * p) / 2
-        : (Math.cosh(p * (a.x - c.x)) - Math.cos(p * (a.z - c.z))) / r2
-    return (
-      (mu0 / (4 * Math.PI)) *
-      (Math.log(Math.cosh(p * (a.x - c.x)) - Math.cos(p * (a.z + c.z))) -
-        Math.log(near))
-    )
-  }
   const inductance = parts.map(() => new Float64Array(n))
   for (let i = 0; i < n; i++) {
     for (let j = i; j < n; j++) {
+      const freeSpace =
+        (-mu0 / (2 * Math.PI)) * meanLogDistance({ a: parts[i], c: parts[j] })
       inductance[i][j] =
-        (-mu0 / (2 * Math.PI)) * meanLogDistance(parts[i], parts[j]) +
-        images(parts[i], parts[j])
+        freeSpace + imageInductance({ a: parts[i], c: parts[j], p })
       inductance[j][i] = inductance[i][j]
     }
   }
-  const step = b / 200
+  const step = b / PLANE_STEPS_PER_SPACING
   const centre = line.strips.reduce((sum, strip) => sum + strip.xM, 0) / count
   const samples = Array.from(
-    { length: 4801 },
-    (_, i) => centre - 12 * b + i * step,
+    { length: PLANE_SAMPLE_COUNT },
+    (_, i) => centre - PLANE_HALF_SPAN * b + i * step,
   )
   return frequencies.map((frequency) => {
     const omega = 2 * Math.PI * frequency
@@ -574,9 +631,9 @@ export function filamentImpedance(
       const width = part.x1 - part.x0
       const thickness = part.z1 - part.z0
       const resistance = 1 / (line.conductivity * width * thickness)
-      return Float64Array.from({ length: n }, (_, j) =>
-        i === j ? resistance : 0,
-      )
+      const row = new Float64Array(n)
+      row[i] = resistance
+      return row
     })
     const im = inductance.map((row) => row.map((value) => omega * value))
     // Unit longitudinal field on strip k only: cell currents Y = Zf^-1 E, strip currents M = E^T Y, impedance M^-1.
@@ -584,10 +641,10 @@ export function filamentImpedance(
       Float64Array.from({ length: count }, (_, k) => Number(part.strip === k)),
     )
     const imaginaryField = parts.map(() => new Float64Array(count))
-    const admittance = complexSolve(
-      { re, im },
-      { re: field, im: imaginaryField },
-    )
+    const admittance = complexSolve({
+      matrix: { re, im },
+      rightHandSide: { re: field, im: imaginaryField },
+    })
     const sums = {
       re: line.strips.map(() => new Float64Array(count)),
       im: line.strips.map(() => new Float64Array(count)),
@@ -604,7 +661,7 @@ export function filamentImpedance(
       ),
       im: line.strips.map(() => new Float64Array(count)),
     }
-    const impedance = complexSolve(sums, identity)
+    const impedance = complexSolve({ matrix: sums, rightHandSide: identity })
     // Cell currents for unit strip currents: Y M^-1.
     const current = parts.map((_, i) =>
       line.strips.map((_, l) => {
@@ -624,13 +681,12 @@ export function filamentImpedance(
     const delta = 1 / Math.sqrt(Math.PI * frequency * mu0 * line.conductivity)
     // coth(u + ju) = (sinh 2u - j sin 2u)/(cosh 2u - cos 2u), u = t_p/delta; a half-space has coth = 1.
     const u = line.planeThicknessM / delta
-    const finite = Number.isFinite(u) && u < 40
-    const cothRe = finite
-      ? Math.sinh(2 * u) / (Math.cosh(2 * u) - Math.cos(2 * u))
-      : 1
-    const cothIm = finite
-      ? -Math.sin(2 * u) / (Math.cosh(2 * u) - Math.cos(2 * u))
-      : 0
+    let cothRe = 1
+    let cothIm = 0
+    if (Number.isFinite(u) && u < HALF_SPACE_SKIN_DEPTHS) {
+      cothRe = Math.sinh(2 * u) / (Math.cosh(2 * u) - Math.cos(2 * u))
+      cothIm = -Math.sin(2 * u) / (Math.cosh(2 * u) - Math.cos(2 * u))
+    }
     const surfaceRe = (cothRe - cothIm) / (line.conductivity * delta)
     const surfaceIm = (cothRe + cothIm) / (line.conductivity * delta)
     const plane = {
@@ -642,7 +698,9 @@ export function filamentImpedance(
       for (const top of [false, true]) {
         for (const entry of sheet) entry.fill(0)
         for (const [i, part] of parts.entries()) {
-          const angle = p * (top ? b - part.z : part.z)
+          let distance = part.z
+          if (top) distance = b - part.z
+          const angle = p * distance
           const kernel =
             Math.sin(angle) /
             (2 * b * (Math.cosh(p * (x - part.x)) - Math.cos(angle)))
