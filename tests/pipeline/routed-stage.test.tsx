@@ -7,7 +7,7 @@ import {
 } from "../../src/board"
 import { RoutedStageSolver } from "../../src/pipeline"
 import { type RoutedCapture, RouteTransientSolver } from "../../src/simulation"
-import { routedVisualFixture } from "../support/routed-visual-fixture"
+import { routedVisualFixture } from "../fixtures/routed-visual"
 
 test("a flat stage drains real TSX block inputs in order", async () => {
   const { root } = await routedVisualFixture(2)
@@ -15,10 +15,10 @@ test("a flat stage drains real TSX block inputs in order", async () => {
     RoutedStageSolver<RouteSectionsInput, RoutedSections>
   >("RouteSectionsSolver")!
   const [inputs] = sections.getConstructorParams()
-  const stage = new RoutedStageSolver(
-    [...inputs].reverse(),
-    RouteSectionsSolver,
-  )
+  const stage = new RoutedStageSolver({
+    inputs: [...inputs].reverse(),
+    solverClass: RouteSectionsSolver,
+  })
   stage.step()
   assert.equal(
     stage.stats.completedBlocks,
@@ -38,7 +38,10 @@ test("a flat stage drains real TSX block inputs in order", async () => {
 })
 
 test("an empty transient stage completes synchronously without invoking the runtime", () => {
-  const stage = new RoutedStageSolver([], RouteTransientSolver)
+  const stage = new RoutedStageSolver({
+    inputs: [],
+    solverClass: RouteTransientSolver,
+  })
   stage.solve()
   assert.deepEqual(stage.getOutput(), { value: [], artifacts: [] })
   assert.equal(stage.progress, 1)
@@ -52,8 +55,8 @@ test("a failing block stops the flat stage before later blocks or partial output
   )!
   const [inputs] = transient.getConstructorParams()
   let calls = 0
-  const stage = new RoutedStageSolver(
-    inputs.map((input) => ({
+  const stage = new RoutedStageSolver({
+    inputs: inputs.map((input) => ({
       ...input,
       context: {
         progress: (): void => undefined,
@@ -63,8 +66,8 @@ test("a failing block stops the flat stage before later blocks or partial output
         },
       },
     })),
-    RouteTransientSolver,
-  )
+    solverClass: RouteTransientSolver,
+  })
   await assert.rejects(stage.solveAsync(), /bounded engine failure/)
   assert.equal(calls, 1)
   assert.equal(stage.failed, true)

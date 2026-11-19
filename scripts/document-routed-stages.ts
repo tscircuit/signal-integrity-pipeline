@@ -34,10 +34,13 @@ export function routedStageDocumentation(): string {
 }
 
 /** Replace the first complete generated block, leaving other text intact. */
-function replaceRoutedStageDocumentation(
-  text: string,
-  documentation: string,
-): string {
+function replaceRoutedStageDocumentation({
+  text,
+  documentation,
+}: {
+  text: string
+  documentation: string
+}): string {
   const startMarker = "<!-- routed-stages:start -->"
   const endMarker = "<!-- routed-stages:end -->"
   const start = text.indexOf(startMarker)
@@ -51,6 +54,9 @@ for (const path of ["README.md", "docs/ARCHITECTURE.md"]) {
   const text = readFileSync(path, "utf8")
   writeFileSync(
     path,
-    replaceRoutedStageDocumentation(text, routedStageDocumentation()),
+    replaceRoutedStageDocumentation({
+      text,
+      documentation: routedStageDocumentation(),
+    }),
   )
 }

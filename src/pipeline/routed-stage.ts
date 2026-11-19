@@ -2,14 +2,25 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { type Produced, snapshot } from "../kernel"
 
+/** A solver that produces one block’s output and artifacts. */
 type ItemSolver<I, O> = BaseSolver & {
   getOutput(): Produced<O>
   getConstructorParams(): ConstructorParameters<ItemClass<I, O>>
 }
+/** The constructor of a single-block solver. */
 type ItemClass<I, O> = new (input: I) => ItemSolver<I, O>
 
 /** A flat stage constructor with its domain solver already bound. */
 type RoutedStageClass<I, O> = new (inputs: I[]) => RoutedStageSolver<I, O>
+
+/** Ordered stage work and the algorithm that processes each item. */
+interface RoutedStageInput<I, O> {
+  inputs: I[]
+  solverClass: ItemClass<I, O>
+}
+
+/** Ordered inputs used to reconstruct a stage whose solver class is bound. */
+type RoutedStageConstructorParams<I> = [I[]]
 
 /** One flat stage drains the domain algorithm one item at a time across all admitted blocks. */
 export class RoutedStageSolver<I, O> extends BaseSolver {
@@ -17,12 +28,13 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
   private readonly outputs: Produced<O>[] = []
   private output?: Produced<O[]>
   private readonly completedStats: Record<string, number> = {}
+  private readonly inputs: I[]
+  private readonly solverClass: ItemClass<I, O>
   /** The stage definition owns the algorithm; downloads contain only its ordered input values. */
-  constructor(
-    private readonly inputs: I[],
-    private readonly solverClass: ItemClass<I, O>,
-  ) {
+  constructor({ inputs, solverClass }: RoutedStageInput<I, O>) {
     super()
+    this.inputs = inputs
+    this.solverClass = solverClass
     if (inputs.length) this.current = new solverClass(inputs[0])
   }
   /** Use the domain name in debugger breadcrumbs, without creating nested pipeline rows. */
@@ -124,9 +136,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
     return this.output
   }
   /** Retain each original domain input for constructor downloads and focused diagnostics. */
-  override getConstructorParams(): ConstructorParameters<
-    RoutedStageClass<I, O>
-  > {
+  override getConstructorParams(): RoutedStageConstructorParams<I> {
     return [this.inputs]
   }
   /** Retain the last block's drawing when its stage completes, or a blank drawing when no blocks were admitted. */
@@ -142,7 +152,7 @@ export function routedStage<I, O>(
   return class extends RoutedStageSolver<I, O> {
     /** One immutable input per admitted block; the stage owns its ordered work queue. */
     constructor(inputs: I[]) {
-      super(inputs, solverClass)
+      super({ inputs, solverClass })
     }
   }
 }

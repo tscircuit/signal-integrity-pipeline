@@ -100,6 +100,7 @@ export const routedStages = [
   ),
 ] as const satisfies readonly PipelineStep<BaseSolver>[]
 
+/** Output types keyed by their debugger stage names. */
 interface RoutedStageOutputs {
   RoutedAdmissionSolver: Produced<RoutedBlockPlan[]>
   RouteSectionsSolver: Produced<RoutedSections[]>
@@ -109,27 +110,36 @@ interface RoutedStageOutputs {
   RouteTransientSolver: Produced<RoutedCapture[]>
 }
 
+/** A routed block’s compiled network and transient capture. */
 export interface RoutedBlockView {
-  id: string
+  id: RoutedBlockPlan["id"]
   name: string
   compiled: RoutedDeck
   capture: RoutedCapture
 }
+/** Completed block results and files from every routed stage. */
 export interface RoutedInspection {
   kind: "routed-inspection"
   blocks: RoutedBlockView[]
   files: FileMap
 }
 
+/** The circuit problem and the runtime capability used by one routed pipeline. */
+interface RoutedPipelineInput {
+  input: RoutedProblem
+  context: SolverContext
+}
+
+/** The arguments used to reconstruct a routed pipeline. */
+type RoutedPipelineConstructorParams = [RoutedPipelineInput]
+
 /** A single static pipeline, from admission through sequential live transients. */
 export class RoutedPipelineSolver extends BasePipelineSolver<RoutedProblem> {
   override pipelineDef: PipelineStep<BaseSolver>[] = [...routedStages]
   private output?: RoutedInspection
+  readonly context: SolverContext
   /** Preserve exact model bytes while keeping runtime capabilities outside immutable input. */
-  constructor(
-    input: RoutedProblem,
-    readonly context: SolverContext,
-  ) {
+  constructor({ input, context }: RoutedPipelineInput) {
     const ibisSources = Object.fromEntries(
       Object.entries(input.ibisSources).map(([name, bytes]) => {
         if (typeof bytes === "string") return [name, bytes]
@@ -142,6 +152,7 @@ export class RoutedPipelineSolver extends BasePipelineSolver<RoutedProblem> {
       }),
     )
     super(snapshot({ ...input, ibisSources }))
+    this.context = context
   }
   /** Each completed row exposes its domain array in admission order. */
   stageOutput<K extends keyof RoutedStageOutputs>(
@@ -183,9 +194,7 @@ export class RoutedPipelineSolver extends BasePipelineSolver<RoutedProblem> {
     return this.output
   }
   /** Exact source inputs plus the injected execution capability. */
-  override getConstructorParams(): ConstructorParameters<
-    typeof RoutedPipelineSolver
-  > {
-    return [this.inputProblem, this.context]
+  override getConstructorParams(): RoutedPipelineConstructorParams {
+    return [{ input: this.inputProblem, context: this.context }]
   }
 }

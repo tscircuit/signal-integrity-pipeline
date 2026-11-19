@@ -125,11 +125,14 @@ import {
 } from '@tscircuit/signal-integrity-pipeline'
 import {createNativeSolver,loadIbisSources} from '@tscircuit/signal-integrity-pipeline/node';
 const input = JSON.parse(readFileSync('input.json', 'utf8'))
-const solver = new RoutedPipelineSolver(input, {
-  runSolver: async () => {
-    throw Error('no native run expected')
+const solver = new RoutedPipelineSolver({
+  input,
+  context: {
+    runSolver: async () => {
+      throw Error('no native run expected')
+    },
+    progress: () => {},
   },
-  progress: () => {},
 })
 solver.solve()
 assert.deepEqual(solver.getOutput().blocks, [])
@@ -179,10 +182,11 @@ const circuitJson: CircuitJson = [{
   is_manufacturing_cost_complete: false,
   is_landed_cost_complete: false,
 }]
+/** Type-check the public pipeline against a host-supplied Circuit JSON type. */
 const simulate = async (circuitJson: CircuitJson): Promise<RoutedInspection> => {
   const ibisSources = await loadIbisSources({ circuitJson, baseDir: '.' })
   const problem: RoutedProblem = { circuitJson, ibisSources }
-  const solver = new RoutedPipelineSolver(problem, { runSolver, progress: () => {} })
+  const solver = new RoutedPipelineSolver({ input: problem, context: { runSolver, progress: () => {} } })
   await solver.solveAsync()
   return solver.getOutput()
 }

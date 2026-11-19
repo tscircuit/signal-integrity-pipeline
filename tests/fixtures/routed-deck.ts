@@ -27,7 +27,7 @@ function whitespaceTokens(text: string): string[] {
 }
 
 /** Read the stop time after the step in the fixture's transient directive. */
-export function transientDuration(deck: string): number {
+export function transientDurationSeconds(deck: string): number {
   const lines = deckLines(deck)
   for (const [i, line] of lines.entries()) {
     if (!line.startsWith(".tran")) continue
