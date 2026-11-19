@@ -1,6 +1,6 @@
-import type { Matrix } from "../extraction"
 import { fail } from "./diagnostics"
 
+/** One ngspice variable, with its raw name, declared kind and ordered samples. */
 export interface SpiceVector {
   name: string
   type: string
@@ -13,11 +13,8 @@ interface SpiceProbeNodes {
   referenceNode: string
 }
 
-/** Lookup coordinates for one voltage sample. */
-interface NodeVoltageInput {
-  name: string
-  sample: number
-}
+/** An adaptive sample's time in seconds followed by voltages in probe order. */
+export type SpiceProbeRow = [timestampSeconds: number, ...voltages: number[]]
 
 /** JavaScript line boundaries accepted when searching for ASCII raw file section labels. */
 const LINE_ENDINGS = "\n\r\u2028\u2029"
@@ -34,9 +31,9 @@ const GROUND_NODE = "0"
 
 /** Read real, ASCII ngspice batch vectors without assuming the engine's variable order. */
 export function parseSpiceVectors(text: string): SpiceVector[] {
-  const header = splitSpiceSection(text, "Values:")
-  const count = spiceCount(header[0], "No. Variables:")
-  const points = spiceCount(header[0], "No. Points:")
+  const header = splitSpiceSection({ text, label: "Values:" })
+  const count = spiceCount({ text: header[0], label: "No. Variables:" })
+  const points = spiceCount({ text: header[0], label: "No. Points:" })
   if (
     header.length !== 2 ||
     !hasRealFlags(header[0]) ||
@@ -48,11 +45,14 @@ export function parseSpiceVectors(text: string): SpiceVector[] {
       "Expected real ASCII ngspice vectors with at least two samples",
     )
   }
-  const declarations =
-    splitSpiceSection(header[0], "Variables:")[1]
-      ?.trim()
-      .split(LINE_SEPARATOR) ?? []
-  const vectors = declarations.map(spiceVariable)
+  const variableSection = splitSpiceSection({
+    text: header[0],
+    label: "Variables:",
+  })[1]
+  const declarations = variableSection?.trim().split(LINE_SEPARATOR) ?? []
+  const vectors = declarations.map((line, position) =>
+    spiceVariable({ line, position }),
+  )
   const uniqueNames = new Set(vectors.map((vector) => vector.name))
   if (vectors.length !== count || uniqueNames.size !== count) {
     fail("waveform", "Invalid ngspice variable count or duplicate name")
@@ -83,7 +83,13 @@ function isWaveformSize(count: number): boolean {
 }
 
 /** Read one ordered variable declaration before its samples are available. */
-function spiceVariable(line: string, position: number): SpiceVector {
+function spiceVariable({
+  line,
+  position,
+}: {
+  line: string
+  position: number
+}): SpiceVector {
   const [index, name, type, ...extra] = spiceWords(line)
   if (Number(index) !== position || !name || !type || extra.length) {
     fail("waveform", "Invalid ngspice variable declaration")
@@ -92,7 +98,13 @@ function spiceVariable(line: string, position: number): SpiceVector {
 }
 
 /** Check that a fixture vector has a usable declaration and a finite value at each sample. */
-function isCompleteVector(vector: SpiceVector, points: number): boolean {
+function isCompleteVector({
+  vector,
+  points,
+}: {
+  vector: SpiceVector
+  points: number
+}): boolean {
   if (vector.values.length !== points) return false
   if (vector.values.some((sample) => !Number.isFinite(sample))) return false
   return isSpiceWord(vector.name) && isSpiceWord(vector.type)
@@ -104,7 +116,7 @@ export function formatSpiceVectors(vectors: SpiceVector[]): string {
   if (
     vectors.length < MINIMUM_WAVEFORM_SIZE ||
     points < MINIMUM_WAVEFORM_SIZE ||
-    vectors.some((vector) => !isCompleteVector(vector, points))
+    vectors.some((vector) => !isCompleteVector({ vector, points }))
   ) {
     fail("waveform", "Expected complete finite real engine vectors")
   }
@@ -130,37 +142,56 @@ export function formatSpiceVectors(vectors: SpiceVector[]): string {
 }
 
 /** Difference receiver and reference vectors at the actual adaptive sample times. */
-export function spiceProbeRows(
-  text: string,
-  probes: readonly SpiceProbeNodes[],
-): Matrix {
+export function spiceProbeRows({
+  text,
+  probes,
+}: {
+  text: string
+  probes: readonly SpiceProbeNodes[]
+}): SpiceProbeRow[] {
   const vectors = new Map(
     parseSpiceVectors(text).map((vector) => [vector.name, vector.values]),
   )
-  const times = vectors.get("time")
-  if (!times) return fail("waveform", "Missing ngspice time vector")
-  if (times.some((time, i) => i > 0 && time < times[i - 1])) {
+  const timesSeconds = vectors.get("time")
+  if (!timesSeconds) return fail("waveform", "Missing ngspice time vector")
+  if (
+    timesSeconds.some(
+      (timeSeconds, i) => i > 0 && timeSeconds < timesSeconds[i - 1],
+    )
+  ) {
     fail("waveform", "Expected increasing actual solver timestamps")
   }
-  return times.flatMap((time, sample) => {
-    if (sample < times.length - 1 && time === times[sample + 1]) return []
+  const rows: SpiceProbeRow[] = []
+  for (const [sample, timeSeconds] of timesSeconds.entries()) {
+    if (
+      sample < timesSeconds.length - 1 &&
+      timeSeconds === timesSeconds[sample + 1]
+    )
+      continue
     const voltages = probes.map(({ signalNode, referenceNode }) => {
-      const signalVoltage = nodeVoltage({ name: signalNode, sample }, vectors)
-      const referenceVoltage = nodeVoltage(
-        { name: referenceNode, sample },
+      const signalVoltage = nodeVoltage({ name: signalNode, sample, vectors })
+      const referenceVoltage = nodeVoltage({
+        name: referenceNode,
+        sample,
         vectors,
-      )
+      })
       return signalVoltage - referenceVoltage
     })
-    return [[time, ...voltages]]
-  })
+    rows.push([timeSeconds, ...voltages])
+  }
+  return rows
 }
 
 /** Ground is implicit; every other requested node must be present. */
-function nodeVoltage(
-  { name, sample }: NodeVoltageInput,
-  vectors: ReadonlyMap<SpiceVector["name"], number[]>,
-): number {
+function nodeVoltage({
+  name,
+  sample,
+  vectors,
+}: {
+  name: string
+  sample: number
+  vectors: ReadonlyMap<SpiceVector["name"], number[]>
+}): number {
   if (name === GROUND_NODE) return 0
   const voltage = vectors.get(`v(${name.toLowerCase()})`)
   if (!voltage) return fail("waveform", `Missing ngspice vector v(${name})`)
@@ -168,11 +199,17 @@ function nodeVoltage(
 }
 
 /** Split on standalone section labels, leaving any line break after each label in the next section. */
-function splitSpiceSection(text: string, label: string): string[] {
+function splitSpiceSection({
+  text,
+  label,
+}: {
+  text: string
+  label: string
+}): string[] {
   const sections: string[] = []
   let sectionStart = 0
-  for (const start of spiceFieldStarts(text, label)) {
-    const end = whitespaceLineEnd(text, start + label.length)
+  for (const start of spiceFieldStarts({ text, label })) {
+    const end = whitespaceLineEnd({ text, start: start + label.length })
     if (end === undefined) continue
     sections.push(text.slice(sectionStart, start))
     sectionStart = end
@@ -182,12 +219,12 @@ function splitSpiceSection(text: string, label: string): string[] {
 }
 
 /** Read the first line for this count that contains only an unsigned integer and whitespace. */
-function spiceCount(text: string, label: string): number {
-  for (const field of spiceFieldStarts(text, label)) {
-    const start = skipWhitespace(text, field + label.length)
+function spiceCount({ text, label }: { text: string; label: string }): number {
+  for (const field of spiceFieldStarts({ text, label })) {
+    const start = skipWhitespace({ text, start: field + label.length })
     let end = start
     while (text[end] >= "0" && text[end] <= "9") end++
-    if (end > start && whitespaceLineEnd(text, end) !== undefined)
+    if (end > start && whitespaceLineEnd({ text, start: end }) !== undefined)
       return Number(text.slice(start, end))
   }
   return NaN
@@ -195,19 +232,23 @@ function spiceCount(text: string, label: string): number {
 
 /** Check for a real-valued ASCII waveform header. */
 function hasRealFlags(text: string): boolean {
-  for (const field of spiceFieldStarts(text, "Flags:")) {
-    const start = skipWhitespace(text, field + "Flags:".length)
-    if (
-      text.startsWith("real", start) &&
-      whitespaceLineEnd(text, start + "real".length) !== undefined
-    )
+  for (const field of spiceFieldStarts({ text, label: "Flags:" })) {
+    const start = skipWhitespace({ text, start: field + "Flags:".length })
+    if (!text.startsWith("real", start)) continue
+    if (whitespaceLineEnd({ text, start: start + "real".length }) !== undefined)
       return true
   }
   return false
 }
 
 /** Find exact labels at the start of any JavaScript line. */
-function* spiceFieldStarts(text: string, label: string): Generator<number> {
+function* spiceFieldStarts({
+  text,
+  label,
+}: {
+  text: string
+  label: string
+}): Generator<number> {
   for (
     let start = text.indexOf(label);
     start !== -1;
@@ -218,7 +259,13 @@ function* spiceFieldStarts(text: string, label: string): Generator<number> {
 }
 
 /** Find the last line boundary in the whitespace after a field. */
-function whitespaceLineEnd(text: string, start: number): number | undefined {
+function whitespaceLineEnd({
+  text,
+  start,
+}: {
+  text: string
+  start: number
+}): number | undefined {
   let end: number | undefined
   for (let i = start; i < text.length; i++) {
     if (text[i].trim() !== "") return end
@@ -235,11 +282,11 @@ function isLineBreak(character: string): boolean {
 /** Read whitespace-delimited fields, returning one empty field for blank input. */
 function spiceWords(text: string): string[] {
   const words: string[] = []
-  let start = skipWhitespace(text, 0)
+  let start = skipWhitespace({ text, start: 0 })
   while (start < text.length) {
-    const end = skipWord(text, start)
+    const end = skipWord({ text, start })
     words.push(text.slice(start, end))
-    start = skipWhitespace(text, end)
+    start = skipWhitespace({ text, start: end })
   }
   if (words.length) return words
   return [""]
@@ -247,17 +294,23 @@ function spiceWords(text: string): string[] {
 
 /** Check that a name or type contains exactly one nonempty field. */
 function isSpiceWord(text: string): boolean {
-  return text.length > 0 && skipWord(text, 0) === text.length
+  return text.length > 0 && skipWord({ text, start: 0 }) === text.length
 }
 
 /** Advance to the next non-whitespace character or the end of the string. */
-function skipWhitespace(text: string, start: number): number {
+function skipWhitespace({
+  text,
+  start,
+}: {
+  text: string
+  start: number
+}): number {
   while (start < text.length && text[start].trim() === "") start++
   return start
 }
 
 /** Advance past a field's non-whitespace characters. */
-function skipWord(text: string, start: number): number {
+function skipWord({ text, start }: { text: string; start: number }): number {
   while (start < text.length && text[start].trim() !== "") start++
   return start
 }

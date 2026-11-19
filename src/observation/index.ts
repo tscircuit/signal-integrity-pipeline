@@ -2,6 +2,7 @@
 export {
   formatSpiceVectors,
   parseSpiceVectors,
+  type SpiceProbeRow,
   type SpiceVector,
   spiceProbeRows,
 } from "./spice-vectors"
