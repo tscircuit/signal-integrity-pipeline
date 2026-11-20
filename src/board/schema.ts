@@ -1,7 +1,6 @@
 // Circuit JSON record admission (was schema.ts + circuit-schema.mjs). Validation never edits input.
 
-import type { CircuitJson } from "circuit-json"
-import * as base from "circuit-json"
+import * as circuitJson from "circuit-json"
 import type { z } from "zod"
 import { fail } from "./diagnostics"
 
@@ -11,6 +10,14 @@ export type {
   SimulationIbisModel,
 } from "circuit-json"
 
+/** A circuit-json export name selected by type or by source component ftype. */
+type RecordSchemaKey = string
+
+// Export names preserve aliases and schemas outside the element union.
+const recordSchemas = new Map<RecordSchemaKey, unknown>(
+  Object.entries(circuitJson),
+)
+
 /** Picks the circuit-json schema by record type, or by ftype for source components. */
 export function recordSchema(record: {
   type: string
@@ -18,7 +25,7 @@ export function recordSchema(record: {
 }): z.ZodTypeAny | undefined {
   let schemaName = record.type
   if (record.type === "source_component") schemaName = `source_${record.ftype}`
-  return base[schemaName as keyof typeof base] as z.ZodTypeAny | undefined
+  return recordSchemas.get(schemaName) as z.ZodTypeAny | undefined
 }
 /** Select the registered record schema directly, avoiding a union diagnostic
  * containing hundreds of unrelated alternatives. Validation never edits input. */
