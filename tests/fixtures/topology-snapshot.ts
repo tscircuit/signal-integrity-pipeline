@@ -15,8 +15,8 @@ import {
 const VERDICT_FONT_SIZE = 0.5
 /** Keeps the code and its message on separate lines. */
 const VERDICT_LINE_SPACING = 0.8
-/** Drops the verdict below the fixtures' copper, which runs through the board centre. */
-const VERDICT_OFFSET_MM = 2.5
+/** Puts the first verdict line just inside the board's top edge, clear of the copper. */
+const VERDICT_TOP_MARGIN_MM = 1
 /** Green when the checks accept the board, red when they reject it. */
 const ACCEPTED_COLOR = "rgb(80, 200, 120)"
 const REJECTED_COLOR = "rgb(240, 90, 90)"
@@ -52,7 +52,10 @@ function verdict({
   return [ACCEPTED]
 }
 
-/** Snapshot the board with the routed copper verdict written at its centre. */
+/**
+ * Snapshot the board with the routed copper verdict. The verdict text is drawn at
+ * the top centre: horizontally centred, just inside the board's top edge.
+ */
 export function expectTopologySnapshot({
   circuit,
   signals,
@@ -65,7 +68,9 @@ export function expectTopologySnapshot({
   testPath: string
 }): void {
   const board = circuit.find((record) => record.type === "pcb_board")
-  if (!board) throw new Error("Expected the circuit to contain a pcb_board")
+  if (!board?.height)
+    throw new Error("Expected the circuit to contain a sized pcb_board")
+  const top = board.center.y + board.height / 2 - VERDICT_TOP_MARGIN_MM
   const lines = verdict({ circuit, signals, allowUnroutedTraces })
   let color = REJECTED_COLOR
   if (lines[0] === ACCEPTED) color = ACCEPTED_COLOR
@@ -79,7 +84,7 @@ export function expectTopologySnapshot({
       layer: "top",
       anchor_position: {
         x: board.center.x,
-        y: board.center.y - VERDICT_OFFSET_MM - index * VERDICT_LINE_SPACING,
+        y: top - index * VERDICT_LINE_SPACING,
       },
       anchor_alignment: "center",
       color,
