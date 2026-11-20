@@ -1,3 +1,4 @@
+import log from "@stdlib/math-base-special-ln"
 import type { LayerRef, PcbSmtPad, PcbVia, Point } from "circuit-json"
 import {
   type CircuitJson,
@@ -15,6 +16,7 @@ import {
   sourceNetMembers,
 } from "../board"
 import { type Matrix, validateMatrix } from "../extraction"
+import { hypotenuse } from "../kernel"
 import type { RouteEndpoint } from "./route-network"
 
 /** Vacuum permittivity in farads per metre. */
@@ -102,17 +104,17 @@ export function terminalInductance({
   })
   const matrix = positions.map((point, i) =>
     positions.map((other, j) => {
-      const spacing = Math.hypot(point[0] - other[0], point[1] - other[1])
+      const spacing = hypotenuse(point[0] - other[0], point[1] - other[1])
       if (i !== j && spacing < width)
         throw new Error("Vertical terminal posts overlap")
       const image = 2 * height
       const deficit =
-        FILAMENT_INDUCTANCE_PER_MM * (Math.hypot(spacing, image) - spacing)
+        FILAMENT_INDUCTANCE_PER_MM * (hypotenuse(spacing, image) - spacing)
       if (i === j) {
         const self =
           POST_INDUCTANCE_PER_MM *
           height *
-          (Math.log((2 * image) / (width + depth)) +
+          (log((2 * image) / (width + depth)) +
             RECTANGULAR_POST_OFFSET +
             (RECTANGULAR_POST_CORRECTION * (width + depth)) / image)
         return self - deficit - (perLength[i][j] * depth) / (2 * MM_PER_METRE)
@@ -120,7 +122,7 @@ export function terminalInductance({
       const mutual =
         FILAMENT_INDUCTANCE_PER_MM *
         (image * Math.asinh(image / spacing) -
-          Math.hypot(image, spacing) +
+          hypotenuse(image, spacing) +
           spacing)
       return mutual - deficit - (perLength[i][j] * depth) / (2 * MM_PER_METRE)
     }),
@@ -143,7 +145,7 @@ export function barrelInductance({
   return (
     POST_INDUCTANCE_PER_MM *
     height *
-    (Math.log(1 + (BARREL_ASPECT_MULTIPLIER * height) / diameter) + 1)
+    (log(1 + (BARREL_ASPECT_MULTIPLIER * height) / diameter) + 1)
   )
 }
 
@@ -162,7 +164,7 @@ export function barrelCapacitance({
   return (
     (2 * Math.PI * VACUUM_PERMITTIVITY * er * height) /
     MM_PER_METRE /
-    Math.log(antipad / diameter)
+    log(antipad / diameter)
   )
 }
 
@@ -239,7 +241,7 @@ function adjacentReferences({
       position - slice.end,
       0,
     )
-    return { slice, distance: Math.hypot(lateral, longitudinal) }
+    return { slice, distance: hypotenuse(lateral, longitudinal) }
   })
   const closest = candidates.sort((a, b) => a.distance - b.distance)[0]
   if (closest?.slice.references != null) return closest.slice.references
@@ -303,7 +305,7 @@ export function routeTransitions({
           record.source_trace_id === trace.source_trace_id
         return (
           matchingTrace &&
-          Math.hypot(via.x - record.x, via.y - record.y) <
+          hypotenuse(via.x - record.x, via.y - record.y) <
             VIA_POSITION_TOLERANCE
         )
       })
@@ -386,12 +388,12 @@ export function routeTransitions({
         })
         .sort(
           (x, y) =>
-            Math.hypot(x.x - via.x, x.y - via.y) -
-            Math.hypot(y.x - via.x, y.y - via.y),
+            hypotenuse(x.x - via.x, x.y - via.y) -
+            hypotenuse(y.x - via.x, y.y - via.y),
         )
       const nearest = candidates[0]
       let distance = GROUND_VIA_DISTANCE_MM
-      if (nearest) distance = Math.hypot(nearest.x - via.x, nearest.y - via.y)
+      if (nearest) distance = hypotenuse(nearest.x - via.x, nearest.y - via.y)
       const heightDifference = Math.abs(fromHeight - toHeight)
       let returnInductanceH = 0
       if (!(heightDifference < LAYER_HEIGHT_TOLERANCE)) {
@@ -399,7 +401,7 @@ export function routeTransitions({
         returnInductanceH =
           POST_INDUCTANCE_PER_MM *
           heightDifference *
-          Math.log(1 + (2 * distance) / hole)
+          log(1 + (2 * distance) / hole)
       }
       const annulus = diameter ** 2 - physical.hole_diameter ** 2
       const resistance =

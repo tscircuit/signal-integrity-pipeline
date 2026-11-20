@@ -6,6 +6,7 @@ import {
   type ExtractedRoutes,
   referenceSeries,
 } from "../extraction"
+import { hypotenuse } from "../kernel"
 import {
   RouteEnergy,
   seriesEnergy,
@@ -247,7 +248,7 @@ export function* routeLadderSteps({
       )
         break
       if (wire.layer !== seed.layer || wire.width !== seed.width) break
-      const separation = Math.hypot(
+      const separation = hypotenuse(
         wire.a[0] - previous.b[0],
         wire.a[1] - previous.b[1],
       )
