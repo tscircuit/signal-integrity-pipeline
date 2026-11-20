@@ -183,11 +183,13 @@ export async function unroutedExtraPin({
   })
 }
 
-/** A straight route through an intermediate sampling pin. */
+/** A straight route through a sampling pin, with an optional perpendicular branch. */
 export async function daisyChain({
   receivers,
+  branch = false,
 }: {
   receivers: ("MID" | "RX")[]
+  branch?: boolean
 }): Promise<TopologyBoard> {
   return topologyBoard({
     receiverRef: receivers.map((name) => `.${name} > .SIG`),
@@ -206,6 +208,16 @@ export async function daisyChain({
           to=".RX > .SIG"
           pcbPath={[".MID > .SIG", ".RX > .SIG"]}
         />
+        {branch && (
+          <>
+            <SignalPin name="BRANCH" x={0} y={4} />
+            <trace
+              from=".MID > .SIG"
+              to=".BRANCH > .SIG"
+              pcbPath={[".MID > .SIG", ".BRANCH > .SIG"]}
+            />
+          </>
+        )}
       </>
     ),
   })
