@@ -67,6 +67,8 @@ async function routeFixture(): Promise<RouteFixture> {
     connectivity,
     selected: sourceNetMembers({ connectivity, seed: port.source_port_id }),
     reference: ground,
+    rails: new Set(),
+    distanceMm: 1,
   })
   const geometry = segmentRoutes({ circuit, scope })
   return {
@@ -239,6 +241,8 @@ test("solves overlapping copper as equipotential patches", async () => {
       seed: portId,
     }),
     reference: ground,
+    rails: new Set(),
+    distanceMm: 1,
   })
   const merged = segmentRoutes({ circuit: mergedCircuit, scope: mergedScope })
   const hasJoins = merged.wires.some((wire) => wire.joins?.length)
@@ -265,6 +269,8 @@ describe("oblique route", () => {
       connectivity,
       selected: sourceNetMembers({ connectivity, seed: fixture.portId }),
       reference: fixture.ground,
+      rails: new Set(),
+      distanceMm: 1,
     })
     geometry = segmentRoutes({ circuit, scope })
   })
@@ -346,6 +352,8 @@ describe("via-in-pad route", () => {
         seed: viaSource.connected_source_port_ids[0],
       }),
       reference: ground,
+      rails: new Set(),
+      distanceMm: 1,
     })
     viaGeometry = segmentRoutes({ circuit: viaCircuit, scope: viaScope })
   })
