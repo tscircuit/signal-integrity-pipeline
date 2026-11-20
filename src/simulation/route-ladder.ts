@@ -14,6 +14,14 @@ import {
 } from "./route-energy"
 import type { RouteEndpoint } from "./route-network"
 
+/** Significant digits kept from the field-derived skin resistance. */
+const SKIN_RESISTANCE_PRECISION = 9
+
+/** The Wheeler wall recession amplifies rounding noise before the network is assembled. */
+function skinResistanceForDeck(resistance: number): number {
+  return Number(resistance.toPrecision(SKIN_RESISTANCE_PRECISION))
+}
+
 /** Tolerance for finding the arc cell that contains a point (mm). */
 const CELL_POSITION_TOLERANCE = 1e-7
 /** Distance below which touching wire ends belong to the same run (mm). */
@@ -407,10 +415,12 @@ export function* routeLadderSteps({
           skin.add({
             row: a.index,
             column: b.index,
-            coefficient: series.skinResistance[i][j] * signedLength,
+            coefficient:
+              skinResistanceForDeck(series.skinResistance[i][j]) * signedLength,
           })
           if (i === j)
-            strip[a.index] += series.stripSkinResistance[i][i] * metres
+            strip[a.index] +=
+              skinResistanceForDeck(series.stripSkinResistance[i][i]) * metres
           for (const side of ["before", "after"] as const) {
             if (a[side] === undefined || b[side] === undefined) continue
             C.add({
