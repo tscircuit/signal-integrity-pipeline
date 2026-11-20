@@ -87,20 +87,11 @@ test.skipIf(Boolean(vendorModelSkip))(
     const result = network.getOutput().value
     assert.equal(result.evidence.geometry_wires, 2)
     assert.equal(result.evidence.sections, 1)
-    // V8 and JavaScriptCore differ in the final digits of the unchanged BEM coefficients.
-    let expected =
-      "9373941fc0d7f13fae049b0e6e6571143475eb2356be9468efb5b894e901e63b"
-    let expectedBytes = 22147
-    if (process.versions.bun) {
-      expected =
-        "84d62db005e8b8b39aba038a66d6eb1be137848f4a2b3bdbfccf9d2160f52911"
-      expectedBytes = 22142
-    }
-    assert.equal(Buffer.byteLength(result.deck), expectedBytes)
+    assert.equal(Buffer.byteLength(result.deck), 22146)
     assert.equal(
       sha256(result.deck),
-      expected,
-      "pins vendor compilation and coupling per JS engine",
+      "e0aed2dc77587fe5e8864ee3c2a1de449951ca096338a81f4541688688ee32b4",
+      "pins vendor compilation and coupling",
     )
   },
 )
@@ -207,15 +198,11 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
       40e-9,
     )
     const deck = solver.stageOutput("RouteNetworkSolver").value[0]
-    if (!process.versions.bun) {
-      const expected =
-        "83867184e5373f0b20e056fe1011de164269396e2b51bb5ff76a171a288371ad"
-      assert.equal(
-        sha256(deck.deck),
-        expected,
-        "default two-trace deck pins the single skin multiport realization",
-      )
-    }
+    assert.equal(
+      sha256(deck.deck),
+      "3d8b305c6177e528a127df9503413da57804780e89dbc4ff75544dfe0b56c5fb",
+      "default two-trace deck pins the single skin multiport realization",
+    )
     const values = driverWeights(deck.deck)
     const weights = values
       .filter((_, i) => i % 2 === 0)
