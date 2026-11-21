@@ -75,6 +75,7 @@ domain:
   declare: plan experiments and probes from the board's simulation records before any solver runs
   delay: time needed for a signal edge to propagate through a line
   derivative: sensitivity of an extracted matrix to material or boundary displacement
+  detect: check whether a solver executable is available on PATH
   deviation: the measured difference between an approximation and its reference
   diagnostic: the library's one error type: a short code, the module that failed and the logs that explain it
   diagonal: matrix entries relating each conductor to itself
@@ -120,12 +121,14 @@ domain:
   lateral: distance transverse to a routed line in the board plane
   layer: one copper or insulating sheet in the stackup
   ledger: the single record of every artifact path the pipeline writes; a second write to a path fails
+  local: running on the user's computer through its installed native solver
   longitudinal: along a route or trace
   loss: energy dissipated in conductors or dielectrics
   mark: a dot or ring drawn at a pin; a dot for a driver, a ring for a receiver
   mask: insulating soldermask on the outer copper layers
   mesh: the set of boundary panels used to approximate the field in a cross-section
   metre: SI unit of length used for per-unit-length electrical matrices
+  middleware: the local HTTP handler installed in the Vite development server
   modal: describing an electrical mode or the factor that represents its stored energy
   model: a chip model (IBIS) or the electrical model of the channel built from extraction
   modeling: private numerical settings derived from Circuit JSON
@@ -175,6 +178,7 @@ domain:
   remainder: the part of a matrix diagonal left after its mutual energy terms
   residual: how far a computed result is from passing an exact check (smaller is better)
   resistance: how much a wire resists steady current, in ohms (the R in RLGC)
+  response: the status and result returned by an HTTP request
   return: the path current takes back to its source, usually through ground copper
   ring: one closed loop of points that outlines a polygon or a hole in it
   route: the path a trace follows across the board, as points and vias
@@ -224,12 +228,16 @@ domain:
   via: a plated hole that carries a signal between layers
   viewport: the world-coordinate region visible in a picture
   visualize: draw a solver's current physical work in the shared graphics atlas
+  watchdog: a host timer that terminates an engine exceeding its runtime limit
   waveform: voltage over time at one probe
   weight: a switching coefficient extracted from IBIS voltage and current data
   wire: a piece of copper that carries a signal; in plain words, a trace or via
   word: a contiguous non-whitespace field in an ASCII raw file or diagnostic
+  worker: an isolated browser thread that can be terminated to stop a solver
 
 abbreviations:
+  http: Hypertext Transfer Protocol used by the browser solver adapter
+  wasm: WebAssembly, the portable binary format used to run ngspice in a browser
   ac: alternating current; in DDR thresholds, the level a signal must reach
   args: arguments
   config: configuration
