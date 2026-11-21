@@ -8,6 +8,7 @@
 export {
   type ConnectivityMap,
   getSourcePortConnectivityMapFromCircuitJson,
+  type PassiveBridge,
   passiveBridges,
   sourceConnections,
   sourceNetMembers,

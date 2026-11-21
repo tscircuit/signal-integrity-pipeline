@@ -12,9 +12,11 @@ const src = join(repo, "src")
 const RAISED = [
   "artifact_collision",
   "artifact_path",
+  "channel_driver_terminal_missing",
   "channel_fanout",
   "channel_model",
   "channel_net",
+  "channel_receiver_terminal_missing",
   "channel_short",
   "circuit_schema",
   "converter_version",

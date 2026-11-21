@@ -45,7 +45,7 @@
   "dependencies": {
     "@flatten-js/core": "1.6.14",
     "@noble/hashes": "1.8.0",
-    "@tscircuit/circuit-json-util": "0.0.123",
+    "@tscircuit/circuit-json-util": "https://pkg.pr.new/tscircuit/circuit-json-util/@tscircuit/circuit-json-util@d22d831fdbacb9e130b288da4e0f9e06b57e203e",
     "@tscircuit/ibis-to-spice": "https://api.github.com/repos/tscircuit/ibis-to-spice/tarball/5feb4d02e4d6b1b6614e20e4f6fbdf9d2383f05b",
     "circuit-json-to-connectivity-map": "0.0.35",
     "format-si-unit": "0.0.12",

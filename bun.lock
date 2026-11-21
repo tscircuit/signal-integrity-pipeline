@@ -7,7 +7,7 @@
       "dependencies": {
         "@flatten-js/core": "1.6.14",
         "@noble/hashes": "1.8.0",
-        "@tscircuit/circuit-json-util": "0.0.123",
+        "@tscircuit/circuit-json-util": "https://pkg.pr.new/tscircuit/circuit-json-util/@tscircuit/circuit-json-util@d22d831fdbacb9e130b288da4e0f9e06b57e203e",
         "@tscircuit/ibis-to-spice": "https://api.github.com/repos/tscircuit/ibis-to-spice/tarball/5feb4d02e4d6b1b6614e20e4f6fbdf9d2383f05b",
         "circuit-json-to-connectivity-map": "0.0.35",
         "format-si-unit": "0.0.12",
@@ -216,7 +216,7 @@
 
     "@tscircuit/checks": ["@tscircuit/checks@0.0.259", "", { "dependencies": { "flatbush": "4.6.2" }, "peerDependencies": { "@flatten-js/core": "1.6.14", "@tscircuit/circuit-json-util": "0.0.123", "@tscircuit/math-utils": "0.0.38", "circuit-json": "0.0.552", "circuit-json-to-connectivity-map": "0.0.35", "typescript": "5.9.3" } }, "sha512-RN0j4IUoKIMDDY6QJB34rZkYFj1K+wCGqCAIK5FR5fyQ9qTr9RWUyDFbmOD7oyLJ96LNuiyvzS7y2CZhG85uRw=="],
 
-    "@tscircuit/circuit-json-util": ["@tscircuit/circuit-json-util@0.0.123", "", { "dependencies": { "@flatten-js/core": "1.6.14", "parsel-js": "1.2.3" }, "peerDependencies": { "circuit-json": "0.0.552", "transformation-matrix": "3.1.0", "zod": "3.25.76" } }, "sha512-ssPZyLs0opqiuU7vixhdsYYIfR+MsV3U/vaAxv3VZxdK2cQMR8OqWuy+/svakcFHu+m3xr/4QES9vHmdE3krkQ=="],
+    "@tscircuit/circuit-json-util": ["@tscircuit/circuit-json-util@https://pkg.pr.new/tscircuit/circuit-json-util/@tscircuit/circuit-json-util@d22d831fdbacb9e130b288da4e0f9e06b57e203e", { "dependencies": { "@flatten-js/core": "^1.6.14", "parsel-js": "^1.1.2" }, "peerDependencies": { "circuit-json": "*", "transformation-matrix": "*", "zod": "3" } }, "sha512-rG71NacGmaQesytPyjeGeiSn6mDitBCwqVovlDZCdNYXFWqazOlQNac/AZ7ed+68mfnGAsQhgX6Wik0GzRFzig=="],
 
     "@tscircuit/copper-pour-solver": ["@tscircuit/copper-pour-solver@0.0.59", "", { "dependencies": { "@tscircuit/manifold-2d": "0.0.6" }, "peerDependencies": { "typescript": "5.9.3" } }, "sha512-4ue1tEwz5RkvWWhlwtwe/j1CbsHuv7gsrhxQZ+OveBbZTpSx6cSZNqw7+HOmfvL/A628w8ymIz16ZU1rPBBFMQ=="],
 
@@ -647,8 +647,6 @@
     "zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
-
-    "@tscircuit/circuit-json-util/transformation-matrix": ["transformation-matrix@3.1.0", "", {}, "sha512-oYubRWTi2tYFHAL2J8DLvPIqIYcYZ0fSOi2vmSy042Ho4jBW2ce6VP7QfD44t65WQz6bw5w1Pk22J7lcUpaTKA=="],
 
     "@tscircuit/create-fdm-enclosure/jscad-planner": ["jscad-planner@0.0.14", "", { "peerDependencies": { "typescript": "5.9.3" } }, "sha512-HrS5C1iTrmIZDlvNk065vg36qjIHyeiil60MyW7wccNGaGJSy2SYgWqPNvLU58tUTTTKWECWgd1Wzah80z4Z3A=="],
 
