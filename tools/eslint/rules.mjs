@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 
 const MAX_LINES = 500
+const SNAPSHOT_DIRECTORY_SUFFIX = "-snapshots"
 
 /** Warns when a TypeScript file is longer than MAX_LINES lines. */
 const maxFileLines = {
@@ -74,7 +75,9 @@ const testFileMatchesSource = {
     const paths = [`src/${base}.ts`, `src/${base}/index.ts`]
     const separator = base.lastIndexOf("/")
     if (suffix !== ".test.mjs" && base.indexOf("/") < separator) {
-      const parent = base.slice(0, separator)
+      let parent = base.slice(0, separator)
+      if (parent.endsWith(SNAPSHOT_DIRECTORY_SUFFIX))
+        parent = parent.slice(0, -SNAPSHOT_DIRECTORY_SUFFIX.length)
       paths.push(`src/${parent}.ts`, `src/${parent}/index.ts`)
     }
     if (paths.some((path) => existsSync(join(root, path)))) return {}
