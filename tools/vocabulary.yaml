@@ -150,7 +150,7 @@ domain:
   ring: one closed loop of points that outlines a polygon or a hole in it
   route: the path a trace follows across the board, as points and vias
   schedule: the actual logical transitions and their times in one stimulus
-  scope: a named folder of artifacts that one module is allowed to write
+  scope: a module's named artifact folder, or the board copper selected for a channel's extraction
   seal: sort and freeze a ledger's files into the published file map
   second: the SI time unit or the second member of an ordered pair
   self: a matrix term belonging to one conductor rather than a mutual pair
