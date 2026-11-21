@@ -1,7 +1,7 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
-import * as observation from "../../src/observation"
+import { parseSpiceVectors } from "../../src/observation"
 
-test("legacy waveform folding is removed", () => {
-  assert.deepEqual(Object.keys(observation), [])
+test("native vectors without a real ASCII header are a waveform diagnostic", () => {
+  assert.throws(() => parseSpiceVectors(""), { code: "waveform" })
 })

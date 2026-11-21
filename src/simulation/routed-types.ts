@@ -81,3 +81,17 @@ export interface RoutedDeck {
   stepSeconds: number
   evidence: Record<string, unknown>
 }
+/** A completed live transient; failures never expose a partial capture. */
+export interface RoutedCapture {
+  kind: "completed"
+  qualification: "candidate-unqualified"
+  timestampsSeconds: number[]
+  probes: RoutedProbeCapture[]
+}
+
+/** Recorded voltages for a physical source port at the capture's adaptive sample times. */
+interface RoutedProbeCapture {
+  name: string
+  sourcePortId: SourcePortId
+  voltageLevels: number[]
+}

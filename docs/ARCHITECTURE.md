@@ -10,16 +10,17 @@ RouteFieldsSolver screens nearby conductor pairs and extracts coupled coefficien
 IBIS conversion resolves scalar or coupled package elements and validates selected package matrices during admission.
 RouteBindingsSolver associates compiled buffers, sources and probes with the allocated circuit node map.
 RouteNetworkSolver integrates route energies into a coupled ladder with via and oblique corrections and emits a deck.
+RouteTransientSolver invokes ngspice through the injected solver port and publishes complete raw-vector captures.
 
 ```mermaid
 flowchart LR
-  input["Routed fields and bindings"] --> result["RouteNetworkSolver"]
+  input["RouteNetworkSolver"] --> result["RouteTransientSolver"]
 ```
 
 ```mermaid
 stateDiagram-v2
   [*] --> Ready
-  Ready --> Complete: RouteNetworkSolver
+  Ready --> Complete: RouteTransientSolver
   Ready --> Failed: invalid input
   Complete --> [*]
   Failed --> [*]

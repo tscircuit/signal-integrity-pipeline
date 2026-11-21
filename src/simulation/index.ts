@@ -23,6 +23,7 @@ export { RouteBindingsSolver } from "./route-bindings"
 export { type RouteLadder, routeLadder } from "./route-ladder"
 export { RouteNetworkSolver } from "./route-network"
 export { routeOblique } from "./route-oblique"
+export { RouteTransientSolver } from "./route-transient"
 export {
   barrelCapacitance,
   barrelInductance,
@@ -30,11 +31,11 @@ export {
   routeTransitions,
   terminalInductance,
 } from "./route-transitions"
-
 export { routedControl } from "./routed-control"
 export type {
   RouteBindingsInput,
   RoutedBindings,
+  RoutedCapture,
   RoutedCompileOptions,
   RoutedDeck,
   RouteNetworkInput,

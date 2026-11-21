@@ -18,7 +18,7 @@ import { join } from "node:path"
 import { createNativeSolver, loadIbisSources } from "../../src/adapters"
 import type { CircuitJson } from "../../src/board"
 import { rootScope } from "../../src/kernel"
-import { invoke } from "../../src/solver"
+import { invoke, type SolverRequest } from "../../src/solver"
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -289,5 +289,54 @@ test("loadIbisSources rejects traversal and symlinks escaping baseDir, follows c
   assert.equal(
     new TextDecoder().decode(sources["models/link.ibs"] as Uint8Array),
     "inside",
+  )
+})
+
+/** The fake solver holds the lock across asynchronous work to detect overlap. */
+const LOCK_HOLD_MS = 30
+
+/** A request handled by the fake ngspice process. */
+function nativeTestRequest(args: string[]): SolverRequest {
+  return { solver: "ngspice", files: {}, args, outputFiles: [] }
+}
+
+test("serializes native adapter instances", async () => {
+  const { root, tool } = await sandbox()
+  const lockPath = JSON.stringify(join(root, "active"))
+  const body = `
+    const fs = require('node:fs')
+    fs.closeSync(fs.openSync(${lockPath}, 'wx'))
+    setTimeout(() => {
+      fs.unlinkSync(${lockPath})
+      console.log(\`\${process.env.OMP_NUM_THREADS}:\${process.env.SPICE_ASCIIRAWFILE}\`)
+    }, ${LOCK_HOLD_MS})
+  `
+  const first = createNativeSolver({ tools: { ngspice: process.execPath } })
+  const second = createNativeSolver({ tools: { ngspice: process.execPath } })
+  const request = nativeTestRequest(tool(body))
+  const results = await Promise.all([
+    first(request),
+    second(request),
+    first(request),
+  ])
+  assert.ok(results.every((result) => result.stdout.trim() === "1:1"))
+})
+
+test("releases the native queue after a failure", async () => {
+  const { tool } = await sandbox()
+  const first = createNativeSolver({ tools: { ngspice: process.execPath } })
+  const second = createNativeSolver({ tools: { ngspice: process.execPath } })
+  const request = nativeTestRequest(
+    tool(
+      'console.log(process.env.OMP_NUM_THREADS+":"+process.env.SPICE_ASCIIRAWFILE)',
+    ),
+  )
+  await assert.rejects(first(nativeTestRequest(tool("process.exit(1)"))), {
+    code: "native_solver",
+  })
+  assert.equal(
+    (await second(request)).stdout.trim(),
+    "1:1",
+    "a failed native request releases the queue",
   )
 })

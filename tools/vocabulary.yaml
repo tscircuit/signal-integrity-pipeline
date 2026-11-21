@@ -173,6 +173,7 @@ domain:
   seal: sort and freeze a ledger's files into the published file map
   second: the SI time unit or the second member of an ordered pair
   self: a matrix term belonging to one conductor rather than a mutual pair
+  separator: a character that marks the boundary between raw fields or lines
   settle: stay within a stated tolerance for the entire remaining measured waveform
   shunt: an electrical branch across two conductor or reference nodes
   signal: a voltage that carries data along a lane
@@ -198,6 +199,7 @@ domain:
   tail: the inactive end of a measured transition after settling
   tangent: dielectric dissipation factor or direction along a boundary panel
   terminal: a connection end of a conductor or source
+  timestamp: the time at which a waveform sample was recorded
   top: the outer copper layer on the upper face of the board
   trace: a copper wire on one board layer
   transient: a circuit simulation that follows voltage and current through time
@@ -211,6 +213,7 @@ domain:
   waveform: voltage over time at one probe
   weight: a switching coefficient extracted from IBIS voltage and current data
   wire: a piece of copper that carries a signal; in plain words, a trace or via
+  word: a contiguous non-whitespace field in an ASCII raw file or diagnostic
 
 abbreviations:
   ac: alternating current; in DDR thresholds, the level a signal must reach
