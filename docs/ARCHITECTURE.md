@@ -1,5 +1,10 @@
 # Signal-integrity pipeline architecture
 
+`RoutedPipelineSolver` is the public entry. It consumes Circuit JSON source records
+from RFC #28. `pipeline/signals.ts` (`prepareBlockById`) groups blocks and derives
+private settings and native declarations, one block per admission step. The lowered
+transient records are private and never appear in the input Circuit JSON.
+
 The stack retains Circuit JSON validation, physical stackup and stimulus helpers, IBIS asset loading and the ngspice adapter.
 Declare transient channels in Circuit JSON. Signal preparation validates endpoint topology, selected IBIS capabilities,
 timing and pseudo-random binary sequence (PRBS) patterns.
@@ -14,14 +19,192 @@ RouteTransientSolver invokes ngspice through the injected solver port and publis
 
 ```mermaid
 flowchart LR
-  input["RouteNetworkSolver"] --> result["RouteTransientSolver"]
+  source["Circuit JSON SI records"] --> admit["pipeline: independent block admission<br/>buffers: package admission, unlisted-pin hierarchy and passivity"]
+  admit --> sections["board: copper scope, straight sections and reference planes"]
+  sections --> fields["extraction: quasi-TEM cross-sections, pair screen and causal loss"]
+  admit --> bindings["buffers + simulation: vendor models, pin packages, ideal die rails, probes and sources"]
+  fields --> network["simulation: coupled ladders, via and oblique corrections, one deck"]
+  bindings --> network
+  network --> transient["simulation: one native ngspice transient per block"]
+  transient --> output["pipeline: captures and the sealed artifact ledger"]
+  admit -->|"no SI blocks"| output
+```
+
+Module boundaries remain enforced by `check:modules`: modules import one another
+through their index, never internals; imports are acyclic; only adapters import
+Node facilities. Domain modules return owned artifacts. The pipeline ledger
+rejects path collisions and seals files in sorted order. Blocks have separate
+artifact prefixes.
+
+`board` owns physical admission, the copper scope, route sections and board drawings;
+`buffers` owns vendor source bytes, pin/model selection and package assembly;
+`extraction` owns cross-section field solves, route lines, pair coupling and matrix
+checks; `simulation` owns declarations, electrical sources, node identity, the routed
+deck and ngspice; `observation` reads native ngspice vectors; `solver` validates
+native runs. `adapters` supplies explicit filesystem/process IO.
+
+`buffers/package-model.ts` parses local IBIS package definitions;
+`package-matrix.ts` validates the complete matrices and reduces unused floating
+pins; `coupled-package.ts` emits the coupled lumped pi circuit. Admission runs
+during block admission, before extraction. Assembly records selected matrices,
+original self terms, unused pins, merged rail associations and the termination policy.
+Unlisted pins follow the IBIS scalar hierarchy or implicit merged rail bus rules.
+Core only checks declaration/model bindings, capabilities and routing. The converter still
+supplies die buffers with its package omitted; the pipeline must then realize
+the selected vendor package.
+
+Tests use TSX for board reproductions. Synthetic engine responses exercise parsing
+and drawing only; they are never claimed as native solver evidence.
+
+The runtime imports the shared circuit-json schemas. Local validation must build the sibling RFC branch until circuit-json#983 is released. No absolute local dependency links are committed. TSX tests and examples use the built core directly.
+
+Core#5286 emits JLC preset plating (0.018 mm), preserving explicit imported stackup plating; routed vias require it. RFC pours request ground escape routing with `unbroken`; the differential example uses manual paths and retains its original autorouter reproduction. Branched routes and cycles remain unsupported.
+
+## 2D extraction
+
+`extraction/cross-section.ts`, exported by `extraction/index.ts`, owns a separate
+quasi-TEM numerical interface. It consumes rectangles, infinite solid references,
+and dielectric/mask slabs and returns per-unit-length C/C0/L and frequency-dependent
+R/G. `RouteFieldsSolver` consumes it. The routed root folds the ledger once
+all block stages complete.
+
+```mermaid
+flowchart LR
+  section[Rectangular cross-section and material slabs] --> regions[Split at solid reference planes]
+  regions --> fields[Boundary-element material and vacuum solves]
+  fields --> capacitance[C and C0]
+  capacitance --> inductance[External L from inverse C0]
+  fields --> dielectric[Analytic material-energy sensitivity]
+  regions --> walls[Two vacuum wall perturbations]
+  walls --> skin[Wheeler skin-loss matrix]
+  dielectric --> result[Per-unit-length matrices and frequency sampler]
+  skin --> result
+  inductance --> result
+  result --> routed[Routed pipeline: arc-cell energies and causal ladders]
+  routed --> pilot[Bounded native pilot and failure evidence]
+```
+
+## Routed coupling
+
+`board` admits candidate nets within 32 mm unless the problem narrows the scope.
+`extraction/route-coupling.ts` solves parallel pairs before assembling final
+cross-sections; either normalized mutual C or L at least 0.5% retains the pair.
+The cap, 40-conductor guard and omissions are recorded.
+
+```mermaid
+flowchart LR
+  board[Physical routed copper] --> cap[Board candidate-net admission and reference slicing]
+  cap --> pair[Extraction solved parallel pair screen]
+  pair --> field[Extraction retained 2D cross-sections]
+  field --> ladder[Simulation route-arc energy assembly]
+  ladder --> native[Guarded serial native transient]
+  native --> verdict[Candidate capture, unqualified]
+```
+
+## Inspectable routed compiler
+
+Stage classes live with their domain knowledge. Root admission calls
+`prepareBlockById` once per SI block. Each admitted
+block is passed through the same six static top-level stages. The entire
+`pipelineDef` exists before admission starts; no step creates stages at runtime.
+`RoutedStageSolver` steps each domain algorithm across all admitted blocks in
+order, one domain item per step, and publishes an immutable array in admission
+order. It is a `BaseSolver`, with no nested pipeline or child debugger rows.
+The single `routedStages` tuple supplies the debugger order, tests, artifact
+manifest and generated docs below.
+Regenerate with `bun scripts/document-routed-stages.ts`.
+
+<!-- routed-stages:start -->
+| # | Stage solver |
+|---|---|
+| 1 | RoutedAdmissionSolver |
+| 2 | RouteSectionsSolver |
+| 3 | RouteFieldsSolver |
+| 4 | RouteBindingsSolver |
+| 5 | RouteNetworkSolver |
+| 6 | RouteTransientSolver |
+
+```mermaid
+flowchart LR
+  s0["RoutedAdmissionSolver<br/>Admit one SI block per step"]
+  s1["RouteSectionsSolver<br/>All admitted blocks, one item per step"]
+  s2["RouteFieldsSolver<br/>All admitted blocks, one item per step"]
+  s3["RouteBindingsSolver<br/>All admitted blocks, one item per step"]
+  s4["RouteNetworkSolver<br/>All admitted blocks, one item per step"]
+  s5["RouteTransientSolver<br/>All admitted blocks, one item per step"]
+  s0 --> s1
+  s1 --> s2
+  s2 --> s3
+  s3 --> s4
+  s4 --> s5
+  s5 <-->|"await RunSolver"| engine["local native ngspice"]
 ```
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Ready
-  Ready --> Complete: RouteTransientSolver
-  Ready --> Failed: invalid input
-  Complete --> [*]
-  Failed --> [*]
+  [*] --> RoutedAdmissionSolver
+  RoutedAdmissionSolver --> RouteSectionsSolver: all blocks completed
+  RouteSectionsSolver --> RouteFieldsSolver: all blocks completed
+  RouteFieldsSolver --> RouteBindingsSolver: all blocks completed
+  RouteBindingsSolver --> RouteNetworkSolver: all blocks completed
+  RouteNetworkSolver --> RouteTransientSolver: all blocks completed
+  RouteTransientSolver --> [*]
+  RoutedAdmissionSolver --> failed
+  RouteSectionsSolver --> failed
+  RouteFieldsSolver --> failed
+  RouteBindingsSolver --> failed
+  RouteNetworkSolver --> failed
+  RouteTransientSolver --> failed
+  failed --> [*]
 ```
+<!-- routed-stages:end -->
+
+`RouteFieldsSolver` owns its geometry-keyed BEM cache; completed snapshots contain
+numeric coefficients without Maps or frequency callbacks. `routedSimulation`,
+its bulk `extractRoutes` loop and caller-owned field cache are deleted. Segmentation
+and ladder generators retain one canonical algorithm, also drained by existing
+numerical primitive callers. Network stepping creates one route run's cells;
+its final step assembles the coupled global matrices, oblique/via terms and deck.
+One BEM solve is atomic. The 40-conductor limit remains enforced. Route-arc
+energies store only nonzero entries integrated from common slices, capped at
+500,000 entries across R/L/skin/C/dielectric matrices. A non-dominant shunt
+requiring dense modal realization separately caps its allocation at 500,000
+entries. Neither guard depends on a raw 1,024-cell limit.
+
+Coupled series resistance uses a normalized reciprocal multiport. For
+`S = diag(sqrt(Rii))`, its auxiliary node voltages are `x = S I`, its
+unit-diagonal conductance matrix is `S^-1 R S^-1`, and opposite VCCS stamps
+enforce `V = R I`. This congruence preserves signed mutual resistance and
+passivity without dense inversion. Uncoupled rows use ordinary resistors.
+The former zero-volt sensors and series CCVS chains lost numerical accuracy
+at near-zero Foster voltages on large, weakly anchored neighbour networks.
+Replacing that realization deliberately changes routed deck bytes and their
+pins; field coefficients, loss poles, topology and solver tolerances stay fixed.
+
+Causal skin loss is one coupled layer, not nine. Every Foster pole scales the
+same matrix, so `Z(s) = z(s) S`. Rows without mutual terms keep scalar R || L pole
+stages. Coupled rows share one normalized multiport: a series VCCS carries
+`I = x / sqrt(Sii)`, the auxiliary KCL is `sum_j Sn_ij u_j = V / sqrt(Sii)`, and a
+grounded unit Foster stage sequence gives `u = z(s) x`. The former per-pole multiports
+and `K` layers stacked nine copies of the coupling graph, which caused 8.9M LU fill
+on the DDR3 deck. Those auxiliary rows have no diagonal, so routed decks set
+`pivrel=0.1`. `klu_refactor` reuses the pivots chosen on the first transient
+iteration, and the default `1e-3` lets the first time point fail. The profiling that
+found this is in PR #84.
+
+Completed domain values are copied and frozen. Only the root folds the six stages'
+`Produced` artifacts into `ArtifactLedger`; runtime timings stay in `stats`.
+Original assumptions, coupling decisions, reference omissions, external ports,
+model provenance, node maps, via/oblique policies and deck evidence remain visible.
+
+`RouteTransientSolver` awaits one `solver.invoke` call in `_stepAsync`. Its
+self-contained `.save` + `.tran` deck keeps KLU and Gear in native batch ngspice.
+Native batch emits ASCII raw vectors (`SPICE_ASCIIRAWFILE=1`). Diagnostics, finite
+samples, start and final simulated time are checked before publishing a capture.
+Errors leave the stage failed without partial output. Native adapter instances
+share a process queue and set OMP_NUM_THREADS=1. Large DDR3 transients remain
+unverified. Completion is candidate evidence without independent convergence
+qualification.
+
+Async stepping uses solver-utils PR #62 at `127f17012c7c391005254993864b26801f418249`
+through an integrity-locked pkg.pr.new URL. Switch to a release after #62 ships.

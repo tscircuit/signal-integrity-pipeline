@@ -1,39 +1,137 @@
 ## What is it?
 
-Signal-integrity tools for tscircuit boards.
+Native signal-integrity simulation for tscircuit boards. Describe each test with
+`<simulation.pcbtransientchannelsimulation>` and `<simulation.pcbdriverreceiverchannel>`. `RoutedPipelineSolver` consumes the
+resulting Circuit JSON, solves quasi-TEM 2D cross-sections along the actual routed copper (2.5D), assembles
+coupled ladders with the IBIS buffers, and runs one transient per block in ngspice.
+This draft implements the pipeline entry of [RFC #28](https://github.com/tscircuit/rfc/pull/28).
 
 ## How to use it?
 
-The stack retains Circuit JSON validation, physical stackup and stimulus helpers, IBIS asset loading and the ngspice adapter.
-`RoutedAdmissionSolver` reads PCB transient channel simulation records written by core from TSX. It checks
-channel endpoints, IBIS models, timing and patterns, including pseudo-random binary sequences (PRBS).
-Each declared block becomes immutable inputs for route sections and buffer binding.
-RouteSectionsSolver divides scoped copper into straight slices and resolves physical endpoint contacts.
-The standalone 2D cross-section solve returns per-unit-length C/C0/L and frequency-dependent R/G.
-RouteFieldsSolver screens nearby conductor pairs and extracts coupled coefficients for each unique section.
-IBIS conversion resolves scalar or coupled package elements and validates selected package matrices during admission.
-RouteBindingsSolver associates compiled buffers, sources and probes with the allocated circuit node map.
-RouteNetworkSolver integrates route energies into a coupled ladder with via and oblique corrections and emits a deck.
-RouteTransientSolver invokes ngspice through the injected solver port and publishes complete raw-vector captures.
+```tsx
+import { simulation } from "@tscircuit/core"
+
+<board fabricatorPreset="jlcpcb_standard">
+  {/* Place the routed endpoints and their simulation.ibismodel declarations here. */}
+  <simulation.pcbtransientchannelsimulation name="DATA_TEST" bitRate="20Mbps">
+    <simulation.pcbdriverreceiverchannel name="DATA" driverRef=".TX > .Y" receiverRef=".RX > .A" />
+  </simulation.pcbtransientchannelsimulation>
+  <simulation.eyediagram name="DATA_EYE" simulationRef="DATA_TEST" />
+</board>
+```
+
+```ts
+import { RoutedPipelineSolver } from '@tscircuit/signal-integrity-pipeline'
+import { createNativeSolver, loadIbisSources } from '@tscircuit/signal-integrity-pipeline/node'
+
+const solver = new RoutedPipelineSolver({
+  input: { circuitJson, ibisSources: await loadIbisSources({ circuitJson, baseDir: '.' }) },
+  context: { runSolver: createNativeSolver({ timeoutMs: 600_000 }), progress: console.log },
+})
+await solver.solveAsync()
+const { blocks, files } = solver.getOutput()
+```
+
+Circuit JSON is the electrical input. `ibisSources` and the `{ runSolver, progress }`
+context are IO ports. Circuit JSON durations and channel offsets are in milliseconds.
+Captured solver timestamps are in seconds. The board declares the simulation configuration. Each `blocks`
+entry holds its compiled ngspice deck with evidence and its completed probe capture.
+Captures are candidate evidence without independent convergence qualification.
+`files` maps every artifact path to its bytes; writing them is the caller's choice.
+A board with no SI blocks completes after admission without invoking a solver.
+
+Branched routes remain unsupported. Inline IBIS coupled package matrices are
+validated before the deck is built and lowered to a passive lumped package. Unlisted
+pins follow the IBIS [Pin]/[Package] hierarchy and merged rail bus rules;
+missing or invalid matrix definitions still fail.
+Die POWER/GND references always connect directly to perfect rails;
+vendor package R/L/C remains between every mapped pin and its die node.
+
+The TSX examples use the pinned `@tscircuit/core` release. Place transient
+simulations and eye diagrams directly under the board, including when it
+contains cached subcircuits. Core checks endpoint connectivity and routing,
+supplies preset via plating, and plans omitted pseudo-random binary sequence (PRBS) seeds by channel name.
+The pipeline reads the IBIS assets and validates the selected model capabilities.
+
+ngspice must already be installed; `createNativeSolver({ tools: { ngspice } })`
+accepts an executable path. No package install or solver download happens during
+a solve. Native processes are serialized and run with `OMP_NUM_THREADS=1`.
+Vendor IBIS files and board JSON remain local and ignored by git.
 
 ## General workflow
 
 ```mermaid
+flowchart TD
+  board[/"Your board<br/>(Circuit JSON with transient channel blocks)"/] --> s1["1. Admit each block: drivers, receivers, pin states, patterns and the copper scope<br/><small>pipeline</small>"]
+  chips[/"Chip models<br/>(IBIS files; coupled package admission)"/] --> s1
+  s1 --> s2["2. Cut the scoped copper into straight sections over their reference planes<br/><small>board</small>"]
+  s2 --> s3["3. Solve each unique cross-section's coupled R, L, G and C<br/><small>extraction</small>"]
+  chips --> s4
+  s3 --> s4["4. Bind IBIS buffers, probes, sources and passives to physical ports<br/><small>buffers, simulation</small>"]
+  s4 --> s5["5. Assemble delay-bounded coupled ladders with via and oblique corrections into one deck<br/><small>simulation</small>"]
+  s5 --> s6["6. Run one transient per block and admit only complete probe vectors<br/><small>simulation</small>"]
+  s6 <-->|"RunSolver"| ng{{"ngspice"}}
+  s6 --> out[/"Captures + deck and evidence artifacts"/]
+  s1 -->|"no SI blocks"| out
+```
+
+<!-- routed-stages:start -->
+| # | Stage solver |
+|---|---|
+| 1 | RoutedAdmissionSolver |
+| 2 | RouteSectionsSolver |
+| 3 | RouteFieldsSolver |
+| 4 | RouteBindingsSolver |
+| 5 | RouteNetworkSolver |
+| 6 | RouteTransientSolver |
+
+```mermaid
 flowchart LR
-  input["RouteNetworkSolver"] --> result["RouteTransientSolver"]
+  s0["RoutedAdmissionSolver<br/>Admit one SI block per step"]
+  s1["RouteSectionsSolver<br/>All admitted blocks, one item per step"]
+  s2["RouteFieldsSolver<br/>All admitted blocks, one item per step"]
+  s3["RouteBindingsSolver<br/>All admitted blocks, one item per step"]
+  s4["RouteNetworkSolver<br/>All admitted blocks, one item per step"]
+  s5["RouteTransientSolver<br/>All admitted blocks, one item per step"]
+  s0 --> s1
+  s1 --> s2
+  s2 --> s3
+  s3 --> s4
+  s4 --> s5
+  s5 <-->|"await RunSolver"| engine["local native ngspice"]
 ```
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Ready
-  Ready --> Complete: RouteTransientSolver
-  Ready --> Failed: invalid input
-  Complete --> [*]
-  Failed --> [*]
+  [*] --> RoutedAdmissionSolver
+  RoutedAdmissionSolver --> RouteSectionsSolver: all blocks completed
+  RouteSectionsSolver --> RouteFieldsSolver: all blocks completed
+  RouteFieldsSolver --> RouteBindingsSolver: all blocks completed
+  RouteBindingsSolver --> RouteNetworkSolver: all blocks completed
+  RouteNetworkSolver --> RouteTransientSolver: all blocks completed
+  RouteTransientSolver --> [*]
+  RoutedAdmissionSolver --> failed
+  RouteSectionsSolver --> failed
+  RouteFieldsSolver --> failed
+  RouteBindingsSolver --> failed
+  RouteNetworkSolver --> failed
+  RouteTransientSolver --> failed
+  failed --> [*]
 ```
+<!-- routed-stages:end -->
+
+Missing electrical facts fail explicitly. Numerical settings come from selected
+IBIS edge rates, bit rates, stackup and actual routes. Every block produces an
+independent run. A differential endpoint drives opposite physical levels and
+measures P minus N. Quiet channels remain connected and are probed at the far
+receiver and at the near quiet driver. Single-ended probes always use their chip's
+local ground. Numeric offsets are seconds. Automatic duration adds 128 unit
+intervals at the slowest switching bit rate after startup. Quiet-only blocks use
+32 unit intervals at the slowest bit rate. Explicit durations are never extended.
+IBIS values always use the typical corner.
 
 ## Development validation
 
 Install dependencies with `bun install --frozen-lockfile`, then run `bun test`.
 Optional checks use `test.skipIf` and known failures still execute through `test.failing`.
-Run `bun run test:package` to verify the packed package in Node.
+Run `bun run test:package` to verify the packed package in Node and Bun.

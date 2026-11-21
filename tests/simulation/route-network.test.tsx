@@ -2,10 +2,15 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import React from "react"
 import { createNativeSolver } from "../../src/adapters"
-import { RouteSectionsSolver } from "../../src/board"
-import { RouteFieldsSolver } from "../../src/extraction"
-import { RoutedAdmissionSolver, type RoutedProblem } from "../../src/pipeline"
-import { RouteBindingsSolver, RouteNetworkSolver } from "../../src/simulation"
+import {
+  RoutedPipelineSolver,
+  type RoutedStageSolver,
+} from "../../src/pipeline"
+import {
+  type RoutedDeck,
+  type RouteNetworkInput,
+  RouteNetworkSolver,
+} from "../../src/simulation"
 import { routedRequest } from "../../src/simulation/route-transient"
 import { quietDriverIbis } from "../fixtures/routed-visual-fixture"
 import Single from "../fixtures/unit-single-ended"
@@ -13,50 +18,26 @@ import { vendorAvailable } from "../fixtures/vendor-models"
 import { renderCoreSignals } from "../support/core-render"
 import { routedProblem } from "../support/routed-fixture"
 
-let testNetwork: RouteNetworkSolver | undefined
+/** The network stage produces one routed deck per admitted block. */
+type NetworkStage = RoutedStageSolver<RouteNetworkInput, RoutedDeck>
 
-/** Compile the complete routed deck from a core-rendered board and its IBIS sources. */
-function compileNetwork(input: RoutedProblem): RouteNetworkSolver {
-  const admission = new RoutedAdmissionSolver(input)
-  admission.solve()
-  const plan = admission.getOutput().value[0]
-  const sections = new RouteSectionsSolver(plan.sections)
-  sections.solve()
-  const { geometry, circuitJson, scope, maskThicknessMm } =
-    sections.getOutput().value
-  const fields = new RouteFieldsSolver({
-    geometry,
-    circuitJson,
-    scope,
-    maskThicknessMm,
-    materials: plan.bindings.options.materials,
-    artifactPrefix: plan.sections.artifactPrefix,
-  })
-  fields.solve()
-  const extracted = fields.getOutput().value
-  const bindings = new RouteBindingsSolver({ ...plan.bindings, scope })
-  bindings.solve()
-  const network = new RouteNetworkSolver({
-    blockId: plan.id,
-    name: plan.name,
-    geometry,
-    extracted,
-    bindings: bindings.getOutput().value,
-    materials: extracted.materials,
-    options: plan.bindings.options,
-    warnings: plan.warnings,
-    artifactPrefix: plan.sections.artifactPrefix,
-  })
-  network.solve()
-  return network
-}
+let testNetwork: NetworkStage | undefined
 
-/** Cache the network from the rendered fixture and the local vendor model. */
-async function routedNetwork(): Promise<RouteNetworkSolver> {
+/** Assemble the network from the rendered fixture and the local vendor model. */
+async function routedNetwork(): Promise<NetworkStage> {
   if (testNetwork) return testNetwork
   const input = await routedProblem()
-  testNetwork = compileNetwork(input)
-  return testNetwork
+  const solverContext = {
+    progress: (): void => undefined,
+    runSolver: async (): Promise<never> => {
+      throw new Error("network test must not run ngspice")
+    },
+  }
+  const root = new RoutedPipelineSolver({ input, context: solverContext })
+  root.solveUntilStage("RouteTransientSolver")
+  const network = root.getSolver<NetworkStage>(RouteNetworkSolver.name)!
+  testNetwork = network
+  return network
 }
 
 test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
@@ -71,7 +52,7 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
   "records ladder statistics",
   async () => {
     const network = await routedNetwork()
-    const output = network.getOutput().value
+    const output = network.getOutput().value[0]
     assert.ok(output.evidence.cells)
     assert.ok(output.evidence.maximum_cell_delay_s)
   },
@@ -81,7 +62,7 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
   "anchors floating copper",
   async () => {
     const network = await routedNetwork()
-    assert.ok(network.getOutput().value.deck.includes("RBIAS"))
+    assert.ok(network.getOutput().value[0].deck.includes("RBIAS"))
   },
 )
 
@@ -89,7 +70,7 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
   "sets the KLU pivot tolerance",
   async () => {
     const network = await routedNetwork()
-    const output = network.getOutput().value
+    const output = network.getOutput().value[0]
     // klu_refactor reuses the first transient pivots; the zero-diagonal skin multiport rows need KLU tol 0.1.
     assert.match(output.deck, /^\.options klu .* pivrel=0\.1$/m)
   },
@@ -99,7 +80,7 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
   "keeps all planned probes",
   async () => {
     const network = await routedNetwork()
-    const output = network.getOutput().value
+    const output = network.getOutput().value[0]
     assert.equal(
       output.probes.length,
       3,
@@ -112,7 +93,7 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
   "records the scope of candidate evidence",
   async () => {
     const network = await routedNetwork()
-    const output = network.getOutput().value
+    const output = network.getOutput().value[0]
     assert.ok(
       (output.evidence.warnings as string[]).some((warning) =>
         warning.includes("candidate channel experiment"),
@@ -150,10 +131,15 @@ async function assertConstantHighCapture({
     />,
   )
   const ibisSources = { "models/sn74lvc1g04.ibs": quietDriverIbis }
-  const { value: compiled } = compileNetwork({
-    circuitJson,
-    ibisSources,
-  }).getOutput()
+  const solve = createNativeSolver({
+    tools: { ngspice: process.env.NGSPICE_BIN },
+  })
+  const root = new RoutedPipelineSolver({
+    input: { circuitJson, ibisSources },
+    context: { progress: (): void => undefined, runSolver: solve },
+  })
+  root.solveUntilStage("RouteTransientSolver")
+  const compiled = root.stageOutput("RouteNetworkSolver").value[0]
   const driver = circuitJson.find(
     (record) => record.type === "simulation_pcb_driver_receiver_channel",
   )?.driver
@@ -165,9 +151,6 @@ async function assertConstantHighCapture({
     driverProbe?.referenceNode === "0",
     "the driver probe is referenced to ground",
   )
-  const solve = createNativeSolver({
-    tools: { ngspice: process.env.NGSPICE_BIN },
-  })
   const request = routedRequest(compiled)
   const [rawFile] = request.outputFiles
   const output = await solve({

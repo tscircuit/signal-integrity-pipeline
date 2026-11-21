@@ -1,7 +1,7 @@
 import type React from "react"
 import type { CircuitJson } from "../../src/board"
 import type { IbisSources } from "../../src/buffers"
-import { RoutedAdmissionSolver } from "../../src/pipeline"
+import { RoutedPipelineSolver } from "../../src/pipeline"
 import {
   type PreparedBlock,
   prepareBlockById,
@@ -58,32 +58,23 @@ export function prepareBlocks({
   )
 }
 
-/** Binding inputs prepared by admission before a route binding solver allocates an artifact scope. */
-type AdmittedRouteBindings = Omit<RouteBindingsInput, "scope">
-
-/** The first admitted block's bindings, checked by the standalone admission solver. */
+/** Gets the first block's bindings through the same IBIS decoding path as the public solver. */
 export function admittedBindings({
   circuitJson,
   ibisSources,
 }: {
   circuitJson: CircuitJson
   ibisSources: IbisSources
-}): AdmittedRouteBindings {
-  const textSources = Object.fromEntries(
-    Object.entries(ibisSources).map(([name, bytes]) => {
-      if (typeof bytes === "string") return [name, bytes] as const
-      return [
-        name,
-        new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-          bytes,
-        ),
-      ] as const
-    }),
-  )
-  const admission = new RoutedAdmissionSolver({
-    circuitJson,
-    ibisSources: textSources,
+}): Omit<RouteBindingsInput, "scope"> {
+  const root = new RoutedPipelineSolver({
+    input: { circuitJson, ibisSources },
+    context: {
+      runSolver: async () => {
+        throw new Error("admission needs no native solver")
+      },
+      progress: () => undefined,
+    },
   })
-  admission.solve()
-  return admission.getOutput().value[0].bindings
+  root.solveUntilStage("RouteSectionsSolver")
+  return root.stageOutput("RoutedAdmissionSolver").value[0].bindings
 }
