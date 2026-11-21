@@ -14,10 +14,15 @@ export default function ({
   bitRate = BIT_RATE_BPS,
   pattern,
   seed,
+  timing = { durationSeconds: CAPTURE_BITS / bitRate },
 }: {
   bitRate?: number
   pattern?: string
   seed?: number
+  timing?: {
+    durationSeconds?: number
+    offsetSeconds?: number
+  }
 } = {}): React.JSX.Element {
   return (
     <board
@@ -42,7 +47,7 @@ export default function ({
       <simulation.pcbtransientchannelsimulation
         name="SINGLE"
         bitRate={bitRate}
-        duration={CAPTURE_BITS / bitRate}
+        duration={timing.durationSeconds}
       >
         <simulation.pcbdriverreceiverchannel
           name="DATA"
@@ -50,6 +55,7 @@ export default function ({
           receiverRef=".RX > .A"
           pattern={pattern}
           seed={seed}
+          offset={timing.offsetSeconds}
         />
       </simulation.pcbtransientchannelsimulation>
     </board>

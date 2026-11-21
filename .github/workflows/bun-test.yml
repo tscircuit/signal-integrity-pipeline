@@ -35,6 +35,18 @@ jobs:
         env:
           IBIS_MODEL_DIR: models
 
+      - name: Install ngspice
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ngspice=42+ds-3build1
+          ngspice --version
+      - name: Test constant-high waveform
+        env:
+          SI_TEST_SWITCHING_NGSPICE: '1'
+        run: >-
+          bun test tests/simulation/route-network.test.tsx
+          --test-name-pattern '^a constant-high driver stays high throughout (the default|an explicit) capture$'
+
       - name: Upload snapshot artifacts
         if: always()
         uses: actions/upload-artifact@v4

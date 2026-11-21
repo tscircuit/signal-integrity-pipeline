@@ -2,15 +2,17 @@ import type {
   CircuitJson,
   CopperScope,
   LaneMapping,
+  SectionGeometry,
   SourcePortId,
 } from "../board"
 import type { CompiledBuffer, IbisSources } from "../buffers"
-import type { RouteMaterials } from "../extraction"
+import type { ExtractedRoutes, RouteMaterials } from "../extraction"
 import type {
   CircuitNodes,
   RunControls,
   SimulationModeling,
   SimulationPlan,
+  VoltageProbePlan,
 } from "./types"
 
 /** Timing and mesh settings shared by the routed simulation stages. */
@@ -19,6 +21,9 @@ export interface RoutedCompileOptions {
   refinement: number
   durationSeconds: number
   stepSeconds: number
+  panels?: number
+  currentToleranceA?: number
+  cellsPerRise?: number
   materials?: RouteMaterials
 }
 /** Geometry-independent data required to bind ports to routed IBIS buffers. */
@@ -52,4 +57,27 @@ export interface RoutedBindings {
   groundSourcePortId: SourcePortId
   electricalLines: string[]
   models: RouteBuffer[]
+}
+/** Scoped geometry, field results and electrical bindings for a routed deck. */
+export interface RouteNetworkInput {
+  blockId: string
+  name: string
+  geometry: SectionGeometry
+  extracted: ExtractedRoutes
+  bindings: RoutedBindings
+  materials: RouteMaterials
+  options: RoutedCompileOptions
+  warnings: string[]
+  artifactPrefix: string
+}
+/** Executable SPICE input and evidence for one routed transient. */
+export interface RoutedDeck {
+  blockId: string
+  name: string
+  deck: string
+  requestSha256: string
+  probes: VoltageProbePlan[]
+  durationSeconds: number
+  stepSeconds: number
+  evidence: Record<string, unknown>
 }

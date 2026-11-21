@@ -23,6 +23,7 @@ domain:
   admission: validation and derivation of one declared signal-integrity block
   admit: the check that reads declared input (board records, IBIS bytes, signal-integrity blocks) before anything else uses it
   allow: an explicit caller-selected modelling permission
+  annulus: the ring of copper between a via hole and the surrounding pad or plating
   antipad: clearance opening in a plane around a signal via
   arc: distance measured along a routed polyline including its bends
   artifact: a file the pipeline produces (solver deck, log, capture, evidence), recorded in the ledger
@@ -80,6 +81,7 @@ domain:
   dielectric: the insulating material between copper layers
   differential: a signal carried as the voltage difference between two wires
   digital: a stimulus described by timed binary logic states
+  dispersion: frequency-dependent wave travel that can distort a signal edge
   driver: the chip output that sends a signal
   er: relative dielectric permittivity
   evidence: data kept in the result that shows how a conclusion was reached
@@ -88,6 +90,7 @@ domain:
   extent: horizontal reach of the discretised dielectric interfaces
   extract: measure each wire's R, L, G and C from its board cross-sections
   extraction: measuring wire R, L, G and C from board cross-sections with the 2D field solver
+  filament: an ideal thin current path used to estimate mutual inductance
   fixture: a known resistive load used to capture an IBIS switching waveform
   gate: the start of the interval compared during numerical convergence
   general: shared across supported channel experiment shapes
@@ -100,18 +103,22 @@ domain:
   inductance: magnetic flux linkage per unit current, measured in henries
   inductive: coupling between conductors through their magnetic field
   initial: the state or value at the beginning of a simulation
+  integration: accumulating per-length electrical values along a route or over time
   interface: boundary between two dielectric materials
   join: connect physically continuous copper pieces into one path
+  junction: the point where electrically connected conductors meet
   kernel: Green function relating boundary charge to potential or field
   ladder: distributed line approximated by connected lumped electrical cells
   lane: one signal path on the board
   lateral: distance transverse to a routed line in the board plane
   layer: one copper or insulating sheet in the stackup
   ledger: the single record of every artifact path the pipeline writes; a second write to a path fails
+  longitudinal: along a route or trace
   loss: energy dissipated in conductors or dielectrics
   mask: insulating soldermask on the outer copper layers
   mesh: the set of boundary panels used to approximate the field in a cross-section
   metre: SI unit of length used for per-unit-length electrical matrices
+  modal: describing an electrical mode or the factor that represents its stored energy
   model: a chip model (IBIS) or the electrical model of the channel built from extraction
   modeling: private numerical settings derived from Circuit JSON
   nearby: inside the explicitly defined spatial coupling horizon
@@ -138,6 +145,7 @@ domain:
   pole: a stable relaxation rate in a causal rational loss model
   polygon: a closed shape made of outline rings of points
   port: a chip connection the library drives or measures (source_port in Circuit JSON)
+  post: a vertical conductor between a terminal and a route or reference plane
   pour: a filled copper area on a layer (copper pour)
   power: an electrical supply net or reference plane
   prepare: derive private experiment settings from the declared channel intent
@@ -170,6 +178,7 @@ domain:
   signal: a voltage that carries data along a lane
   simplify: reduce curve tessellation while bounding geometric displacement
   simulation: running the SPICE circuit over time with ngspice
+  sine: the trigonometric measure used here to compare route directions
   skin: concentration of alternating conductor current near its surface
   slab: a flat layer of laminate or mask in a cross-section
   slice: one local cross-section of routed conductors and reference surfaces
@@ -193,6 +202,7 @@ domain:
   trace: a copper wire on one board layer
   transient: a circuit simulation that follows voltage and current through time
   transition: a change of layer, reference or conductor geometry
+  transverse: across a route or trace
   typical: the nominal vendor corner for a model value or waveform
   unused: a vendor package lead excluded from the selected physical pin mapping
   vacuum: reference material with relative permittivity one
@@ -244,7 +254,7 @@ general:
   - close compare compile connect contain convert create cross define derive display draw emit end exit
   - expect fail fall find finish flip flush generate get has inspect invoke is link load locate match measure
   - merge normalize omit override parse produce quote raise read receive reduce refine register remove rename
-  - replace reset resolve rise run select set shift skip solve sort split start supply test transmit
+  - replace reset resolve rise run save select set shift skip solve sort split start supply test transmit
   - unlink update use validate view visit write trim crop unroll cast fold append retain
   # states and outcomes
   - connected contained default failure found grounded killed named oriented pinned scoped seen supplied
@@ -270,12 +280,12 @@ general:
   - characterization compliance valid invalid vertical
   # quantities, electricity and units
   - amount amplitude bit current denominator duration electrical energy factor farad fraction frequency
-  - interval material matrix measurement milliseconds ohm offset origin peak period phase plateau
+  - interval material precision matrix measurement milliseconds ohm offset origin peak period phase plateau
   - quantity reduction sample scale seconds speed step time timeout tolerance transmission volt voltage zero
   # math
   - cholesky delaunay exponent integral magnitude interpolation multiply norm ratio sum symmetrize transpose union total
   # geometry
-  - alignment anchor ancestor area aspect border boundary center contact connection coordinate curve
+  - alignment angle anchor ancestor area aspect border boundary center contact connection coordinate curve
   - depth direction distance division edge endpoint epsilon face gap height hole left length nearest
   - outline point position profile radius right round segment side sign size sizing spacing surface circle corner closest across
   - thickness triangle width separation overlap

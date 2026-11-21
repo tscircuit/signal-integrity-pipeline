@@ -82,7 +82,7 @@ Clarity beats brevity. More lines are fine when they are easier to read.
 
 - Reproductions and fixtures are **TSX source rendered through core**, not hand-written Circuit JSON (`tests/fixtures/signal-parts.tsx`, `signal-render.tsx`).
 - Put one `test()` per file. Use a short, kebab-case filename that describes the behaviour in `tests/<module>/<source>/`. Put shared setup in `tests/fixtures/`.
-- For routed pipeline refactors that claim "no behaviour change", prove it before merge:
+- A refactor that claims "no behaviour change" proves it before merge:
   - golden checks unchanged (27 pass, 2 TODO, 2 n/a; vendor waveform records identical);
   - the 40 ns two-trace replay byte-identical (deck SHA-256 and every sample);
   - for connectivity or topology changes, an equivalence run over every example and fixture, comparing results for every port as a seed.

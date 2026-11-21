@@ -8,6 +8,7 @@
  * Imports: kernel, solver, board, extraction, observation, buffers.
  */
 
+export { branchSaves } from "./branch-saves"
 export {
   circuitNodes,
   generalDeclarations,
@@ -19,10 +20,24 @@ export {
   voltageSourceTerminals,
 } from "./netlist"
 export { RouteBindingsSolver } from "./route-bindings"
+export { type RouteLadder, routeLadder } from "./route-ladder"
+export { RouteNetworkSolver } from "./route-network"
+export { routeOblique } from "./route-oblique"
+export {
+  barrelCapacitance,
+  barrelInductance,
+  type RouteTransitions,
+  routeTransitions,
+  terminalInductance,
+} from "./route-transitions"
+
+export { routedControl } from "./routed-control"
 export type {
   RouteBindingsInput,
   RoutedBindings,
   RoutedCompileOptions,
+  RoutedDeck,
+  RouteNetworkInput,
 } from "./routed-types"
 export { MAX_STIMULUS_BITS, transmittedBits } from "./stimulus"
 export type {
