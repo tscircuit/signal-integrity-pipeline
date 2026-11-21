@@ -1,7 +1,9 @@
-import { test } from "bun:test"
+import { setDefaultTimeout, test } from "bun:test"
 import assert from "node:assert/strict"
 import { Circuit } from "@tscircuit/core"
+import { parseIbis } from "@tscircuit/ibis-to-spice"
 import React from "react"
+import { addrCmdPins } from "../../examples/routed/ddr3-signals"
 import { createNativeSolver } from "../../src/adapters"
 import {
   coupledPackage,
@@ -9,8 +11,16 @@ import {
 } from "../../src/buffers/coupled-package"
 import { convertPackaged } from "../../src/buffers/package"
 import { splitWords, subcircuitHeader } from "../../src/buffers/text"
-
 import { Board, source } from "../fixtures/coupled-package"
+import { vendorAvailable, vendorText } from "../fixtures/vendor-models"
+import {
+  energyFacts,
+  isGroundedMaxwell,
+  isPositiveDefinite,
+  maxwellFacts,
+} from "../support/golden-checks"
+
+setDefaultTimeout(150_000)
 
 test("TSX coupled package replaces scalar values, preserves ideal die rails and realizes signed R/L/C", async () => {
   const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
@@ -331,4 +341,85 @@ V2 NC VDD NC NC
     )
     assert.match(result.stdout, /No\. of Data Rows\s*:\s*1/)
   }
+})
+
+const coupledSelection = `golden invariants: DDR3 coupled-package selections stay SPD with |k| < 1, Maxwell ${"C and realizable K"}`
+test.skipIf(!vendorAvailable("sprm552c.ibs"))(coupledSelection, async () => {
+  // Same physics as the full-matrix check (tests/buffers/package-matrix.test.ts), on the exact pin sets the DDR3
+  // TSX declarations select (examples/routed/ddr3-signals.tsx). Schur reduction of floating unused pins preserves
+  // definiteness (Horn & Johnson, Matrix Analysis, 2nd ed., Theorem 7.7.6), and ngspice K must satisfy |k| < 1.
+  const text = await vendorText("sprm552c.ibs")
+  const component = parseIbis(text).components.am335x_zcz
+  const sets = {
+    addrCmd: addrCmdPins.map(([, pin]) => pin),
+    dqWrite: ["M3", "M4", "N1", "N2", "N3", "N4", "P3", "P4", "M2", "P1", "P2"],
+  }
+  const failures: string[] = []
+  for (const [name, signals] of Object.entries(sets)) {
+    const selected = coupledPackage({
+      text,
+      component,
+      pins: [...signals, "E5", "A1"],
+    })!
+    const L = energyFacts(selected.L)
+    const C = energyFacts(selected.C)
+    const maxwell = maxwellFacts(selected.C)
+    const elements = coupledPackageElements({
+      matrices: selected,
+      terminals: selected.pins.map((_, i) => `B${i}`),
+      die: selected.pins.map((_, i) => `D${i}`),
+      ground: "G",
+    })
+    const couplings = elements.filter((line) => line.startsWith("K"))
+    const k = Math.max(
+      ...couplings.map((line) => Math.abs(Number(line.split(" ")[3]))),
+    )
+    console.log(
+      JSON.stringify({
+        set: name,
+        pins: selected.pins.length,
+        mergedPins: selected.mergedPins,
+        L,
+        C,
+        maxwell,
+        largestKElement: k,
+        largestKPins: L.pair.map((i) => selected.pins[i]),
+      }),
+    )
+    if (!isPositiveDefinite(L)) failures.push(`${name} L: ${JSON.stringify(L)}`)
+    if (!isPositiveDefinite(C)) failures.push(`${name} C: ${JSON.stringify(C)}`)
+    if (!isGroundedMaxwell({ facts: maxwell }))
+      failures.push(`${name} Maxwell: ${JSON.stringify(maxwell)}`)
+    if (!(k < 1)) failures.push(`${name}: K element ${k}`)
+  }
+  assert.deepEqual(failures, [])
+})
+
+const scalarPackage =
+  "golden invariants: Winbond DDR3 has no coupled package and every [Pin] R, L, C is non-negative"
+test.skipIf(!vendorAvailable("W631GG6MB-12.ibs"))(scalarPackage, async () => {
+  // A scalar lumped package is passive iff each R, L and C is non-negative (1 x 1 energy matrices).
+  const text = await vendorText("W631GG6MB-12.ibs")
+  const component = parseIbis(text).components["W631GG6MB-12"]
+  assert.equal(
+    coupledPackage({ text, component, pins: Object.keys(component.pins) }),
+    undefined,
+  )
+  const pinValues = Object.values(component.pins).flatMap((pin) => [
+    pin.resistance,
+    pin.inductance,
+    pin.capacitance,
+  ])
+  const values = pinValues.filter((value) => value !== undefined)
+  console.log(
+    JSON.stringify({
+      pins: Object.keys(component.pins).length,
+      scalarValues: values.length,
+      package: component.package,
+    }),
+  )
+  assert.ok(
+    values.length > 0 &&
+      values.every((value) => Number.isFinite(value) && value! >= 0),
+  )
 })
