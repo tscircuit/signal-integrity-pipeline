@@ -80,7 +80,7 @@ Clarity beats brevity. More lines are fine when they are easier to read.
 
 ## Tests
 
-- Reproductions and fixtures are **TSX source rendered through core**, not hand-written Circuit JSON (see `tests/fixtures/native-channel.tsx`).
+- Reproductions and fixtures are **TSX source rendered through core**, not hand-written Circuit JSON (`tests/fixtures/signal-parts.tsx`, `signal-render.tsx`).
 - Put one `test()` per file. Use a short, kebab-case filename that describes the behaviour in `tests/<module>/<source>/`. Put shared setup in `tests/fixtures/`.
 - For routed pipeline refactors that claim "no behaviour change", prove it before merge:
   - golden checks unchanged (27 pass, 2 TODO, 2 n/a; vendor waveform records identical);

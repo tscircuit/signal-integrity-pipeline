@@ -293,11 +293,17 @@ export function circuitNodes({
   const node = createCircuitNodeLookup({ parents, splitNets, names })
   const ids = [...parents.keys()].filter((id) => !splitNets.has(id))
   for (const id of ids) node(id)
-  const endpoints = mappings.flatMap((mapping) => [
-    node(mapping.from),
-    node(mapping.to),
-  ])
-  if (endpoints.includes("0") || new Set(endpoints).size !== endpoints.length)
+  // Adjacent routed segments can share one physical endpoint, such as a receiver with a termination.
+  const endpoints = new Set(
+    mappings.flatMap((mapping) => [mapping.from, mapping.to]),
+  )
+  const endpointNodes = [...endpoints].map(node)
+  const collapsedLane = mappings.some((mapping) => mapping.from === mapping.to)
+  if (
+    collapsedLane ||
+    endpointNodes.includes("0") ||
+    new Set(endpointNodes).size !== endpoints.size
+  )
     fail(
       "channel_short",
       "Extracted endpoints are shorted by another ideal source trace or reference",

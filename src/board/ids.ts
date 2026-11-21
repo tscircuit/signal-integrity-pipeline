@@ -2,6 +2,7 @@ import type {
   PcbPort,
   PcbTrace,
   PcbVia,
+  SimulationPcbTransientChannelSimulation,
   SourceNet,
   SourcePort,
   SourceTrace,
@@ -24,3 +25,12 @@ export type PcbTraceId = PcbTrace["pcb_trace_id"]
 
 /** The identifier of a PCB via in Circuit JSON. */
 export type PcbViaId = PcbVia["pcb_via_id"]
+
+/** The identifier of a PCB transient channel simulation block in Circuit JSON. */
+export type SimulationBlockId =
+  SimulationPcbTransientChannelSimulation["simulation_pcb_transient_channel_simulation_id"]
+
+/** One single-ended port, or the positive and negative ports in that order. */
+export type SignalEndpointPortIds =
+  | [SourcePortId]
+  | [positive: SourcePortId, negative: SourcePortId]

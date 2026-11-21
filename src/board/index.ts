@@ -27,14 +27,24 @@ export type {
   RoutePoint,
   SourcePort,
 } from "./geometry/types"
-export type { SourceNetId, SourcePortId } from "./ids"
+export type {
+  SignalEndpointPortIds,
+  SimulationBlockId,
+  SourceNetId,
+  SourcePortId,
+} from "./ids"
 export type {
   CircuitJson,
   SimulationExperiment,
   SimulationIbisModel,
 } from "./schema"
 export { recordSchema, validateCircuitRecords } from "./schema"
-export { isQuiet, type SimulationPcbDriverReceiverChannel } from "./signals"
+export {
+  isQuiet,
+  type SignalEndpoint,
+  type SimulationPcbDriverReceiverChannel,
+  type SimulationPcbTransientChannelSimulation,
+} from "./signals"
 export {
   type BoardStackup,
   type CopperLayer,
