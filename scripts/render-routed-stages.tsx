@@ -5,6 +5,7 @@ import { Circuit } from "@tscircuit/core"
 import type { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import React from "react"
+import { withDdr3Signals } from "../examples/routed/ddr3-signals"
 import { TwoTraceBoard } from "../examples/routed/two-trace-board"
 import { createNativeSolver } from "../src/adapters"
 import { type CircuitJson, routeTones } from "../src/board"
@@ -223,6 +224,34 @@ await stages({
   },
 })
 
+/** Export the full-board stage drawings when the local DDR3 board is available. */
+async function renderDdr3(boardPath?: string): Promise<void> {
+  if (!boardPath) {
+    const needed = "set SI_DDR3_BOARD and local sprm552c.ibs / W631GG6MB-12.ibs"
+    console.log(
+      `DDR3 board JSON unavailable: ${needed} to render its 24-net addr/cmd scope`,
+    )
+    manifest.ddr3 = "unavailable: SI_DDR3_BOARD not supplied"
+    return
+  }
+  const physical: CircuitJson = JSON.parse(await readFile(boardPath, "utf8"))
+  const sourceEntries = await Promise.all(
+    ["sprm552c.ibs", "W631GG6MB-12.ibs"].map(async (name) => [
+      `models/${name}`,
+      await readFile(join(models, name), "utf8"),
+    ]),
+  )
+  const ibisSources = Object.fromEntries(sourceEntries)
+  const circuitJson = await withDdr3Signals({
+    physicalRecords: physical,
+    options: { block: "DDR3_ADDR_CMD" },
+  })
+  await stages({
+    name: "ddr3-addr-cmd",
+    input: { circuitJson, ibisSources, scopeDistanceMm: 1 },
+  })
+}
+await renderDdr3(process.env.SI_DDR3_BOARD)
 await writeFile(
   join(output, "manifest.json"),
   `${JSON.stringify(manifest, null, 2)}\n`,

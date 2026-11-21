@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises"
 import { BasePipelineSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import React from "react"
+import Differential from "../../examples/level1-differential/level1-differential"
 import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
 import type { CircuitJson } from "../../src/board"
 import { boardPictureView } from "../../src/board/board-picture"
@@ -33,69 +34,58 @@ import { vendorAvailable } from "../fixtures/vendor-models"
 import { renderCoreSignals } from "../support/core-render"
 import { routedProblem } from "../support/routed-fixture"
 
-const vendorModelSkip =
-  !process.env.IBIS_MODEL_DIR &&
-  "Set IBIS_MODEL_DIR to local vendor sn74lvc1g04.ibs; vendor bytes are not committed"
-
-test.skipIf(Boolean(vendorModelSkip))(
-  "TSX two-trace deck pins coupled skin loss and transient vectors",
-  async () => {
-    const circuit = await renderCoreSignals(
-      <TwoTraceBoard bit-rate="400Mbps" duration-seconds={4e-9} />,
-    )
-    const bytes = await readFile(
-      `${process.env.IBIS_MODEL_DIR}/sn74lvc1g04.ibs`,
-    )
-    const modelHash =
-      "03033638d7fe8bf268428be133a5aad63aae0145980113561b20ab92063e2c00"
-    assert.equal(
-      sha256(bytes),
-      modelHash,
-      "oracle uses the same vendor revision",
-    )
-    const solver = new RoutedPipelineSolver({
-      input: {
-        circuitJson: circuit,
-        ibisSources: { "models/sn74lvc1g04.ibs": bytes.toString("utf8") },
-        scopeDistanceMm: 1,
-      },
-      context: synthetic,
-    })
-    solver.solveUntilStage("RouteTransientSolver")
-    const options = {
-      riseSeconds: 1e-9,
-      refinement: 1,
-      durationSeconds: 4e-9,
-      stepSeconds: 1e-11,
-    }
-    const bindingsStage = solver.getSolver<
-      RoutedStageSolver<RouteBindingsInput, RoutedBindings>
-    >("RouteBindingsSolver")!
-    const [[input]] = bindingsStage.getConstructorParams()
-    const bindings = new RouteBindingsSolver({ ...input, options })
-    bindings.solve()
-    const networkStage =
-      solver.getSolver<RoutedStageSolver<RouteNetworkInput, RoutedDeck>>(
-        "RouteNetworkSolver",
-      )!
-    const [[networkInput]] = networkStage.getConstructorParams()
-    const network = new RouteNetworkSolver({
-      ...networkInput,
-      bindings: bindings.getOutput().value,
-      options,
-    })
-    network.solve()
-    const result = network.getOutput().value
-    assert.equal(result.evidence.geometry_wires, 2)
-    assert.equal(result.evidence.sections, 1)
-    assert.equal(Buffer.byteLength(result.deck), 22146)
-    assert.equal(
-      sha256(result.deck),
-      "e0aed2dc77587fe5e8864ee3c2a1de449951ca096338a81f4541688688ee32b4",
-      "pins vendor compilation and coupling",
-    )
-  },
-)
+const pinnedDeck =
+  "TSX two-trace deck pins coupled skin loss and transient vectors"
+test.skipIf(!process.env.IBIS_MODEL_DIR)(pinnedDeck, async () => {
+  const circuit = await renderCoreSignals(
+    <TwoTraceBoard bit-rate="400Mbps" duration-seconds={4e-9} />,
+  )
+  const bytes = await readFile(`${process.env.IBIS_MODEL_DIR}/sn74lvc1g04.ibs`)
+  const modelHash =
+    "03033638d7fe8bf268428be133a5aad63aae0145980113561b20ab92063e2c00"
+  assert.equal(sha256(bytes), modelHash, "oracle uses the same vendor revision")
+  const solver = new RoutedPipelineSolver({
+    input: {
+      circuitJson: circuit,
+      ibisSources: { "models/sn74lvc1g04.ibs": bytes.toString("utf8") },
+      scopeDistanceMm: 1,
+    },
+    context: synthetic,
+  })
+  solver.solveUntilStage("RouteTransientSolver")
+  const options = {
+    riseSeconds: 1e-9,
+    refinement: 1,
+    durationSeconds: 4e-9,
+    stepSeconds: 1e-11,
+  }
+  const bindingsStage = solver.getSolver<
+    RoutedStageSolver<RouteBindingsInput, RoutedBindings>
+  >("RouteBindingsSolver")!
+  const [[input]] = bindingsStage.getConstructorParams()
+  const bindings = new RouteBindingsSolver({ ...input, options })
+  bindings.solve()
+  const networkStage =
+    solver.getSolver<RoutedStageSolver<RouteNetworkInput, RoutedDeck>>(
+      "RouteNetworkSolver",
+    )!
+  const [[networkInput]] = networkStage.getConstructorParams()
+  const network = new RouteNetworkSolver({
+    ...networkInput,
+    bindings: bindings.getOutput().value,
+    options,
+  })
+  network.solve()
+  const result = network.getOutput().value
+  assert.equal(result.evidence.geometry_wires, 2)
+  assert.equal(result.evidence.sections, 1)
+  assert.equal(Buffer.byteLength(result.deck), 22146)
+  assert.equal(
+    sha256(result.deck),
+    "e0aed2dc77587fe5e8864ee3c2a1de449951ca096338a81f4541688688ee32b4",
+    "pins vendor compilation and coupling",
+  )
+})
 
 /** Synthetic engine protocol only; native evidence lives in route-transient.test.tsx. */
 const synthetic: SolverContext = {
@@ -116,7 +106,9 @@ const synthetic: SolverContext = {
   },
 }
 
-test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
+const testWithInverter = test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))
+
+testWithInverter(
   "six flat stages visit every block and produce deterministic artifacts",
   async () => {
     const input = await routedProblem()
@@ -239,39 +231,36 @@ test("every completed stage retains its own final drawing with few, readable lab
 /** A sample from the driver weight waveform. */
 type DriverWeight = [timeSeconds: number, weight: number]
 
-test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
-  "driver lead-in fits the default capture",
-  async () => {
-    const input = await routedProblem()
-    const solver = new RoutedPipelineSolver({ input, context: synthetic })
-    solver.solveUntilStage("RouteTransientSolver")
-    assert.equal(
-      solver.stageOutput("RoutedAdmissionSolver").value[0].bindings.options
-        .durationSeconds,
-      40e-9,
-    )
-    const deck = solver.stageOutput("RouteNetworkSolver").value[0]
-    assert.equal(
-      sha256(deck.deck),
-      "3d8b305c6177e528a127df9503413da57804780e89dbc4ff75544dfe0b56c5fb",
-      "default two-trace deck pins the single skin multiport realization",
-    )
-    const values = driverWeights(deck.deck)
-    const weights = values
-      .filter((_, i) => i % 2 === 0)
-      .map((time, i): DriverWeight => [time, values[2 * i + 1]])
-    // The old 2.5 ns trigger plus preserved lead-in fell outside its 4 ns capture.
-    assert.ok(
-      weights.some(
-        ([time, ku]) => time > 20e-9 && time < 22e-9 && Math.abs(ku) < 0.01,
-      ),
-    )
-    assert.ok(
-      weights.some(([time, ku]) => time > 23e-9 && time < 26e-9 && ku > 0.9),
-    )
-    assert.ok(weights.at(-1)![1] > 0.9)
-  },
-)
+testWithInverter("driver lead-in fits the default capture", async () => {
+  const input = await routedProblem()
+  const solver = new RoutedPipelineSolver({ input, context: synthetic })
+  solver.solveUntilStage("RouteTransientSolver")
+  assert.equal(
+    solver.stageOutput("RoutedAdmissionSolver").value[0].bindings.options
+      .durationSeconds,
+    40e-9,
+  )
+  const deck = solver.stageOutput("RouteNetworkSolver").value[0]
+  assert.equal(
+    sha256(deck.deck),
+    "3d8b305c6177e528a127df9503413da57804780e89dbc4ff75544dfe0b56c5fb",
+    "default two-trace deck pins the single skin multiport realization",
+  )
+  const values = driverWeights(deck.deck)
+  const weights = values
+    .filter((_, i) => i % 2 === 0)
+    .map((time, i): DriverWeight => [time, values[2 * i + 1]])
+  // The old 2.5 ns trigger plus preserved lead-in fell outside its 4 ns capture.
+  assert.ok(
+    weights.some(
+      ([time, ku]) => time > 20e-9 && time < 22e-9 && Math.abs(ku) < 0.01,
+    ),
+  )
+  assert.ok(
+    weights.some(([time, ku]) => time > 23e-9 && time < 26e-9 && ku > 0.9),
+  )
+  assert.ok(weights.at(-1)![1] > 0.9)
+})
 
 test("all six static stage definitions exist before the first step", () => {
   const root = new RoutedPipelineSolver({
@@ -363,68 +352,92 @@ function assertDrawing({
   )
 }
 
-for (const name of ["two-trace"])
-  test(`${name}: every iteration, stage boundary and pending transient has a physical drawing`, async () => {
-    const input = (await routedVisualFixture()).root.inputProblem
-    const circuit: CircuitJson = input.circuitJson
-    let calls = 0
-    const solverContext: SolverContext = {
-      progress: (): void => undefined,
-      runSolver: async (request) => {
-        calls++
-        const drawing: GraphicsObject = solver.visualize()
+/** Load the synthetic two-trace input or the optional local differential model. */
+async function drawingInput(
+  name: "two-trace" | "level1-differential",
+): Promise<RoutedProblem> {
+  if (name === "two-trace")
+    return (await routedVisualFixture()).root.inputProblem
+  const modelDirectory = process.env.IBIS_MODEL_DIR
+  return {
+    circuitJson: await renderCoreSignals(<Differential />),
+    ibisSources: {
+      "models/sn65hvd72.ibs": await readFile(
+        `${modelDirectory}/sn65hvd72.ibs`,
+        "utf8",
+      ),
+    },
+  }
+}
+
+for (const name of ["two-trace", "level1-differential"] as const) {
+  const skip =
+    name === "level1-differential" && !vendorAvailable("sn65hvd72.ibs")
+  test.skipIf(skip)(
+    `${name}: drawing stays valid through all steps`,
+    async () => {
+      const input = await drawingInput(name)
+      const circuit: CircuitJson = input.circuitJson
+      let calls = 0
+      const solverContext: SolverContext = {
+        progress: (): void => undefined,
+        runSolver: async (request) => {
+          calls++
+          const drawing: GraphicsObject = solver.visualize()
+          assertDrawing({
+            circuit,
+            frame: { drawing, state: `${name}: ngspice pending` },
+          })
+          const curves = drawing.lines!.filter(
+            (line) => line.layer === "waveform",
+          )
+          assert.equal(curves.length, 0, "no curves while ngspice runs")
+          await new Promise<void>((resolve) => setImmediate(resolve))
+          return synthetic.runSolver(request)
+        },
+      }
+      const solver: RoutedPipelineSolver = new RoutedPipelineSolver({
+        input,
+        context: solverContext,
+      })
+      assertDrawing({
+        circuit,
+        frame: { drawing: solver.visualize(), state: `${name}: initial` },
+      })
+      while (!solver.solved && !solver.failed) {
+        assert.ok(solver.iterations < 200, "bounded iteration check")
+        const pending = solver.stepAsync()
+        const state = `${name}: iteration ${solver.iterations}`
         assertDrawing({
           circuit,
-          frame: { drawing, state: `${name}: ngspice pending` },
+          frame: { drawing: solver.visualize(), state: `${state} pending` },
         })
-        const curves = drawing.lines!.filter(
-          (line) => line.layer === "waveform",
-        )
-        assert.equal(curves.length, 0, "no curves while ngspice runs")
-        await new Promise<void>((resolve) => setImmediate(resolve))
-        return synthetic.runSolver(request)
-      },
-    }
-    const solver: RoutedPipelineSolver = new RoutedPipelineSolver({
-      input,
-      context: solverContext,
-    })
-    assertDrawing({
-      circuit,
-      frame: { drawing: solver.visualize(), state: `${name}: initial` },
-    })
-    while (!solver.solved && !solver.failed) {
-      assert.ok(solver.iterations < 200, "bounded iteration check")
-      const pending = solver.stepAsync()
-      const state = `${name}: iteration ${solver.iterations}`
-      assertDrawing({
-        circuit,
-        frame: { drawing: solver.visualize(), state: `${state} pending` },
-      })
-      await pending
-      assertDrawing({
-        circuit,
-        frame: {
-          drawing: solver.visualize(),
-          state: `${name}: iteration ${solver.iterations}`,
-        },
-      })
-      if (solver.getStageOutput("RoutedAdmissionSolver")) {
-        assert.ok(
-          solver.visualize().lines!.length > 0,
-          `${name}: every admitted stage draws selected copper`,
-        )
+        await pending
+        assertDrawing({
+          circuit,
+          frame: {
+            drawing: solver.visualize(),
+            state: `${name}: iteration ${solver.iterations}`,
+          },
+        })
+        if (solver.getStageOutput("RoutedAdmissionSolver")) {
+          assert.ok(
+            solver.visualize().lines!.length > 0,
+            `${name}: every admitted stage draws selected copper`,
+          )
+        }
       }
-    }
-    assert.equal(solver.failed, false)
-    assert.equal(calls, 1)
-    for (const number of [1, 2, 3, 4, 5, 6]) {
-      assertDrawing({
-        circuit,
-        frame: {
-          drawing: solver.visualizeStage(number),
-          state: `${name}: retained ${number}`,
-        },
-      })
-    }
-  })
+      assert.equal(solver.failed, false)
+      assert.equal(calls, 1)
+      for (const number of [1, 2, 3, 4, 5, 6]) {
+        assertDrawing({
+          circuit,
+          frame: {
+            drawing: solver.visualizeStage(number),
+            state: `${name}: retained ${number}`,
+          },
+        })
+      }
+    },
+  )
+}
