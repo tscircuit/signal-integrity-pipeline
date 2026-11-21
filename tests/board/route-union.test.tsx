@@ -9,6 +9,7 @@ import {
   segmentRoutes,
   sourceNetMembers,
 } from "../../src/board"
+import { RouteFieldsSolver } from "../../src/extraction"
 import { renderCoreSignals } from "../support/core-render"
 
 /** Each test strip is 0.3 mm wide and the two centre lines are 0.3 mm apart. */
@@ -17,6 +18,13 @@ const STRIP_WIDTH_MM = 0.3
 /** The same-net union covers both strips, within the existing floating-point tolerance. */
 const UNION_WIDTH_MM = 0.6
 const WIDTH_TOLERANCE_MM = 1e-7
+
+const materials = {
+  maskMm: 0,
+  maskEr: 1,
+  maskLoss: 0,
+  substrateLoss: 0,
+}
 
 /** Two same-net strips meet exactly at their edges, as on the board's DDR power rail. */
 function TouchingRail({
@@ -115,6 +123,15 @@ test("touching same-net strips form one conductor", async () => {
       )
     }),
   )
+  assert.doesNotThrow(() => {
+    const solver = new RouteFieldsSolver({
+      geometry,
+      materials,
+      artifactPrefix: "test",
+    })
+    solver.solve()
+    return solver.getOutput().value
+  })
 })
 
 test("touching strips on separate nets stay separate", async () => {
@@ -139,9 +156,19 @@ test("touching strips on separate nets stay separate", async () => {
     },
   )
 
-  assert.ok(
-    segmentRoutes({ circuit: separate, scope }).wires.every(
-      (wire) => !wire.joins?.length,
-    ),
+  const touching = segmentRoutes({ circuit: separate, scope })
+  assert.ok(touching.wires.every((wire) => !wire.joins?.length))
+  assert.throws(
+    () => {
+      const solver = new RouteFieldsSolver({
+        geometry: touching,
+        materials,
+        artifactPrefix: "test",
+      })
+      solver.solve()
+      return solver.getOutput().value
+    },
+    /Signal rectangles overlap or touch/,
+    "touching different nets remain an explicit failure",
   )
 })

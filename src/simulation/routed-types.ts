@@ -1,5 +1,6 @@
 import type { CircuitJson, CopperScope, LaneMapping } from "../board"
 import type { IbisSources } from "../buffers"
+import type { RouteMaterials } from "../extraction"
 import type { RunControls, SimulationModeling } from "./types"
 
 /** Timing and mesh settings shared by the routed simulation stages. */
@@ -8,6 +9,7 @@ export interface RoutedCompileOptions {
   refinement: number
   durationSeconds: number
   stepSeconds: number
+  materials?: RouteMaterials
 }
 /** Geometry-independent data required to bind ports to routed IBIS buffers. */
 export interface RouteBindingsInput {

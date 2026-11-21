@@ -44,6 +44,7 @@ export interface RoutedProblem {
   circuitJson: CircuitJson
   ibisSources: IbisSources
   scopeDistanceMm?: number
+  materials?: RoutedCompileOptions["materials"]
 }
 /** Frozen section and binding inputs for one admitted transient block. */
 export interface RoutedBlockPlan {
@@ -238,6 +239,7 @@ function planRoutedBlock({
     refinement: BASE_REFINEMENT,
     stepSeconds: timePerStep / MILLISECONDS_PER_SECOND,
     durationSeconds: block.durationSeconds,
+    materials: input.materials,
   }
   const artifactPrefix = `blocks/${id}`
   const circuitJson = snapshot(block.circuit)

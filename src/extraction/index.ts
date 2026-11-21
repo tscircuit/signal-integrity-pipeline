@@ -18,3 +18,13 @@ export {
 } from "./cross-section"
 export type { Matrix } from "./linalg"
 export { multiply, sum, symmetrize, transpose } from "./linalg"
+export { type RouteFieldsInput, RouteFieldsSolver } from "./route-fields-solver"
+export {
+  closestRoutePoints,
+  type ExtractedRouteSlice,
+  type ExtractedRoutes,
+  type RouteCoefficients,
+  type RouteMaterials,
+  referenceSeries,
+  routeCrossSection,
+} from "./route-lines"
