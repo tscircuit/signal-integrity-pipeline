@@ -6,5 +6,15 @@
  */
 
 export { type MatrixCheck, validateMatrix } from "./checks"
+export {
+  type CrossSection,
+  type CrossSectionOptions,
+  type CrossSectionResult,
+  type SectionConductor,
+  type SectionDielectric,
+  type SectionPlane,
+  solveCrossSection,
+  solveSectionCapacitance,
+} from "./cross-section"
 export type { Matrix } from "./linalg"
 export { multiply, sum, symmetrize, transpose } from "./linalg"
