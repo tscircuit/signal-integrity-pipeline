@@ -1,4 +1,4 @@
-// The IBIS part of general-pipeline.ts runPipeline (hash pinning, loading, conversion, assembly).
+// Vendor model admission, conversion and assembly evidence.
 import * as converter from "@tscircuit/ibis-to-spice"
 import {
   type Artifact,
@@ -7,96 +7,35 @@ import {
   sha256,
 } from "../kernel"
 import { fail } from "./diagnostics"
+import { convertPackaged } from "./package"
 import { loadModelSource } from "./source"
-
-/** SHA-256 hashes are written as 64 hexadecimal digits. */
-const SHA256_HEX_LENGTH = 64
-const HEX_DIGITS = "0123456789abcdefABCDEF"
-
 import type {
   AdmittedBuffers,
   AssemblyEntry,
-  BufferModeling,
   CompiledBuffer,
   CompiledBuffersByPlan,
   IbisSources,
-  LoadedModelSource,
   ModelRunDefinition,
   ModelSourceRequest,
 } from "./types"
 
-/** Fails 'converter_version' unless the pinned upstream general converter is installed. Today's first IBIS check. */
-export function assertConverter({
-  convertIbisModelToSpice,
-}: {
-  convertIbisModelToSpice?: unknown
-} = converter): void {
-  if (typeof convertIbisModelToSpice !== "function")
-    fail(
-      "converter_version",
-      "Install the pinned upstream general IBIS converter",
-    )
-}
-
 /**
- * Validate modeling.ibisModelAssetSha256 and load every used model before any solver work, in
+ * Load every used model before any solver work, in
  * declaration order. Artifacts (under `scope`, the output root): inputs/ibis/<pipelineId>.ibs and
  * vendor-sources.json, byte-identical to today.
  */
 export function admitBuffers({
   models,
   ibisSources,
-  modeling,
   scope,
 }: {
   models: readonly ModelSourceRequest[]
   ibisSources: IbisSources
-  modeling: BufferModeling
   scope: ArtifactScope
 }): Produced<AdmittedBuffers> {
-  const expectedHashes: unknown = modeling.ibisModelAssetSha256
-  const isHashMap =
-    expectedHashes !== null &&
-    typeof expectedHashes === "object" &&
-    !Array.isArray(expectedHashes)
-  if (expectedHashes !== undefined && !isHashMap) {
-    fail(
-      "vendor_hash",
-      "modeling.ibisModelAssetSha256 must map project-relative IBIS asset paths to SHA-256 hashes",
-    )
-  }
-  const hashes = expectedHashes as Record<string, unknown> | undefined
-  const loaded: LoadedModelSource[] = []
-  for (const model of models) {
-    const path = model.ibis_model_asset.project_relative_path
-    let expected: string | undefined
-    if (hashes !== undefined) {
-      const pinned = hashes[path]
-      const isSha256 =
-        typeof pinned === "string" &&
-        pinned.length === SHA256_HEX_LENGTH &&
-        Array.from(pinned).every((char) => HEX_DIGITS.includes(char))
-      if (!isSha256) {
-        const requirement =
-          "requires an expected 64-digit SHA-256 hash for each used IBIS asset"
-        fail(
-          "vendor_hash",
-          `${path}: modeling.ibisModelAssetSha256 ${requirement}`,
-        )
-      }
-      expected = pinned
-    }
-    const source = loadModelSource({ model, sources: ibisSources })
-    if (
-      expected !== undefined &&
-      source.evidence.sourceSha256 !== expected.toLowerCase()
-    )
-      fail(
-        "vendor_hash",
-        `${path}: IBIS asset bytes differ from modeling.ibisModelAssetSha256`,
-      )
-    loaded.push(source)
-  }
+  const loaded = models.map((model) =>
+    loadModelSource({ model, sources: ibisSources }),
+  )
   const artifacts: Artifact[] = loaded.map((source) =>
     scope.text(source.evidence.ibsFile, source.text),
   )
@@ -134,7 +73,7 @@ export function compileBuffers<
   define: (input: { model: M; plan: P }) => ModelRunDefinition
 }): CompiledBuffersByPlan {
   return plans.map((plan) =>
-    plan.models.map((model): CompiledBuffer => {
+    plan.models.map((model) => {
       const index = admitted.models.findIndex(
         (selected) => selected.pipelineId === model.pipelineId,
       )
@@ -144,11 +83,8 @@ export function compileBuffers<
         file: source.evidence.ibsFile,
         sha256: source.evidence.sourceSha256,
       }
-      const result = converter.convertIbisModelToSpice(
-        source.bytes,
-        input.definition,
-        input.run,
-      )
+      const sourceFile = source.evidence.ibisModelAsset.project_relative_path
+      const result = convertPackaged({ bytes: source.bytes, input, sourceFile })
       return {
         ...result,
         name: model.ibis_component_name,

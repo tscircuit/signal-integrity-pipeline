@@ -28,6 +28,7 @@ domain:
   artifact: a file the pipeline produces (solver deck, log, capture, evidence), recorded in the ledger
   assembly: the bundle of converted IBIS chip models used by one experiment
   asset: an IBIS model file that the board names (ibis_model_asset in Circuit JSON)
+  bandwidth: the number of stored off-diagonals in a banded IBIS package matrix
   barrel: the plated copper tube that lines a via hole
   below: toward decreasing solver z in a physical stackup
   bias: very weak DC anchor used to fix an otherwise floating common-mode voltage
@@ -59,6 +60,7 @@ domain:
   constant: a bit pattern that repeats one level, so its driver never switches
   contrast: relative permittivity difference across a dielectric interface
   control: pin enable state or drive timing for a simulation
+  coplanar: lying in the same plane
   copper: the metal shapes on the board: traces, pours, pads and vias
   correction: an explicit recorded change required by a documented numerical convention
   coupled: electrical behavior in one pin or conductor that depends on another
@@ -92,6 +94,8 @@ domain:
   geometry: the board's copper shapes, layers and positions, in millimetres
   ground: the zero-volt reference copper that signal current returns through
   h: inductance measured in henries
+  header: a named section or directive at the start of a line
+  hold: the interval over which a switching coefficient stays fixed
   impedance: a wire's opposition to changing current, in ohms
   inductance: magnetic flux linkage per unit current, measured in henries
   inductive: coupling between conductors through their magnetic field
@@ -106,6 +110,7 @@ domain:
   ledger: the single record of every artifact path the pipeline writes; a second write to a path fails
   loss: energy dissipated in conductors or dielectrics
   mask: insulating soldermask on the outer copper layers
+  mesh: the set of boundary panels used to approximate the field in a cross-section
   metre: SI unit of length used for per-unit-length electrical matrices
   model: a chip model (IBIS) or the electrical model of the channel built from extraction
   modeling: private numerical settings derived from Circuit JSON
@@ -117,21 +122,17 @@ domain:
   normal: perpendicular to a surface or conductor direction
   oblique: a neighbour whose direction differs from the local trace direction
   observation: adaptive waveform parsing and numerical convergence
+  open: disconnected from the electrical network
   pad: the copper area a component pin is soldered to
   pair: two conductors screened together for mutual coupling
   panel: a small flat boundary piece of a cross-section that the 2D field solver puts charge on
   parallel: conductors sharing a common longitudinal direction
-  mesh: the set of boundary panels used to approximate the field in a cross-section
-  region: the part of a cross-section electrically separated by reference planes
-  quadrature: numerical integration by evaluating a function at weighted points
-  coplanar: lying in the same plane
-  pivot: the matrix coefficient used to eliminate entries in its column
-  passivity: the property that a circuit can store or dissipate energy but cannot supply it
-  projection: the component of a point or vector along a chosen axis
   passive: a component that does not amplify: resistor, capacitor or inductor
+  passivity: the property that a circuit can store or dissipate energy but cannot supply it
   permittivity: how strongly an insulator stores electric field (its dielectric constant)
   pin: a chip leg, named in the IBIS model
   pipeline: the whole routed run from board to transient capture, as a fixed chain of stages
+  pivot: the matrix coefficient used to eliminate entries in its column
   plane: a large copper area on one layer, usually ground or power
   plating: the copper lining inside a via hole
   pole: a stable relaxation rate in a causal rational loss model
@@ -141,8 +142,10 @@ domain:
   power: an electrical supply net or reference plane
   prepare: derive private experiment settings from the declared channel intent
   probe: a point where we measure voltage
+  projection: the component of a point or vector along a chosen axis
   pulldown: the buffer path that pulls the signal toward its low reference
   pullup: the buffer path that pulls the signal toward its high reference
+  quadrature: numerical integration by evaluating a function at weighted points
   rail: a power or ground supply connection
   ramp: the loaded voltage change and duration between 20% and 80% of an IBIS edge
   recede: move a conducting wall away from the field region
@@ -150,6 +153,7 @@ domain:
   recession: displacement of conducting walls away from the field for Wheeler loss
   reciprocity: the check that a matrix is symmetric (the effect of A on B equals B on A)
   refinement: a finer spatial subdivision of a solve, used to check that the answer stops changing
+  region: the part of a cross-section electrically separated by reference planes
   remainder: the part of a matrix diagonal left after its mutual energy terms
   residual: how far a computed result is from passing an exact check (smaller is better)
   resistance: how much a wire resists steady current, in ohms (the R in RLGC)
@@ -241,13 +245,13 @@ general:
   - expect fail fall find finish flip flush generate get has inspect invoke is link load locate match measure
   - merge normalize omit override parse produce quote raise read receive reduce refine register remove rename
   - replace reset resolve rise run select set shift skip solve sort split start supply test transmit
-  - unlink update use validate view visit write trim crop unroll cast fold append
+  - unlink update use validate view visit write trim crop unroll cast fold append retain
   # states and outcomes
   - connected contained default failure found grounded killed named oriented pinned scoped seen supplied
   - unavailable unconverged unevaluated unselected used done built crowded kept
   # data shapes and code structure
   - all any array attachment base binding body boolean box bucket budget byte candidate cell chain child
-  - code column command comment content context count data declaration definition descriptor element
+  - character code column command comment content context count data declaration definition descriptor element
   - entry error event expression field file first format graph grid group hash index input item key
   - kind label last level line list location log map mapping member message metadata method mode name
   - namespace number option options order output owner package parent part path pattern payload piece
@@ -263,13 +267,13 @@ general:
   - empty equivalent exact expected finite fixed flat full global high horizontal inner limit low lowest
   - max maximum middle min minimum native negative next numeric original other outer own physical half highest least longest median most near far reach leg
   - positive preceding previous primitive prior pure quiet range raw relative safe serial target threshold
-  - characterization compliance valid vertical
+  - characterization compliance valid invalid vertical
   # quantities, electricity and units
   - amount amplitude bit current denominator duration electrical energy factor farad fraction frequency
   - interval material matrix measurement milliseconds ohm offset origin peak period phase plateau
-  - quantity reduction sample scale seconds speed step time timeout tolerance transmission voltage zero
+  - quantity reduction sample scale seconds speed step time timeout tolerance transmission volt voltage zero
   # math
-  - cholesky delaunay integral magnitude interpolation multiply norm ratio sum symmetrize transpose union total
+  - cholesky delaunay exponent integral magnitude interpolation multiply norm ratio sum symmetrize transpose union total
   # geometry
   - alignment anchor ancestor area aspect border boundary center contact connection coordinate curve
   - depth direction distance division edge endpoint epsilon face gap height hole left length nearest

@@ -1,11 +1,13 @@
 import type React from "react"
 import type { CircuitJson } from "../../src/board"
 import type { IbisSources } from "../../src/buffers"
+import { RoutedAdmissionSolver } from "../../src/pipeline"
 import {
   type PreparedBlock,
   prepareBlockById,
   signalBlocks,
 } from "../../src/pipeline/signals"
+import type { RouteBindingsInput } from "../../src/simulation"
 import { renderCoreSignals } from "../support/core-render"
 
 /** Render through real core, permitting only specifically expected physical diagnostics. */
@@ -54,4 +56,34 @@ export function prepareBlocks({
       distanceMm,
     }),
   )
+}
+
+/** Binding inputs prepared by admission before a route binding solver allocates an artifact scope. */
+type AdmittedRouteBindings = Omit<RouteBindingsInput, "scope">
+
+/** The first admitted block's bindings, checked by the standalone admission solver. */
+export function admittedBindings({
+  circuitJson,
+  ibisSources,
+}: {
+  circuitJson: CircuitJson
+  ibisSources: IbisSources
+}): AdmittedRouteBindings {
+  const textSources = Object.fromEntries(
+    Object.entries(ibisSources).map(([name, bytes]) => {
+      if (typeof bytes === "string") return [name, bytes] as const
+      return [
+        name,
+        new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+          bytes,
+        ),
+      ] as const
+    }),
+  )
+  const admission = new RoutedAdmissionSolver({
+    circuitJson,
+    ibisSources: textSources,
+  })
+  admission.solve()
+  return admission.getOutput().value[0].bindings
 }
