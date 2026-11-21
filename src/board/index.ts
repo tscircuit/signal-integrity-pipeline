@@ -33,7 +33,23 @@ export type {
   SourceNetId,
   SourcePortId,
 } from "./ids"
-export type { RouteSectionsInput } from "./route-sections-solver"
+export {
+  type RouteReference,
+  type RouteSlice,
+  type RouteWire,
+  type RouteXY,
+  routeContactFrame,
+  routePosition,
+  routeReferences,
+  routeSectionSteps,
+  type SectionGeometry,
+  segmentRoutes,
+} from "./route-sections"
+export {
+  type RoutedSections,
+  type RouteSectionsInput,
+  RouteSectionsSolver,
+} from "./route-sections-solver"
 export type {
   CircuitJson,
   SimulationExperiment,

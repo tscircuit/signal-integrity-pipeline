@@ -254,7 +254,6 @@ function planRoutedBlock({
       circuitJson,
       scope: modeling.copperScope,
       requiredSourcePortIds,
-      referenceSourcePortId: modeling.channelReference!.sourcePortId!,
       artifactPrefix,
     }),
     bindings: Object.freeze({

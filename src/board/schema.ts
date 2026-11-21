@@ -6,8 +6,10 @@ import { fail } from "./diagnostics"
 
 export type {
   CircuitJson,
+  LayerRef,
   SimulationExperiment,
   SimulationIbisModel,
+  SourceTrace,
 } from "circuit-json"
 
 /** Picks the circuit-json schema by record type, or by ftype for source components. */
