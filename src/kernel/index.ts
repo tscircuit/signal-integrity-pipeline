@@ -24,3 +24,5 @@ export {
 } from "./diagnostic"
 export { sha256 } from "./hash"
 export { type SafeId, safeId } from "./ids"
+
+export { snapshot } from "./snapshot"

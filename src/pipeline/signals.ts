@@ -264,7 +264,7 @@ function applyIbisModelOverrides({
 }
 
 /** Collect all ports and nets tied to declared rails or to IBIS reference pins. */
-function collectRailIds({
+export function collectRailIds({
   circuit,
   connectivity,
   pins,
