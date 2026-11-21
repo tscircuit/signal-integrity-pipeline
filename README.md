@@ -12,18 +12,19 @@ RouteSectionsSolver divides scoped copper into straight slices and resolves phys
 The standalone 2D cross-section solve returns per-unit-length C/C0/L and frequency-dependent R/G.
 RouteFieldsSolver screens nearby conductor pairs and extracts coupled coefficients for each unique section.
 IBIS conversion resolves scalar or coupled package elements and validates selected package matrices during admission.
+RouteBindingsSolver associates compiled buffers, sources and probes with the allocated circuit node map.
 
 ## General workflow
 
 ```mermaid
 flowchart LR
-  input["Selected IBIS models"] --> result["Scalar and coupled packages"]
+  input["Admitted models and ports"] --> result["RouteBindingsSolver"]
 ```
 
 ```mermaid
 stateDiagram-v2
   [*] --> Ready
-  Ready --> Complete: Scalar and coupled packages
+  Ready --> Complete: RouteBindingsSolver
   Ready --> Failed: invalid input
   Complete --> [*]
   Failed --> [*]
