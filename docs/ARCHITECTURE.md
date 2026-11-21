@@ -197,6 +197,35 @@ Completed domain values are copied and frozen. Only the root folds the six stage
 Original assumptions, coupling decisions, reference omissions, external ports,
 model provenance, node maps, via/oblique policies and deck evidence remain visible.
 
+Every stage draws in board millimetres, y up, inside one fixed camera per problem
+(`routeView`): the selected copper and its endpoint parts (a large package only near
+the copper), plus a pane slot on the side that brings the camera nearest 1.6:1. Every
+stage and every failure shares that camera; failure reasons are written in the pane.
+Nets are coloured by electrical connectivity, one hue per net, and a differential
+channel's two legs are two shades of one hue. Channels, bit periods and pairs come from
+`simulation_pcb_driver_receiver_channel` records. Copper keeps its real width, and its layer is in the stroke: top solid, inner
+layers hollow, bottom dimmed. Each stage draws what it produced:
+
+| Stage | Board | Pane |
+|---|---|---|
+| Admission | selected nets, drivers as dots, receivers as rings | each net's routed length, to scale |
+| Sections | sections in two tones of the net's hue, the route cut this step cased white, uncut copper grey | the same partition unrolled per net |
+| Fields | solved copper coloured by Z0, an amber cut at the slice on screen | that slice's stack at one mm scale, Z0 of selected conductors, coupling bands sized by k, the Z0 scale |
+| Bindings | bound parts outlined, ▶ at drivers and ◁ at receivers along the trace | each bound net with its buffer glyphs |
+| Network | coupling bands between parallel sections (width grows with k), cell ticks, modelled vias | cells and coupling unrolled per net |
+| Transient | probe marks | an eye folded every two bit periods when the capture is long, else the window from the first activity; IBIS Vinl–Vinh of single-ended receivers as a band; above six far-end probes an envelope plus the worst curve; amber hatching while ngspice runs |
+
+Only Z0 values, axis ticks, strip names and lengths, and a failure reason are written;
+silkscreen text never reaches the picture. Every net, mark and curve carries its net
+label, so the site can link them on hover.
+
+`src/board/board-picture.ts` puts the real board under that drawing. `circuit-to-svg`
+renders a dimmed top view (soldermask, pads, silkscreen lines) of only the records
+near the camera, through a `viewport` equal to it. The overlay is graphics-debug's own
+SVG, cropped by `viewBox` to the camera frame it finds in that SVG, so objects outside
+the camera never move it. Both layers are letterboxed in the same box. Only scripts and tests import the module, so `circuit-to-svg` stays a development dependency outside the library bundle. Display sampling caps object counts;
+numerical inputs and native samples remain complete.
+
 `RouteTransientSolver` awaits one `solver.invoke` call in `_stepAsync`. Its
 self-contained `.save` + `.tran` deck keeps KLU and Gear in native batch ngspice.
 Native batch emits ASCII raw vectors (`SPICE_ASCIIRAWFILE=1`). Diagnostics, finite

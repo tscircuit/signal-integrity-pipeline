@@ -1,11 +1,20 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { SourceTrace } from "circuit-json"
+import type { GraphicsObject } from "graphics-debug"
 import {
   type CircuitJson,
   getSourcePortConnectivityMapFromCircuitJson,
   type LaneMapping,
   passiveBridges,
   type RouteSectionsInput,
+  routeBoardBox,
+  routeBoardDrawing,
+  routeFailure,
+  routeLengths,
+  routeMarks,
+  routePortPoint,
+  routeStrip,
+  routeView,
   type SimulationPcbDriverReceiverChannel,
   type SourceNetId,
   type SourcePortId,
@@ -345,5 +354,61 @@ export class RoutedAdmissionSolver extends BaseSolver {
     typeof RoutedAdmissionSolver
   > {
     return [this.input]
+  }
+
+  /**
+   * Selected copper in net colours with drivers as dots and receivers as rings, and each net's routed length
+   * unrolled in the pane; a rejection writes one red reason.
+   */
+  override visualize(): GraphicsObject {
+    const plan = this.plans.at(-1)
+    const circuit = this.input.circuitJson
+    const drawing = routeBoardDrawing({ circuit, scope: plan?.sections.scope })
+    if (!plan) {
+      if (this.failed)
+        routeFailure({
+          drawing,
+          box: routeBoardBox(circuit),
+          message: this.error ?? "Invalid signal scope",
+        })
+      return drawing
+    }
+    const view = routeView({ circuit, scope: plan.sections.scope })
+    routeStrip({
+      drawing,
+      pane: view.pane,
+      rows: routeLengths({ circuit, view }),
+    })
+    routeMarks({
+      drawing,
+      marks: plan.bindings.mappings.flatMap((mapping) =>
+        (
+          [
+            [mapping.from, true],
+            [mapping.to, false],
+          ] as const
+        ).flatMap(([id, driver]) => {
+          const point = routePortPoint({ circuit, sourcePortId: id })
+          if (!point) return []
+          const net = view.ports.get(id)
+          return [
+            {
+              point,
+              color: net?.color ?? "#ffffff",
+              driver,
+              label: net?.label,
+            },
+          ]
+        }),
+      ),
+      unit: view.unit,
+    })
+    if (this.failed)
+      routeFailure({
+        drawing,
+        box: view.pane,
+        message: this.error ?? "Invalid signal scope",
+      })
+    return drawing
   }
 }

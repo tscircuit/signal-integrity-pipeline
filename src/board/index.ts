@@ -1,7 +1,7 @@
 /**
  * board — everything known about the physical board, read from Circuit JSON.
  * Owns: Circuit JSON admission (zod record schemas, subcircuit scope), stackup, port selection,
- * the declared board geometry and its routed sections.
+ * the channel copper scope, routed section geometry (RouteSectionsSolver) and board drawings.
  * Imports: kernel.
  */
 
@@ -50,8 +50,38 @@ export {
   type RouteSectionsInput,
   RouteSectionsSolver,
 } from "./route-sections-solver"
+export {
+  type RouteFrame,
+  type RouteNet,
+  type RouteStripRow,
+  type RouteView,
+  routeBoardBox,
+  routeBoardDrawing,
+  routeBounds,
+  routeBuffers,
+  routeCanvas,
+  routeDisplayItems,
+  routeFailure,
+  routeFrame,
+  routeHue,
+  routeLengths,
+  routeMarks,
+  routeNets,
+  routeOutline,
+  routePane,
+  routePinDirection,
+  routePortPoint,
+  routeStrip,
+  routeStroke,
+  routeText,
+  routeTones,
+  routeUnrolled,
+  routeVia,
+  routeView,
+} from "./route-visual"
 export type {
   CircuitJson,
+  Point,
   SimulationExperiment,
   SimulationIbisModel,
 } from "./schema"

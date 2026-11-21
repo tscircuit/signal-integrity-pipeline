@@ -51,3 +51,13 @@ export type {
   SimulationPlan,
   VoltageProbePlan,
 } from "./types"
+
+export {
+  type ReceiverThreshold,
+  receiverThreshold,
+  roundStep,
+  roundTicks,
+  routeWaveformDrawing,
+  type WaveformProbe,
+  type WaveformState,
+} from "./waveform-visual"

@@ -7,6 +7,7 @@ import { fail } from "./diagnostics"
 export type {
   CircuitJson,
   LayerRef,
+  Point,
   SimulationExperiment,
   SimulationIbisModel,
   SourceTrace,

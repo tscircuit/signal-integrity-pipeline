@@ -1,4 +1,5 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
+import type { GraphicsObject } from "graphics-debug"
 import type {
   CircuitJson,
   CopperScope,
@@ -7,6 +8,8 @@ import type {
 } from "../board"
 import { type Produced, rootScope, snapshot } from "../kernel"
 import { solveCrossSection } from "./cross-section"
+import type { CrossSection } from "./cross-section-types"
+import { fieldsDrawing } from "./fields-visual"
 import { type RouteCoupling, routeCoupling } from "./route-coupling"
 import {
   type ExtractedRouteSlice,
@@ -83,6 +86,21 @@ function addCouplingPairs({
   }
 }
 
+/** Rank slices by selected conductors, then by length. */
+function sliceWeight({
+  slice,
+  selected,
+}: {
+  slice: RouteSlice
+  selected: ReadonlySet<string>
+}): number {
+  return (
+    slice.wires.filter((wire) => selected.has(wire.trace)).length * 1e6 +
+    slice.end -
+    slice.start
+  )
+}
+
 /** One pair screen or one unique multiconductor BEM solve per synchronous step. */
 export class RouteFieldsSolver extends BaseSolver {
   private readonly cache = new Map<
@@ -95,6 +113,8 @@ export class RouteFieldsSolver extends BaseSolver {
   private readonly coupling: RouteCoupling[] = []
   private pairIndex = 0
   private groupIndex = 0
+  private currentSlice?: RouteSlice
+  private current?: CrossSection
   private output?: Produced<ExtractedRoutes>
   private solveMilliseconds = 0
   readonly materials: RouteMaterials
@@ -119,6 +139,8 @@ export class RouteFieldsSolver extends BaseSolver {
       slice,
       materials: this.materials,
     })
+    this.current = section
+    this.currentSlice = slice
     const key = JSON.stringify(section)
     const cached = this.cache.get(key)
     if (cached) {
@@ -243,5 +265,52 @@ export class RouteFieldsSolver extends BaseSolver {
     typeof RouteFieldsSolver
   > {
     return [this.input]
+  }
+
+  /**
+   * Solved copper coloured by Z0 with the slice on screen cut in amber; once finished, the slice with the most
+   * selected conductors.
+   */
+  override visualize(): GraphicsObject {
+    const { geometry, circuitJson, scope } = this.input
+    const selected = new Set(
+      scope?.selectedPcbTraceIds ?? geometry.wires.map((wire) => wire.trace),
+    )
+    let best: ExtractedRouteSlice | undefined
+    if (this.solved)
+      best = [...this.slices].sort(
+        (a, b) =>
+          sliceWeight({
+            slice: b,
+            selected,
+          }) -
+          sliceWeight({
+            slice: a,
+            selected,
+          }),
+      )[0]
+    const slice = best ?? this.currentSlice ?? geometry.slices[0]
+    let section = this.current
+    if (slice && (best || !section))
+      section = routeCrossSection({
+        geometry,
+        slice,
+        materials: this.materials,
+      })
+    const line =
+      best?.line ?? (section && this.cache.get(JSON.stringify(section)))
+    let error: string | undefined
+    if (this.failed) error = this.error ?? "Field solve failed"
+    return fieldsDrawing({
+      geometry,
+      circuitJson,
+      scope,
+      materials: this.materials,
+      solved: this.slices,
+      slice,
+      section,
+      line,
+      error,
+    })
   }
 }

@@ -9,7 +9,7 @@ import { RoutedStageSolver } from "../../src/pipeline"
 import { type RoutedCapture, RouteTransientSolver } from "../../src/simulation"
 import { routedVisualFixture } from "../fixtures/routed-visual"
 
-test("a flat stage drains real TSX block inputs in order", async () => {
+test("a flat stage drains real TSX block inputs in order and retains the last drawing", async () => {
   const { root } = await routedVisualFixture(2)
   const sections = root.getSolver<
     RoutedStageSolver<RouteSectionsInput, RoutedSections>
@@ -34,6 +34,9 @@ test("a flat stage drains real TSX block inputs in order", async () => {
   assert.equal(stage.getOutput().artifacts.length, 4)
   assert.equal(stage.stats.completedBlocks, 2)
   assert.equal(stage.progress, 1)
+  const last = new RouteSectionsSolver(inputs[0])
+  last.solve()
+  assert.deepEqual(stage.visualize(), last.visualize())
   assert.equal(stage.activeSubSolver, undefined)
 })
 

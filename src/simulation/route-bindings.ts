@@ -1,4 +1,18 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
+import type { PcbComponent, PcbPort } from "circuit-json"
+import type { GraphicsObject } from "graphics-debug"
+import {
+  routeBoardDrawing,
+  routeBuffers,
+  routeFailure,
+  routeLengths,
+  routeOutline,
+  routePinDirection,
+  routePortPoint,
+  routeStrip,
+  routeTones,
+  routeView,
+} from "../board"
 import {
   type AdmittedBuffers,
   type AssemblyEntry,
@@ -145,5 +159,138 @@ export class RouteBindingsSolver extends BaseSolver {
     typeof RouteBindingsSolver
   > {
     return [this.input]
+  }
+
+  /**
+   * Bound components outlined, IBIS buffer glyphs at their signal pins (▶ driver, ◀ receiver) and rail pins as
+   * grey dots; unbound lane ends turn red.
+   */
+  override visualize(): GraphicsObject {
+    const circuit = this.input.circuitJson
+    const view = routeView({ circuit, scope: this.input.scope })
+    const drawing = routeBoardDrawing({ circuit, scope: this.input.scope })
+    const pcbPorts = new Map(
+      circuit
+        .filter((port) => port.type === "pcb_port")
+        .map((port) => [port.source_port_id, port]),
+    )
+    const components = new Map(
+      circuit
+        .filter((component) => component.type === "pcb_component")
+        .map((component) => [component.pcb_component_id, component]),
+    )
+    const outlineContext = {
+      pcbPorts,
+      components,
+      drawing,
+      unit: view.unit,
+    }
+    const buffers = this.models.flatMap((model) => {
+      outlinePortComponents({
+        ports: Object.values(model.spicePinMapping),
+        color: routeTones.via,
+        label: model.name,
+        context: outlineContext,
+      })
+      return [...new Set(Object.values(model.spicePinMapping))].flatMap(
+        (id) => {
+          const point = routePortPoint({ circuit, sourcePortId: id })
+          if (!point) return []
+          const mappedSignal = this.input.mappings.some(
+            (mapping) => mapping.from === id || mapping.to === id,
+          )
+          if (
+            !mappedSignal ||
+            !model.metadata.pins.some((pin) => pin.port === id)
+          ) {
+            drawing.circles!.push({
+              center: point,
+              radius: view.unit * 0.3,
+              fill: routeTones.quiet,
+              stroke: routeTones.quiet,
+            })
+            return []
+          }
+          const net = view.ports.get(id)
+          return [
+            {
+              point,
+              direction: routePinDirection({ circuit, view, pin: point }),
+              color: net?.color ?? routeTones.copper,
+              driver: Boolean(
+                this.plan?.states.some(
+                  (state) => state.source_port_id === id && state.is_output,
+                ),
+              ),
+              label: net?.label,
+            },
+          ]
+        },
+      )
+    })
+    routeBuffers({ drawing, buffers, unit: view.unit })
+    // Each bound net unrolled, its driver and receiver glyphs at the ends once both are bound.
+    const bound = new Set(buffers.map((buffer) => buffer.label))
+    routeStrip({
+      drawing,
+      pane: view.pane,
+      rows: routeLengths({ circuit, view }).filter((row) =>
+        bound.has(row.net.label),
+      ),
+      buffers: { driver: true, receiver: true },
+    })
+    if (this.failed) {
+      outlinePortComponents({
+        ports: this.input.mappings.flatMap((mapping) => [
+          mapping.from,
+          mapping.to,
+        ]),
+        color: routeTones.failure,
+        label: "unbound",
+        context: outlineContext,
+      })
+      routeFailure({
+        drawing,
+        box: view.pane,
+        message: this.error ?? "IBIS binding unavailable",
+      })
+    }
+    return drawing
+  }
+}
+
+/** Circuit lookups and drawing scale shared by all component outlines. */
+interface PortOutlineContext {
+  pcbPorts: ReadonlyMap<PcbPort["source_port_id"], PcbPort>
+  components: ReadonlyMap<PcbComponent["pcb_component_id"], PcbComponent>
+  drawing: GraphicsObject
+  unit: number
+}
+
+/** Outline the parts that own the selected ports. */
+function outlinePortComponents({
+  ports,
+  color,
+  label,
+  context,
+}: {
+  ports: Iterable<PcbPort["source_port_id"]>
+  color: string
+  label: string
+  context: PortOutlineContext
+}): void {
+  const { pcbPorts, components, drawing, unit } = context
+  for (const id of new Set(
+    [...ports].map((port) => pcbPorts.get(port)?.pcb_component_id),
+  )) {
+    if (!id) continue
+    const component = components.get(id)
+    if (component)
+      drawing.polygons!.push({
+        points: routeOutline(component),
+        stroke: color,
+        strokeWidth: unit * 0.2,
+        label,
+      })
   }
 }

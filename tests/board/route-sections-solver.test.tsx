@@ -30,6 +30,7 @@ test("sections process one route per step", async () => {
     solver.getOutput().value.geometry,
     segmentRoutes({ circuit: circuitJson, scope }),
   )
+  assert.ok(solver.visualize().lines!.length)
 })
 
 test("sections reject missing physical contacts", async () => {
@@ -41,4 +42,20 @@ test("sections reject missing physical contacts", async () => {
   assert.throws(() => invalid.solve(), /no physical wire or via contact/)
   assert.equal(invalid.failed, true)
   assert.throws(() => invalid.getOutput(), /incomplete/)
+})
+
+import {
+  assertRouteVisual,
+  routedVisualFixture,
+} from "../fixtures/routed-visual"
+
+test("two-trace TSX route-sections-solver visual SVG snapshot", async () => {
+  const { root } = await routedVisualFixture()
+  assertRouteVisual({
+    drawing: root
+      .getSolver<RouteSectionsSolver>("RouteSectionsSolver")!
+      .visualize(),
+    module: "board",
+    name: "route-sections-solver",
+  })
 })

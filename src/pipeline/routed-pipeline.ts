@@ -4,7 +4,18 @@ import {
   type BaseSolver,
   definePipelineStep,
 } from "@tscircuit/solver-utils"
-import { type RoutedSections, RouteSectionsSolver } from "../board"
+import type { GraphicsObject } from "graphics-debug"
+import {
+  type RoutedSections,
+  RouteSectionsSolver,
+  routeBoardBox,
+  routeBoardDrawing,
+  routeLengths,
+  routeStrip,
+  routeText,
+  routeTones,
+  routeView,
+} from "../board"
 import { type ExtractedRoutes, RouteFieldsSolver } from "../extraction"
 import {
   ArtifactLedger,
@@ -20,6 +31,7 @@ import {
   type RoutedDeck,
   RouteNetworkSolver,
   RouteTransientSolver,
+  receiverThreshold,
 } from "../simulation"
 import type { SolverContext } from "../solver"
 import {
@@ -92,9 +104,19 @@ export const routedStages = [
     (p: RoutedPipelineSolver) => [
       p.stageOutput("RouteNetworkSolver").value.map((compiled, i) => ({
         compiled,
+        board: p.stageOutput("RouteSectionsSolver").value[i],
         artifactPrefix: p.stageOutput("RoutedAdmissionSolver").value[i].sections
           .artifactPrefix,
         context: p.context,
+        threshold: receiverThreshold({
+          ibisSources: p.inputProblem.ibisSources,
+          models: p.stageOutput("RouteBindingsSolver").value[i].models,
+          receivers: new Set(
+            p
+              .stageOutput("RouteBindingsSolver")
+              .value[i].mappings.map((mapping) => mapping.to),
+          ),
+        }),
       })),
     ],
   ),
@@ -196,5 +218,74 @@ export class RoutedPipelineSolver extends BasePipelineSolver<RoutedProblem> {
   /** Exact source inputs plus the injected execution capability. */
   override getConstructorParams(): RoutedPipelineConstructorParams {
     return [{ input: this.inputProblem, context: this.context }]
+  }
+  /** Inspect retained output or the incoming stage's immutable input, without executing work. */
+  visualizeStage(number: number): GraphicsObject {
+    if (number === 0) return this.initialVisualize()
+    const definition = this.pipelineDef[number - 1]
+    let solver = this.getSolver(definition.solverName)
+    if (!solver && number - 1 <= this.currentPipelineStageIndex) {
+      solver = new definition.solverClass(
+        ...definition.getConstructorParams(this),
+      )
+    }
+    const plans = this.getStageOutput<Produced<RoutedBlockPlan[]>>(
+      "RoutedAdmissionSolver",
+    )?.value
+    const circuit = this.inputProblem.circuitJson
+    if (plans && !plans.length) {
+      // Nothing was admitted: the whole board with one quiet line, the same in every stage.
+      const drawing = routeBoardDrawing({ circuit, scope: undefined })
+      const board = routeBoardBox(circuit)
+      routeText({
+        drawing,
+        x: (board.minX + board.maxX) / 2,
+        y: (board.minY + board.maxY) / 2,
+        text: "No signal-integrity blocks admitted",
+        color: routeTones.quiet,
+        size: (board.maxX - board.minX) / 40,
+      })
+      return drawing
+    }
+    if (solver) return solver.visualize()
+    // A stage that cannot be built yet shows the selected copper and its unrolled lengths in neutral grey.
+    const scope = plans?.[0]?.sections.scope
+    const drawing = routeBoardDrawing({
+      circuit,
+      scope,
+      color: () => routeTones.copper,
+    })
+    if (!scope) return drawing
+    const view = routeView({ circuit, scope })
+    routeStrip({
+      drawing,
+      pane: view.pane,
+      rows: routeLengths({ circuit, view }).map((row) => ({
+        ...row,
+        parts: [{ from: 0, to: row.length, color: routeTones.copper }],
+      })),
+    })
+    return drawing
+  }
+  /** Stage boundaries show the incoming input immediately, before its first step. */
+  override visualize(): GraphicsObject {
+    if (this.iterations === 0) return this.visualizeStage(0)
+    return this.visualizeStage(
+      Math.min(this.currentPipelineStageIndex + 1, this.pipelineDef.length),
+    )
+  }
+  /** Before any stage has run there is nothing to overlay, so the whole board shows. */
+  override initialVisualize(): GraphicsObject {
+    return routeBoardDrawing({
+      circuit: this.inputProblem.circuitJson,
+      scope: undefined,
+    })
+  }
+  /** A completed pipeline follows the final transient; earlier stages keep their own drawings. */
+  override finalVisualize(): GraphicsObject {
+    return (
+      this.getSolver("RouteTransientSolver")?.visualize() ??
+      this.initialVisualize()
+    )
   }
 }

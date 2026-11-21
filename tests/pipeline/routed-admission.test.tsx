@@ -4,11 +4,16 @@ import { createHash } from "node:crypto"
 import { simulation } from "@tscircuit/core"
 import React from "react"
 import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
+import { routeTones } from "../../src/board"
 import { sha256 } from "../../src/kernel"
 import { RoutedAdmissionSolver } from "../../src/pipeline"
 import { prepareBlockById, signalBlocks } from "../../src/pipeline/signals"
 import { circuitNodes } from "../../src/simulation"
 import { AdmissionChannel } from "../fixtures/admission-channel"
+import {
+  assertRouteVisual,
+  routedVisualFixture,
+} from "../fixtures/routed-visual"
 import { routedVisualIbis } from "../fixtures/routed-visual-fixture"
 import { renderSignals } from "../fixtures/signal-render"
 import { vendorAvailable } from "../fixtures/vendor-models"
@@ -95,6 +100,27 @@ test.skipIf(skipVendorModel)(
     assert.equal(
       solver.getOutput().value[0].sections.scope.selectedPcbTraceIds.length,
       2,
+    )
+    const drawing = solver.visualize()
+    const marks = drawing.polygons!.filter(
+      (polygon) =>
+        polygon.label &&
+        polygon.points.length > 4 &&
+        polygon.fill !== "#0b0f13",
+    )
+    assert.equal(
+      marks.filter((mark) => mark.fill).length,
+      2,
+      "each driver is a filled dot",
+    )
+    assert.equal(
+      marks.filter((mark) => !mark.fill).length,
+      2,
+      "each receiver is a ring",
+    )
+    assert.throws(
+      () => new RoutedAdmissionSolver({ ...input, scopeDistanceMm: 0 }).solve(),
+      /scope distance/,
     )
   },
 )
@@ -310,4 +336,38 @@ test("admission rejects a transient step that underflows to zero", async () => {
     () => new RoutedAdmissionSolver({ circuitJson, ibisSources }).solve(),
     /admitted experiment.*time_per_step/,
   )
+})
+
+test("two-trace TSX routed-admission visual SVG snapshot", async () => {
+  const { root } = await routedVisualFixture()
+  assertRouteVisual({
+    drawing: root
+      .getSolver<RoutedAdmissionSolver>("RoutedAdmissionSolver")!
+      .visualize(),
+    module: "pipeline",
+    name: "routed-admission",
+  })
+})
+
+test("rejected admission carries a visible red reason without inventing an admitted block", async () => {
+  const { root } = await routedVisualFixture()
+  const solver = new RoutedAdmissionSolver({
+    ...root.inputProblem,
+    scopeDistanceMm: 0,
+  })
+  assert.throws(() => solver.solve(), /scope distance/)
+  const drawing = solver.visualize()
+  assert.ok(
+    drawing.texts!.every((text) => text.color === routeTones.failure),
+    "only the red reason is written",
+  )
+  assert.match(
+    drawing.texts!.map((text) => text.text).join(" "),
+    /scope distance/,
+  )
+  assertRouteVisual({
+    drawing,
+    module: "pipeline",
+    name: "routed-admission-rejected",
+  })
 })
