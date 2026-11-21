@@ -1,0 +1,26 @@
+name: Kisi field validation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  kisi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - run: bun install --frozen-lockfile
+      - run: bun run kisi:setup
+      - run: bun run test:kisi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kisi-field-validation
+          path: .cache/kisi-validation/
+          include-hidden-files: true
+          if-no-files-found: ignore

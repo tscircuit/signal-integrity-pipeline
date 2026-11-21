@@ -32,3 +32,12 @@ stateDiagram-v2
 Install dependencies with `bun install --frozen-lockfile`, then run `bun test`.
 Optional checks use `test.skipIf` and known failures still execute through `test.failing`.
 Run `bun run test:package` to verify the packed package in Node.
+
+The optional Kisi comparison checks three uniform single-ended/differential cross-sections against an independent field solver. It uses Bun's `bun:test` runner and needs no vendor IBIS files:
+
+```sh
+bun run kisi:setup
+bun run test:kisi
+```
+
+Kisi is SHA-256 pinned, cached locally, and never shipped in the package. Ordinary `bun test` stays offline and explicitly skips these live checks. The dedicated command and CI job require all three to run. See [the protocol, tolerances, results, and scope](docs/kisi-validation.md).
