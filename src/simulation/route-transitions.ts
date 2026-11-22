@@ -170,7 +170,7 @@ export function barrelCapacitance({
 }
 
 /** Actual pad copper area; unsupported custom polygons fail instead of disappearing. */
-function padArea(pad: PcbSmtPad): number {
+function padArea(pad: Snapshot<PcbSmtPad>): number {
   if (pad.shape === "circle") return Math.PI * pad.radius ** 2
   if (pad.shape === "rect") return pad.width * pad.height
   if (pad.shape === "polygon")
