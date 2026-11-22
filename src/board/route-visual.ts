@@ -340,7 +340,10 @@ function routeViewNets({
       net.sources.push(id)
       continue
     }
-    nets.push({ ids: sourceNetMembers({ connectivity, seed }), sources: [id] })
+    nets.push({
+      ids: sourceNetMembers({ connectivity, memberId: seed }),
+      sources: [id],
+    })
   }
   const channels = new Map<SignalName, RouteChannelPorts>()
   for (const signal of circuit.filter(
