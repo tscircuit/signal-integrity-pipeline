@@ -12,6 +12,7 @@ import {
 import { TransmissionLineRlgcSolver } from "../../src/rlgc"
 import { ChannelNetlistSolver, RouteNetworkSolver } from "../../src/simulation"
 import { routedRequest } from "../../src/simulation/route-transient"
+import { routedProblem } from "../fixtures/routed-fixture"
 import { quietDriverIbis } from "../fixtures/routed-visual-fixture"
 import { renderTwoTracePlanInput } from "../fixtures/two-trace-plan-input"
 import Single from "../fixtures/unit-single-ended"

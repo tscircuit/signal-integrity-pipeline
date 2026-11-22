@@ -8,18 +8,18 @@ import type { CircuitJson } from "../../src/board"
 import { sha256 } from "../../src/kernel"
 import { formatSpiceVectors } from "../../src/observation"
 import {
+  type RoutedAdmissionInput,
   RoutedPipelineSolver,
-  type RoutedProblem,
   type RoutedStageSolver,
   routedStages,
 } from "../../src/pipeline"
 import {
-  type RouteBindingsInput,
   RouteBindingsSolver,
   type RoutedBindings,
   type RoutedDeck,
   type RouteNetworkInput,
   RouteNetworkSolver,
+  type ScopedRouteBindingsInput,
 } from "../../src/simulation"
 import type { SolverContext } from "../../src/solver"
 import {
@@ -27,10 +27,10 @@ import {
   transientDurationSeconds,
   voltageNames,
 } from "../fixtures/routed-deck"
+import { routedProblem } from "../fixtures/routed-fixture"
 import { routedVisualFixture } from "../fixtures/routed-visual"
+import { vendorAvailable } from "../fixtures/vendor-models"
 import { renderCoreSignals } from "../support/core-render"
-import { routedProblem } from "../support/routed-fixture"
-import { vendorAvailable } from "../support/vendor-models"
 
 const vendorModelSkip =
   !process.env.IBIS_MODEL_DIR &&
@@ -68,7 +68,7 @@ test.skipIf(Boolean(vendorModelSkip))(
       stepSeconds: 1e-11,
     }
     const bindingsStage = solver.getSolver<
-      RoutedStageSolver<RouteBindingsInput, RoutedBindings>
+      RoutedStageSolver<ScopedRouteBindingsInput, RoutedBindings>
     >("RouteBindingsSolver")!
     const [[input]] = bindingsStage.getConstructorParams()
     const bindings = new RouteBindingsSolver({ ...input, options })
