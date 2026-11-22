@@ -1,4 +1,5 @@
 import log from "@stdlib/math-base-special-ln"
+import { cju } from "@tscircuit/circuit-json-util"
 import type { LayerRef, PcbSmtPad, PcbVia, Point } from "circuit-json"
 import {
   type CircuitJson,
@@ -272,8 +273,9 @@ export function routeTransitions({
   const layers = geometry.stack.copperLayers
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
   const ground = sourceNetMembers({ connectivity, memberId: groundPort })
-  const sources = circuit.filter((record) => record.type === "source_trace")
-  const vias = circuit.filter((record) => record.type === "pcb_via")
+  const db = cju([...circuit])
+  const sources = db.source_trace.list()
+  const vias = db.pcb_via.list()
   const groundVias = vias.filter((via) => {
     if (via.source_net_id && ground.has(via.source_net_id)) return true
     return sources.some((source) => {
@@ -285,7 +287,7 @@ export function routeTransitions({
       return ids.some((id) => ground.has(id))
     })
   })
-  const traces = circuit.filter((record) => record.type === "pcb_trace")
+  const traces = db.pcb_trace.list()
   for (const trace of traces) {
     const traceId = trace.pcb_trace_id
     if (
@@ -469,10 +471,8 @@ export function routeTransitions({
       }
     }
   }
-  for (const port of circuit.filter((record) => record.type === "pcb_port")) {
-    const pad = circuit
-      .filter((record) => record.type === "pcb_smtpad")
-      .find((pad) => pad.pcb_port_id === port.pcb_port_id)
+  for (const port of db.pcb_port.list()) {
+    const pad = db.pcb_smtpad.getWhere({ pcb_port_id: port.pcb_port_id })
     if (!pad) continue
     const wire = routeContactFrame({
       geometry,
