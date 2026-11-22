@@ -1,3 +1,4 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import "./extend-expect-circuit-snapshot"
 import { expect } from "bun:test"
 import type { PcbFabricationNoteText } from "circuit-json"
@@ -67,7 +68,7 @@ export function expectTopologySnapshot({
   allowUnroutedTraces: boolean
   testPath: string
 }): void {
-  const board = circuit.find((record) => record.type === "pcb_board")
+  const board = cju([...circuit]).pcb_board.getWhere({})
   if (!board?.height)
     throw new Error("Expected the circuit to contain a sized pcb_board")
   const top = board.center.y + board.height / 2 - VERDICT_TOP_MARGIN_MM
