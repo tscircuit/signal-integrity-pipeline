@@ -45,13 +45,13 @@ test.skipIf(!path || !models)(modelSelection, async () => {
         warning.includes(cpuModelRevision) && warning.includes("negated 30450"),
     ),
   )
-  assert.equal(write.settings.copperScope.selectedPcbTraceIds.length, 11)
+  assert.equal(write.settings.copperScope.channelPcbTraceIds.length, 11)
   assert.ok(
-    boardTraceCount - write.settings.copperScope.retainedPcbTraceIds.length >
+    boardTraceCount - write.settings.copperScope.extractedPcbTraceIds.length >
       400,
   )
   assert.ok(
-    write.settings.copperScope.retainedPcbTraceIds.length > 11,
+    write.settings.copperScope.extractedPcbTraceIds.length > 11,
     "physically relevant neighbours must stay",
   )
   const addr = await fullBoardDdr3({
@@ -70,15 +70,15 @@ test.skipIf(!path || !models)(modelSelection, async () => {
   assert.equal(block.block.name, "DDR3_ADDR_CMD")
   assert.ok(Math.abs(block.durationSeconds - 8e-9) <= Number.EPSILON * 8e-9)
   const [local] = prepareBlocks({ circuit: addr, sources, distanceMm: 1 })
-  assert.equal(local.settings.copperScope!.lateralDistanceMm, 1)
+  assert.equal(local.settings.copperScope!.nearbyGapMm, 1)
   assert.deepEqual(
-    local.settings.copperScope!.selectedPcbTraceIds,
-    block.settings.copperScope!.selectedPcbTraceIds,
+    local.settings.copperScope!.channelPcbTraceIds,
+    block.settings.copperScope!.channelPcbTraceIds,
   )
   assert.equal(local.settings.lanes.length, 24)
   assert.ok(
-    local.settings.copperScope!.retainedPcbTraceIds.length <
-      block.settings.copperScope!.retainedPcbTraceIds.length,
+    local.settings.copperScope!.extractedPcbTraceIds.length <
+      block.settings.copperScope!.extractedPcbTraceIds.length,
   )
   for (const distanceMm of [0, -1, NaN, Infinity, 33]) {
     assert.throws(
