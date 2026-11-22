@@ -289,8 +289,8 @@ export function routeTransitions({
   for (const trace of traces) {
     const traceId = trace.pcb_trace_id
     if (
-      !scope.retainedPcbTraceIds.includes(traceId) ||
-      scope.railPcbTraceIds.includes(traceId)
+      !scope.extractedPcbTraceIds.includes(traceId) ||
+      scope.nearbyRailPcbTraceIds.includes(traceId)
     )
       continue
     const wire = geometry.wires.find(

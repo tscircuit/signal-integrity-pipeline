@@ -98,13 +98,12 @@ export function routeOblique({
       const a = active[i]
       const b = active[j]
       if (a.source === b.source) continue
-      const selected = scope.selectedPcbTraceIds
+      const selected = scope.channelPcbTraceIds
       if (!selected.includes(a.trace) && !selected.includes(b.trace)) continue
       const sine = Math.abs(a.u[0] * b.u[1] - a.u[1] * b.u[0])
       if (sine < MIN_ANGLE_SINE) continue
       const near = closestRoutePoints({ first: a, second: b })
-      if (near.distance - (a.width + b.width) / 2 > scope.lateralDistanceMm)
-        continue
+      if (near.distance - (a.width + b.width) / 2 > scope.nearbyGapMm) continue
       const layers = geometry.stack.copperLayers
       const la = layers.findIndex((layer) => layer.name === a.layer)
       const lb = layers.findIndex((layer) => layer.name === b.layer)
