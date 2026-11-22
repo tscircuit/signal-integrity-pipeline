@@ -39,5 +39,26 @@ test.skipIf(!vendorAvailable(vendorModels.cmos.file))(
         .length,
       2,
     )
+    const drawing = solver.visualize()
+    const marks = drawing.polygons!.filter(
+      (polygon) =>
+        polygon.label &&
+        polygon.points.length > 4 &&
+        polygon.fill !== "#0b0f13",
+    )
+    assert.equal(
+      marks.filter((mark) => mark.fill).length,
+      2,
+      "each driver is a filled dot",
+    )
+    assert.equal(
+      marks.filter((mark) => !mark.fill).length,
+      2,
+      "each receiver is a ring",
+    )
+    assert.throws(
+      () => new RoutedAdmissionSolver({ ...input, scopeDistanceMm: 0 }).solve(),
+      /scope distance/,
+    )
   },
 )
