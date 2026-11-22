@@ -1,9 +1,9 @@
 import log from "@stdlib/math-base-special-ln"
-import { cju } from "@tscircuit/circuit-json-util"
 import type { LayerRef, PcbSmtPad, PcbVia, Point } from "circuit-json"
 import {
-  type CircuitJson,
+  type CircuitJsonSnapshot,
   type CopperScope,
+  circuitJsonDb,
   getSourcePortConnectivityMapFromCircuitJson,
   type RouteReference,
   type RouteWire,
@@ -17,7 +17,7 @@ import {
   sourceNetMembers,
 } from "../board"
 import { type Matrix, validateMatrix } from "../extraction"
-import { hypotenuse } from "../kernel"
+import { hypotenuse, type Snapshot } from "../kernel"
 import type { RouteEndpoint } from "./route-network"
 
 /** Vacuum permittivity in farads per metre. */
@@ -190,7 +190,7 @@ function layerHeight({
   layers,
   name,
 }: {
-  layers: SectionGeometry["stack"]["copperLayers"]
+  layers: Snapshot<SectionGeometry["stack"]["copperLayers"]>
   name: RouteReference["layer"]
 }): number {
   const layer = layers.find((layer) => layer.name === name)!
@@ -202,7 +202,7 @@ function referenceHeight({
   references,
   fallback,
 }: {
-  references: RouteReference[]
+  references: readonly RouteReference[]
   fallback: number
 }): number {
   if (!references.length) return fallback
@@ -219,11 +219,11 @@ function adjacentReferences({
   via,
   geometry,
 }: {
-  wire: RouteWire
+  wire: Snapshot<RouteWire>
   layer: LayerRef
   via: Point
-  geometry: SectionGeometry
-}): RouteReference[] {
+  geometry: Snapshot<SectionGeometry>
+}): readonly RouteReference[] {
   const slices = geometry.slices.filter((slice) => {
     return slice.wires.some(
       (candidate) =>
@@ -263,17 +263,17 @@ export function routeTransitions({
   endpoint,
   groundPort,
 }: {
-  circuit: CircuitJson
-  scope: CopperScope
-  geometry: SectionGeometry
+  circuit: CircuitJsonSnapshot
+  scope: Snapshot<CopperScope>
+  geometry: Snapshot<SectionGeometry>
   endpoint: RouteEndpoint
   groundPort: SourcePortId | SourceNetId
 }): RouteTransitions {
   const output: RouteTransitions = { lines: [], records: [], warnings: [] }
   const layers = geometry.stack.copperLayers
-  const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
+  const db = circuitJsonDb(circuit)
+  const connectivity = getSourcePortConnectivityMapFromCircuitJson(db.toArray())
   const ground = sourceNetMembers({ connectivity, memberId: groundPort })
-  const db = cju([...circuit])
   const sources = db.source_trace.list()
   const vias = db.pcb_via.list()
   const groundVias = vias.filter((via) => {

@@ -10,7 +10,7 @@ import {
 } from "../../src/pipeline"
 import { RouteBindingsSolver, RouteNetworkSolver } from "../../src/simulation"
 import { routedRequest } from "../../src/simulation/route-transient"
-import { routedProblem } from "../fixtures/routed-fixture"
+import { routedAdmissionInput } from "../fixtures/routed-fixture"
 import { quietDriverIbis } from "../fixtures/routed-visual-fixture"
 import Single from "../fixtures/unit-single-ended"
 import { vendorAvailable } from "../fixtures/vendor-models"
@@ -61,7 +61,7 @@ function compileNetwork(input: RoutedAdmissionInput): RouteNetworkSolver {
 /** Cache the network from the rendered fixture and the local vendor model. */
 async function routedNetwork(): Promise<RouteNetworkSolver> {
   if (testNetwork) return testNetwork
-  const input = await routedProblem()
+  const input = await routedAdmissionInput()
   testNetwork = compileNetwork(input)
   return testNetwork
 }

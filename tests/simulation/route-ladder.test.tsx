@@ -2,6 +2,7 @@ import { beforeAll, describe, setDefaultTimeout, test } from "bun:test"
 import assert from "node:assert/strict"
 import { type RouteWire, type RouteXY, segmentRoutes } from "../../src/board"
 import { RouteFieldsSolver } from "../../src/extraction"
+import type { Snapshot } from "../../src/kernel"
 import {
   type RouteLadder,
   routeLadder,
@@ -18,8 +19,8 @@ function endpoint({
   wire,
   point,
 }: {
-  wire: RouteWire
-  point: RouteXY
+  wire: Snapshot<RouteWire>
+  point: Snapshot<RouteXY>
 }): string {
   const coordinates = point
     .map((value) => value.toFixed(COORDINATE_PRECISION))

@@ -6,7 +6,7 @@ import {
   type ExtractedRoutes,
   referenceSeries,
 } from "../extraction"
-import { hypotenuse } from "../kernel"
+import { hypotenuse, type Snapshot } from "../kernel"
 import {
   RouteEnergy,
   seriesEnergy,
@@ -110,8 +110,8 @@ function maxCellDelay({
 
 /** A wire and the board coordinates of a point on its route arc. */
 type ArcPoint = {
-  wire: RouteWire
-  position: RouteXY
+  wire: Snapshot<RouteWire>
+  position: Snapshot<RouteXY>
 }
 
 /** Locate a physical point along the original (simplified) polyline, including its bends. */
@@ -121,7 +121,7 @@ function arcPoint({
   arc,
 }: {
   distance: number
-  run: RouteWire[]
+  run: Snapshot<RouteWire>[]
   arc: ReadonlyMap<number, ArcWire>
 }): ArcPoint {
   const wire =
@@ -145,7 +145,7 @@ function wirePosition({
   entry,
   distance,
 }: {
-  wire: RouteWire
+  wire: Snapshot<RouteWire>
   entry: ArcWire
   distance: number
 }): number {
@@ -165,7 +165,7 @@ export function routeContactKey({
   point,
 }: {
   layer: RouteWire["layer"]
-  point: RouteXY
+  point: Snapshot<RouteXY>
 }): RouteContactKey {
   const coordinates = point
     .map((value) => value.toFixed(CONTACT_PRECISION))

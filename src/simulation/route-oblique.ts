@@ -6,6 +6,7 @@ import {
   routeCrossSection,
   solveSectionCapacitance,
 } from "../extraction"
+import type { Snapshot } from "../kernel"
 import type { RouteLadder } from "./route-ladder"
 
 /** Serialized cross-section geometry used to reuse capacitance solves. */
@@ -40,8 +41,8 @@ function nearestRouteNode({
   point,
   wireNodes,
 }: {
-  wire: RouteWire
-  point: RouteXY
+  wire: Snapshot<RouteWire>
+  point: Snapshot<RouteXY>
   wireNodes: RouteLadder["wireNodes"]
 }): NearestRouteNode {
   const position = point[0] * wire.u[0] + point[1] * wire.u[1]
@@ -81,10 +82,10 @@ export function routeOblique({
   materials,
   panels = DEFAULT_OBLIQUE_PANELS,
 }: {
-  geometry: SectionGeometry
+  geometry: Snapshot<SectionGeometry>
   extracted: ExtractedRoutes
   ladder: RouteLadder
-  scope: CopperScope
+  scope: Snapshot<CopperScope>
   materials: RouteMaterials
   panels?: number
 }): ObliqueRouteCorrection {
