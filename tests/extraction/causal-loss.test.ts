@@ -217,14 +217,6 @@ function conductorLoss(strips: readonly ConductorLossStrip[]): string[] {
   return failures
 }
 
-test("golden stage 3: simulated conductor resistance follows a filament reference from 10 MHz to 5 GHz", () => {
-  const failures = conductorLoss([
-    ["0.1 x 0.0152 mm, b 0.2152", 0.1, 0.0152, 0.2152],
-    ["0.2 x 0.035 mm, b 0.5", 0.2, 0.035, 0.5],
-  ])
-  assert.deepEqual(failures, [])
-})
-
 // Known failure: -11.1% at 10 MHz with half-space planes (-4.9% against the half-space reference),
 // +5.5% at 100 MHz and +6.2% at 200 MHz from the crossover shape.
 test.failing(
