@@ -12,7 +12,6 @@ import {
   routeStrip,
   routeStroke,
   routeView,
-  withRouteDrawing,
 } from "../../src/board"
 import { routedCopper } from "../fixtures/routed-copper"
 import {
@@ -197,17 +196,13 @@ test("the strip unrolls nets to scale, centred in the pane, with one length labe
   const { circuitJson, scope } = root.stageOutput("RouteSectionsSolver")
     .value[0]
   const view = routeView({ circuit: circuitJson, scope })
-  let drawing: GraphicsObject = { lines: [], polygons: [], texts: [] }
   const nets = [...new Set(view.sources.values())]
-  drawing = withRouteDrawing({
-    drawing: drawing,
-    overlay: routeStrip({
-      pane: view.pane,
-      rows: [
-        { net: nets[0], length: 8 },
-        { net: nets[1], length: 4 },
-      ],
-    }),
+  const drawing = routeStrip({
+    pane: view.pane,
+    rows: [
+      { net: nets[0], length: 8 },
+      { net: nets[1], length: 4 },
+    ],
   })
   const bars = drawing.lines!.filter((line) => line.label)
   const [long, short] = bars.map((line) => line.points[1].x - line.points[0].x)
