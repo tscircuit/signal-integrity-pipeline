@@ -1,4 +1,5 @@
 /* eslint-disable local/max-file-lines -- Keep the debugger controls and their atlas rendering together. */
+import { cju } from "@tscircuit/circuit-json-util"
 import { Circuit } from "@tscircuit/core"
 import {
   GenericSolverDebugger,
@@ -366,8 +367,7 @@ async function loadBoardSolver({
   const circuitJson = await loadCircuitJson({ loadBoard, boardTree })
   if (signal.aborted) return
   const runSolver = createHttpSolver({ signal })
-  for (const record of circuitJson) {
-    if (record.type !== "simulation_ibis_model") continue
+  for (const record of cju([...circuitJson]).simulation_ibis_model.list()) {
     const path = record.ibis_model_asset.project_relative_path
     ibisSources[path] ??= ibisSources[`models/${path.split("/").at(-1)}`]
   }
