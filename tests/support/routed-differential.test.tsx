@@ -5,7 +5,7 @@ import type { SourceTrace } from "circuit-json"
 import React from "react"
 import Differential from "../../examples/level1-differential/level1-differential"
 import { RoutedPipelineSolver } from "../../src/pipeline"
-import { prepareBlocks } from "../fixtures/signal-render"
+import { prepareChannelSimulations } from "../fixtures/signal-render"
 import { renderCoreSignals } from "./core-render"
 
 /** Evidence for the routed length of one bus leg. */
@@ -24,9 +24,9 @@ test.skipIf(!process.env.IBIS_MODEL_DIR)(
         "utf8",
       ),
     }
-    const [block] = prepareBlocks({ circuit, sources })
+    const [channelSimulation] = prepareChannelSimulations({ circuit, sources })
     assert.equal(
-      block.settings.lanes.length,
+      channelSimulation.settings.lanes.length,
       4,
       "two bus routes and two termination stubs",
     )

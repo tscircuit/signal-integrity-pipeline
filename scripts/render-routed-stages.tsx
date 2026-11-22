@@ -244,7 +244,7 @@ async function renderDdr3(boardPath?: string): Promise<void> {
   const ibisSources = Object.fromEntries(sourceEntries)
   const circuitJson = await withDdr3Signals({
     physicalRecords: physical,
-    options: { block: "DDR3_ADDR_CMD" },
+    options: { channelSimulation: "DDR3_ADDR_CMD" },
   })
   await stages({
     name: "ddr3-addr-cmd",

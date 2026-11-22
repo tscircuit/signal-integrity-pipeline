@@ -32,9 +32,9 @@ export const addrCmdPins = [
   ["CK", "D2", "J7"],
   ["CKn", "D1", "K7"],
 ] as const
-/** Select the DDR3 block, driver model and active channel patterns. */
+/** Select the DDR3 channel simulation, driver model and active channel patterns. */
 export interface Ddr3Options {
-  block?: "DDR3_LOWER_WRITE" | "DDR3_ADDR_CMD"
+  channelSimulation?: "DDR3_LOWER_WRITE" | "DDR3_ADDR_CMD"
   pattern?:
     | "prbs7"
     | "simultaneous"
@@ -309,14 +309,14 @@ function writeChannels(): React.JSX.Element {
   )
 }
 
-/** The pins and channel elements belonging to one DDR3 block. */
+/** The pins and channel elements belonging to one DDR3 channel simulation. */
 interface Ddr3ChannelDeclarations {
   cpuPins: string[]
   dramPins: string[]
   channels: React.JSX.Element
 }
 
-/** Select the channel elements and matching pins for the requested block. */
+/** Select the channel elements and matching pins for the requested channel simulation. */
 function ddr3ChannelDeclarations(
   options: Ddr3SignalsProps,
 ): Ddr3ChannelDeclarations {
@@ -447,7 +447,7 @@ export async function withDdr3Signals({
   const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
   circuit.add(
     <Ddr3Signals
-      addr-cmd={options.block === "DDR3_ADDR_CMD"}
+      addr-cmd={options.channelSimulation === "DDR3_ADDR_CMD"}
       pattern={options.pattern}
       duration-seconds={options.durationSeconds}
       driver-model={options.driverModel}

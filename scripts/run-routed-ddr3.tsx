@@ -84,7 +84,7 @@ async function loadBoard(addressCommand: boolean): Promise<CircuitJson> {
     ) as CircuitJson
     return withDdr3Signals({
       physicalRecords: physical,
-      options: { block: "DDR3_ADDR_CMD" },
+      options: { channelSimulation: "DDR3_ADDR_CMD" },
     })
   }
   const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
@@ -165,35 +165,40 @@ try {
       last = performance.now()
     }
   }
-  const block = root.getOutput().blocks[0]
-  await writeFile(join(output, "capture.json"), JSON.stringify(block.capture))
+  const channelSimulation = root.getOutput().channelSimulations[0]
+  await writeFile(
+    join(output, "capture.json"),
+    JSON.stringify(channelSimulation.capture),
+  )
   await writeFile(
     join(output, "evidence.json"),
-    JSON.stringify(block.compiled.evidence),
+    JSON.stringify(channelSimulation.compiled.evidence),
   )
   const stage = root.getSolver("RouteTransientSolver")!
   await render({ name: "stage-6", drawing: stage.visualize() })
-  const probes = block.capture.probes.map(({ name, voltageLevels }) => ({
-    name,
-    minimumV: voltageLevels.reduce(
-      (minimum, value) => Math.min(minimum, value),
-      Infinity,
-    ),
-    maximumV: voltageLevels.reduce(
-      (maximum, value) => Math.max(maximum, value),
-      -Infinity,
-    ),
-    finalV: voltageLevels.at(-1),
-    finite: voltageLevels.every(Number.isFinite),
-  }))
+  const probes = channelSimulation.capture.probes.map(
+    ({ name, voltageLevels }) => ({
+      name,
+      minimumV: voltageLevels.reduce(
+        (minimum, value) => Math.min(minimum, value),
+        Infinity,
+      ),
+      maximumV: voltageLevels.reduce(
+        (maximum, value) => Math.max(maximum, value),
+        -Infinity,
+      ),
+      finalV: voltageLevels.at(-1),
+      finite: voltageLevels.every(Number.isFinite),
+    }),
+  )
   await writeFile(
     join(output, "waveform-sanity.json"),
     JSON.stringify(probes, null, 2),
   )
   console.log("Completed candidate-unqualified", {
-    cells: block.compiled.evidence.cells,
-    deckBytes: Buffer.byteLength(block.compiled.deck),
-    deckSha256: sha256(block.compiled.deck),
+    cells: channelSimulation.compiled.evidence.cells,
+    deckBytes: Buffer.byteLength(channelSimulation.compiled.deck),
+    deckSha256: sha256(channelSimulation.compiled.deck),
     probes,
   })
 } catch (error) {

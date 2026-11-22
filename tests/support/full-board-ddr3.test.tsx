@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import { addrCmdPins } from "../../examples/routed/ddr3-signals"
 import { fullBoardDdr3 } from "../fixtures/full-board-ddr3"
-import { prepareBlocks } from "../fixtures/signal-render"
+import { prepareChannelSimulations } from "../fixtures/signal-render"
 
 const path = process.env.SI_DDR3_BOARD
 const models = process.env.IBIS_MODEL_DIR
@@ -36,7 +36,7 @@ test.skipIf(!path || !models)(modelSelection, async () => {
   )
   const sources = Object.fromEntries(sourceEntries)
   // Branched neighbours such as RN5_INPUT_SYS4_CPU_PULL stay in the copper scope; only selected copper becomes lanes.
-  const [write] = prepareBlocks({ circuit, sources, distanceMm: 1 })
+  const [write] = prepareChannelSimulations({ circuit, sources, distanceMm: 1 })
   const cpuModelRevision = `models/sprm552c.ibs SHA-256 ${CPU_MODEL_SHA256}`
   assert.ok(write.warnings)
   assert.ok(
@@ -56,7 +56,7 @@ test.skipIf(!path || !models)(modelSelection, async () => {
   )
   const addr = await fullBoardDdr3({
     path: path!,
-    options: { block: "DDR3_ADDR_CMD" },
+    options: { channelSimulation: "DDR3_ADDR_CMD" },
   })
   const original = JSON.parse(await readFile(path!, "utf8")) as typeof addr
   assert.deepEqual(addr.slice(0, original.length), original)
@@ -66,42 +66,49 @@ test.skipIf(!path || !models)(modelSelection, async () => {
     ).length,
     24,
   )
-  const [block] = prepareBlocks({ circuit: addr, sources })
-  assert.equal(block.block.name, "DDR3_ADDR_CMD")
-  assert.ok(Math.abs(block.durationSeconds - 8e-9) <= Number.EPSILON * 8e-9)
-  const [local] = prepareBlocks({ circuit: addr, sources, distanceMm: 1 })
+  const [prepared] = prepareChannelSimulations({
+    circuit: addr,
+    sources,
+  })
+  assert.equal(prepared.channelSimulation.name, "DDR3_ADDR_CMD")
+  assert.ok(Math.abs(prepared.durationSeconds - 8e-9) <= Number.EPSILON * 8e-9)
+  const [local] = prepareChannelSimulations({
+    circuit: addr,
+    sources,
+    distanceMm: 1,
+  })
   assert.equal(local.settings.copperScope!.nearbyGapMm, 1)
   assert.deepEqual(
     local.settings.copperScope!.channelPcbTraceIds,
-    block.settings.copperScope!.channelPcbTraceIds,
+    prepared.settings.copperScope!.channelPcbTraceIds,
   )
   assert.equal(local.settings.lanes.length, 24)
   assert.ok(
     local.settings.copperScope!.extractedPcbTraceIds.length <
-      block.settings.copperScope!.extractedPcbTraceIds.length,
+      prepared.settings.copperScope!.extractedPcbTraceIds.length,
   )
   for (const distanceMm of [0, -1, NaN, Infinity, 33]) {
     assert.throws(
-      () => prepareBlocks({ circuit: addr, sources, distanceMm }),
+      () => prepareChannelSimulations({ circuit: addr, sources, distanceMm }),
       /scope distance/,
     )
   }
   assert.deepEqual(
-    new Set(block.signals.map((signal) => signal.name)),
+    new Set(prepared.driverReceiverChannels.map((signal) => signal.name)),
     new Set(addrCmdPins.map(([name]) => name)),
   )
-  for (const signal of block.signals) {
+  for (const signal of prepared.driverReceiverChannels) {
     assert.ok("source_port_id" in signal.driver)
     let expectedDriver = "Model_352"
     if (signal.name === "CK" || signal.name === "CKn")
       expectedDriver = "Model_343"
     assert.equal(
-      block.pins.get(signal.driver.source_port_id)!.buffer.name,
+      prepared.pins.get(signal.driver.source_port_id)!.buffer.name,
       expectedDriver,
     )
     assert.ok("source_port_id" in signal.receivers[0])
     assert.equal(
-      block.pins.get(signal.receivers[0].source_port_id)!.buffer.name,
+      prepared.pins.get(signal.receivers[0].source_port_id)!.buffer.name,
       "CMD",
     )
   }
@@ -126,23 +133,27 @@ test.skipIf(!path || !models)(isolatedA4, async () => {
   for (const driverModel of ["Model_352", "Model_345", "Model_273"] as const) {
     const circuit = await fullBoardDdr3({
       path: path!,
-      options: { block: "DDR3_ADDR_CMD", pattern: "isolated-a4", driverModel },
+      options: {
+        channelSimulation: "DDR3_ADDR_CMD",
+        pattern: "isolated-a4",
+        driverModel,
+      },
     })
     assert.deepEqual(circuit.slice(0, original.length), original)
-    const signals = circuit.filter(
+    const driverReceiverChannels = circuit.filter(
       (record) => record.type === "simulation_pcb_driver_receiver_channel",
     )
-    assert.equal(signals.length, 24)
+    assert.equal(driverReceiverChannels.length, 24)
     assert.equal(
-      signals.find((signal) => signal.name === "A4")!.pattern,
+      driverReceiverChannels.find((signal) => signal.name === "A4")!.pattern,
       "prbs7",
     )
     assert.ok(
-      signals
+      driverReceiverChannels
         .filter((signal) => signal.name !== "A4")
         .every((signal) => signal.pattern === "0"),
     )
-    for (const signal of signals) {
+    for (const signal of driverReceiverChannels) {
       assert.ok("source_port_id" in signal.driver)
       let expectedDriver: string = driverModel
       if (signal.name === "CK" || signal.name === "CKn")
@@ -153,7 +164,11 @@ test.skipIf(!path || !models)(isolatedA4, async () => {
   const selected = ["A4", "A5", "A7", "A9", "A11", "CASn"]
   const reduced = await fullBoardDdr3({
     path: path!,
-    options: { block: "DDR3_ADDR_CMD", nets: selected, pattern: "victim-even" },
+    options: {
+      channelSimulation: "DDR3_ADDR_CMD",
+      nets: selected,
+      pattern: "victim-even",
+    },
   })
   assert.deepEqual(reduced.slice(0, original.length), original)
   const reducedSignals = reduced.filter(
