@@ -24,7 +24,7 @@ interface RouteEnergyBudget {
 /** Sparse energy rows retain only terms integrated from a common physical slice. */
 export class RouteEnergy {
   readonly rows: Map<number, number>[]
-  private readonly budget: RouteEnergyBudget
+  private budget: RouteEnergyBudget
 
   /** Share a bound across the assembled matrices, independent of raw cell count. */
   constructor({
@@ -32,10 +32,19 @@ export class RouteEnergy {
     budget = { entries: 0 },
   }: {
     size: number
-    budget?: RouteEnergyBudget
+    budget?: Readonly<RouteEnergyBudget>
   }) {
-    this.budget = budget
+    this.budget = { ...budget }
     this.rows = Array.from({ length: size }, () => new Map())
+  }
+  /** Matrices assembled together share a single sparse-memory limit. */
+  static shared(sizes: readonly number[]): RouteEnergy[] {
+    const budget = { entries: 0 }
+    return sizes.map((size) => {
+      const matrix = new RouteEnergy({ size })
+      matrix.budget = budget
+      return matrix
+    })
   }
   /** Preserve integration order exactly; structural zeros consume no storage. */
   add({
@@ -109,20 +118,19 @@ function spiceCoefficient(coefficient: number): string {
 
 /** Coupled series matrix: normalized reciprocal R multiport or mutually coupled inductors. */
 export function seriesEnergy({
-  lines,
   tag,
   before,
   after,
   matrix,
   kind,
 }: {
-  lines: string[]
   tag: string
   before: string[]
   after: string[]
   matrix: RouteEnergy
   kind: "R" | "L"
-}): void {
+}): string[] {
+  const lines: string[] = []
   for (let i = 0; i < before.length; i++) {
     if (before[i] === after[i]) continue
     if (kind !== "R") {
@@ -161,7 +169,7 @@ export function seriesEnergy({
       )
     }
   }
-  if (kind !== "L") return
+  if (kind !== "L") return lines
   for (let i = 0; i < before.length; i++) {
     if (before[i] === after[i]) continue
     for (const [j, mutual] of matrix.entries(i)) {
@@ -177,6 +185,13 @@ export function seriesEnergy({
       )
     }
   }
+  return lines
+}
+
+/** SPICE lines for skin loss and the count of rows reduced by the passivity cap. */
+interface SkinEnergy {
+  lines: string[]
+  cappedSkinCells: number
 }
 
 /**
@@ -192,7 +207,6 @@ export function seriesEnergy({
  * sequence gives u = z(s) x. Returns how many rows had their own share reduced by the cap.
  */
 export function skinEnergy({
-  lines,
   tag,
   before,
   stripStages,
@@ -202,7 +216,6 @@ export function skinEnergy({
   dc,
   strip,
 }: {
-  lines: string[]
   tag: string
   before: string[]
   stripStages: SkinStageNodes
@@ -211,7 +224,8 @@ export function skinEnergy({
   poles: LossPole[]
   dc: number[]
   strip: number[]
-}): number {
+}): SkinEnergy {
+  const lines: string[] = []
   const after = stages.at(-1)!
   const top = Math.max(...poles.map((pole) => pole.skin))
   const terms = before.map((_, i) =>
@@ -309,7 +323,11 @@ export function skinEnergy({
       )
     }
   }
-  return own.filter((coefficient, i) => coefficient < strip[i]).length
+  return {
+    lines,
+    cappedSkinCells: own.filter((coefficient, i) => coefficient < strip[i])
+      .length,
+  }
 }
 
 /** Numerical tolerance for energy pivots and diagonal dominance. */
@@ -321,18 +339,17 @@ const MIN_MODAL_WEIGHT = 1e-12
 
 /** Exact sparse realization for symmetric diagonally dominant energy matrices, including positive mutual entries. */
 export function shuntEnergy({
-  lines,
   tag,
   nodes,
   matrix,
   rate,
 }: {
-  lines: string[]
   tag: string
   nodes: string[]
   matrix: RouteEnergy
   rate?: number
-}): void {
+}): string[] {
+  const lines: string[] = []
   const remainder = matrix.rows.map((row, i) => {
     const self = row.get(i) ?? 0
     const coupling = matrix.entries(i).reduce((total, [j, coefficient]) => {
@@ -344,14 +361,7 @@ export function shuntEnergy({
   if (
     remainder.some((coefficient) => coefficient < -NEGATIVE_ENERGY_TOLERANCE)
   ) {
-    modalShunt({
-      lines,
-      tag,
-      nodes,
-      matrix,
-      rate,
-    })
-    return
+    return modalShunt({ tag, nodes, matrix, rate })
   }
   const terms: {
     a: string
@@ -398,22 +408,22 @@ export function shuntEnergy({
         `R${name} ${name}c ${reference} ${spiceCoefficient(1 / (rate * term.c))}`,
       )
   }
+  return lines
 }
 
 /** LDL energy factors realize a PSD dielectric-loss matrix even when it is not a Maxwell matrix. */
 function modalShunt({
-  lines,
   tag,
   nodes,
   matrix,
   rate,
 }: {
-  lines: string[]
   tag: string
   nodes: string[]
   matrix: RouteEnergy
   rate?: number
-}): void {
+}): string[] {
+  const lines: string[] = []
   if (nodes.length ** 2 > MAX_MATRIX_ENTRIES) {
     throw new Error(
       `Route energy modal realization exceeds ${MAX_MATRIX_ENTRIES} dense entries`,
@@ -464,4 +474,5 @@ function modalShunt({
       }
     }
   }
+  return lines
 }

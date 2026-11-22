@@ -37,9 +37,7 @@ test("stamps self and signed mutual inductance", () => {
     [1e-9, 9e-9, -3e-9],
     [0, -3e-9, 16e-9],
   ])
-  const lines: string[] = []
-  seriesEnergy({
-    lines,
+  const lines = seriesEnergy({
     tag: "T",
     before: ["a", "b", "c"],
     after: ["d", "e", "f"],
@@ -81,9 +79,7 @@ test("normalized reciprocal resistance obeys V = R I down to tiny Foster voltage
   const voltages = matrix.map((row) =>
     row.reduce((sum, r, j) => sum + r * currents[j], 0),
   )
-  const lines: string[] = []
-  seriesEnergy({
-    lines,
+  const lines = seriesEnergy({
     tag: "T",
     before: ["a", "b", "c"],
     after: ["0", "0", "0"],
@@ -120,9 +116,7 @@ test("normalized reciprocal resistance obeys V = R I down to tiny Foster voltage
 })
 
 test("stamps uncoupled resistors directly", () => {
-  const diagonal: string[] = []
-  seriesEnergy({
-    lines: diagonal,
+  const diagonal = seriesEnergy({
     tag: "D",
     before: ["a", "b"],
     after: ["c", "d"],
@@ -144,9 +138,7 @@ test("normalizes the coupled skin multiport", () => {
   ]
   const currents = [2e-3, -1e-3, 3e-3]
   const poles = causalLossPoles()
-  const lines: string[] = []
-  skinEnergy({
-    lines,
+  const { lines } = skinEnergy({
     tag: "T",
     before: ["a", "b", "c"],
     stripStages: poles.map((_, p) =>
@@ -257,33 +249,29 @@ const toyPoles = [
 ]
 
 test("separates shifted and unshifted skin chains", () => {
-  const diagonal: string[] = []
   // Row b: conductor-wall share 1.5e-4 of S = 2e-4, R_dc chosen so its own crossover is 90 rad/s: a shifted chain
   // b -> g -> h with stages (rate 100, skin 2 * 10/100) and (190, 3 * 100/190), then the 0.5e-4 remainder h -> d -> f.
   const dc = 1.5e-4 * Math.sqrt(90 / Math.PI)
-  assert.equal(
-    skinEnergy({
-      lines: diagonal,
-      tag: "D",
-      before: ["a", "b"],
-      stripStages: [
-        ["q", "g"],
-        ["r", "h"],
-      ],
-      stages: [
-        ["c", "d"],
-        ["e", "f"],
-      ],
-      matrix: energy([
-        [1e-4, 0],
-        [0, 2e-4],
-      ]),
-      poles: toyPoles,
-      dc: [1, dc],
-      strip: [0, 1.5e-4],
-    }),
-    0,
-  )
+  const { lines: diagonal, cappedSkinCells } = skinEnergy({
+    tag: "D",
+    before: ["a", "b"],
+    stripStages: [
+      ["q", "g"],
+      ["r", "h"],
+    ],
+    stages: [
+      ["c", "d"],
+      ["e", "f"],
+    ],
+    matrix: energy([
+      [1e-4, 0],
+      [0, 2e-4],
+    ]),
+    poles: toyPoles,
+    dc: [1, dc],
+    strip: [0, 1.5e-4],
+  })
+  assert.equal(cappedSkinCells, 0)
   assert.deepEqual(
     diagonal.map((line) => line.split(" ").slice(0, 3).join(" ")),
     [
@@ -323,30 +311,26 @@ test("separates shifted and unshifted skin chains", () => {
 
 test("caps conductor-wall loss to keep the remainder passive", () => {
   // A coupled pair caps each own share at S_ii - |S_ij| so the shared remainder stays diagonally dominant (passive).
-  const capped: string[] = []
-  assert.equal(
-    skinEnergy({
-      lines: capped,
-      tag: "C",
-      before: ["a", "b"],
-      stripStages: [
-        ["q", "g"],
-        ["r", "h"],
-      ],
-      stages: [
-        ["c", "d"],
-        ["e", "f"],
-      ],
-      matrix: energy([
-        [1e-4, 3e-5],
-        [3e-5, 1e-4],
-      ]),
-      poles: toyPoles,
-      dc: [1e-3, 1e-3],
-      strip: [9e-5, 5e-5],
-    }),
-    1,
-  )
+  const { lines: capped, cappedSkinCells } = skinEnergy({
+    tag: "C",
+    before: ["a", "b"],
+    stripStages: [
+      ["q", "g"],
+      ["r", "h"],
+    ],
+    stages: [
+      ["c", "d"],
+      ["e", "f"],
+    ],
+    matrix: energy([
+      [1e-4, 3e-5],
+      [3e-5, 1e-4],
+    ]),
+    poles: toyPoles,
+    dc: [1e-3, 1e-3],
+    strip: [9e-5, 5e-5],
+  })
+  assert.equal(cappedSkinCells, 1)
   const scale = elementValue({ lines: capped, name: "GCSI0" })
   assert.ok(
     Math.abs(scale - 1 / Math.sqrt(3e-5)) < 1e-6,
@@ -360,9 +344,7 @@ test("caps conductor-wall loss to keep the remainder passive", () => {
 })
 
 test("stamps Maxwell shunts in matrix order", () => {
-  const lines: string[] = []
-  shuntEnergy({
-    lines,
+  const lines = shuntEnergy({
     tag: "T",
     nodes: ["a", "b", "c"],
     matrix: energy([
@@ -381,9 +363,7 @@ test("stamps Maxwell shunts in matrix order", () => {
 })
 
 test("stamps a dielectric relaxation branch", () => {
-  const loss: string[] = []
-  shuntEnergy({
-    lines: loss,
+  const loss = shuntEnergy({
     tag: "T",
     nodes: ["a"],
     matrix: energy([[1e-12]]),

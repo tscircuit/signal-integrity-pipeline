@@ -391,7 +391,8 @@ export class RouteNetworkSolver extends BaseSolver {
     const deck = `${lines.join("\n")}\n`
     const request = routedRequest({ deck })
     const compiled = snapshot<RoutedDeck>({
-      blockId: this.input.blockId,
+      simulationPcbTransientChannelSimulationId:
+        this.input.simulationPcbTransientChannelSimulationId,
       name: this.input.name,
       deck,
       requestSha256: sha256(JSON.stringify(request)),

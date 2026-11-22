@@ -334,13 +334,14 @@ export function* routeLadderSteps({
   ].filter((node) => node !== "0")
   const nodeIds = new Map(nodeNames.map((node, i) => [node, i]))
   /** Bound actual stored coupling terms, rather than unrelated route cells. */
-  const budget = { entries: 0 }
-  const R = new RouteEnergy({ size: cells.length, budget })
-  const L = new RouteEnergy({ size: cells.length, budget })
-  const skin = new RouteEnergy({ size: cells.length, budget })
+  const [R, L, skin, C, D] = RouteEnergy.shared([
+    cells.length,
+    cells.length,
+    cells.length,
+    nodeNames.length,
+    nodeNames.length,
+  ])
   const strip = cells.map(() => 0)
-  const C = new RouteEnergy({ size: nodeNames.length, budget })
-  const D = new RouteEnergy({ size: nodeNames.length, budget })
   for (const slice of extracted.slices) {
     const grounded = slice.wires.flatMap((wire, i) => {
       if (arc.has(wire.id)) return []
@@ -443,22 +444,21 @@ export function* routeLadderSteps({
   const before = cells.map((cell) => cell.before)
   const after = cells.map((cell) => cell.after)
   const current = cells.map((_, i) => `ARCd${i}`)
-  seriesEnergy({
-    lines,
+  for (const line of seriesEnergy({
     tag: "ARCD",
     before,
     after: current,
     matrix: R,
     kind: "R",
-  })
+  }))
+    lines.push(line)
   const stages = causalLossPoles().map((_, p) =>
     cells.map((_, i) => `ARCp${p}n${i}`),
   )
   const stripStages = causalLossPoles().map((_, p) =>
     cells.map((_, i) => `ARCq${p}n${i}`),
   )
-  const cappedSkinCells = skinEnergy({
-    lines,
+  const { lines: skinLines, cappedSkinCells } = skinEnergy({
     tag: "ARC",
     before: current,
     stripStages,
@@ -468,14 +468,15 @@ export function* routeLadderSteps({
     dc,
     strip,
   })
-  seriesEnergy({
-    lines,
+  for (const line of skinLines) lines.push(line)
+  for (const line of seriesEnergy({
     tag: "ARCL",
     before: stages.at(-1)!,
     after,
     matrix: L,
     kind: "L",
-  })
+  }))
+    lines.push(line)
   const dielectricAtReference = causalLossResponse({
     frequency: DIELECTRIC_REFERENCE_HZ,
   }).dielectricCapacitance
@@ -486,20 +487,20 @@ export function* routeLadderSteps({
       capacitance.rows[i].set(j, adjusted)
     }
   }
-  shuntEnergy({
-    lines,
+  for (const line of shuntEnergy({
     tag: "ARCC",
     nodes: nodeNames,
     matrix: capacitance,
-  })
+  }))
+    lines.push(line)
   for (const [p, pole] of causalLossPoles().entries())
-    shuntEnergy({
-      lines,
+    for (const line of shuntEnergy({
       tag: `ARCG${p}`,
       nodes: nodeNames,
       matrix: D.scaled(pole.dielectric),
       rate: pole.rate,
-    })
+    }))
+      lines.push(line)
   return {
     lines,
     cells: cells.length,

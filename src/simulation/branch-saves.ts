@@ -29,46 +29,40 @@ export function branchSaves({
     if (line.slice(0, SUBCIRCUIT_END.length).toLowerCase() !== SUBCIRCUIT_END)
       current.push(line)
   }
-  const saved: string[] = []
-  collectBranchSaves({
-    name: wrapper,
-    path: instance.toLowerCase(),
-    depth: 0,
-    context: { definitions, saved },
-  })
-  return saved
-}
-
-/** The parsed definitions and accumulated ngspice branch saves. */
-interface BranchSaveContext {
-  definitions: ReadonlyMap<SubcircuitName, string[]>
-  saved: string[]
+  return [
+    ...collectBranchSaves({
+      name: wrapper,
+      path: instance.toLowerCase(),
+      depth: 0,
+      definitions,
+    }),
+  ]
 }
 
 /** ngspice prefixes subcircuit voltage devices with v.<instance path>.<device name>. */
-function collectBranchSaves({
+function* collectBranchSaves({
   name,
   path,
   depth,
-  context,
+  definitions,
 }: {
   name: SubcircuitName
   path: string
   depth: number
-  context: BranchSaveContext
-}): void {
+  definitions: ReadonlyMap<SubcircuitName, string[]>
+}): Generator<string> {
   if (depth > MAX_SUBCIRCUIT_DEPTH)
     throw new Error("Recursive/deep SPICE library cannot be saved safely")
-  for (const line of context.definitions.get(name.toLowerCase()) ?? []) {
+  for (const line of definitions.get(name.toLowerCase()) ?? []) {
     const tokens = spiceWords(line)
     const device = tokens[0].toLowerCase()
-    if (device.startsWith("v")) context.saved.push(`i(v.${path}.${device})`)
+    if (device.startsWith("v")) yield `i(v.${path}.${device})`
     if (!device.startsWith("x")) continue
-    collectBranchSaves({
+    yield* collectBranchSaves({
       name: tokens.at(-1)!,
       path: `${path}.${device}`,
       depth: depth + 1,
-      context,
+      definitions,
     })
   }
 }

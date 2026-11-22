@@ -37,7 +37,7 @@ function compileNetwork(input: RoutedProblem): RouteNetworkSolver {
   const bindings = new RouteBindingsSolver({ ...plan.bindings, scope })
   bindings.solve()
   const network = new RouteNetworkSolver({
-    blockId: plan.id,
+    simulationPcbTransientChannelSimulationId: plan.id,
     name: plan.name,
     geometry,
     extracted,
