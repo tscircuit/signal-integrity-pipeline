@@ -11,6 +11,7 @@ import {
   type FileMap,
   type Produced,
   rootScope,
+  type Snapshot,
   snapshot,
 } from "../kernel"
 import {
@@ -30,7 +31,7 @@ import {
   captureRoutedAdmissionInput,
   type RoutedAdmissionInput,
 } from "./routed-admission-input"
-import { routedStage } from "./routed-stage"
+import { type RoutedStageOutput, routedStage } from "./routed-stage"
 
 /** All six rows exist before the first step; every stage drains all admitted channel simulations in order. */
 export const routedStages = [
@@ -107,11 +108,11 @@ export const routedStages = [
 /** Output types keyed by their debugger stage names. */
 interface RoutedStageOutputs {
   RoutedAdmissionSolver: Produced<readonly RoutedChannelSimulationPlan[]>
-  RouteSectionsSolver: Produced<RoutedSections[]>
-  RouteFieldsSolver: Produced<ExtractedRoutes[]>
-  RouteBindingsSolver: Produced<RoutedBindings[]>
-  RouteNetworkSolver: Produced<RoutedDeck[]>
-  RouteTransientSolver: Produced<RoutedCapture[]>
+  RouteSectionsSolver: RoutedStageOutput<RoutedSections>
+  RouteFieldsSolver: RoutedStageOutput<ExtractedRoutes>
+  RouteBindingsSolver: RoutedStageOutput<RoutedBindings>
+  RouteNetworkSolver: RoutedStageOutput<RoutedDeck>
+  RouteTransientSolver: RoutedStageOutput<RoutedCapture>
 }
 
 /** A routed channel simulation’s compiled network and transient capture. */
@@ -122,11 +123,11 @@ export interface RoutedChannelSimulationView {
   capture: RoutedCapture
 }
 /** Completed channel simulation results and files from every routed stage. */
-export interface RoutedInspection {
+export type RoutedInspection = Snapshot<{
   kind: "routed-inspection"
   channelSimulations: RoutedChannelSimulationView[]
   files: FileMap
-}
+}>
 
 /** The circuit problem and the runtime capability used by one routed pipeline. */
 interface RoutedPipelineInput {

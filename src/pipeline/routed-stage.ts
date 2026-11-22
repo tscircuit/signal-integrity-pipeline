@@ -1,6 +1,6 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
-import { type Produced, snapshot } from "../kernel"
+import { type Produced, type Snapshot, snapshot } from "../kernel"
 
 /** A solver that produces one channel simulation’s output and artifacts. */
 type ItemSolver<I, O> = BaseSolver & {
@@ -22,11 +22,14 @@ interface RoutedStageInput<I, O> {
 /** Ordered inputs used to reconstruct a stage whose solver class is bound. */
 type RoutedStageConstructorParams<I> = [I[]]
 
+/** A completed, deeply readonly array of domain outputs and their artifacts. */
+export type RoutedStageOutput<O> = Produced<readonly Snapshot<O>[]>
+
 /** One flat stage drains the domain algorithm one item at a time across all admitted channel simulations. */
 export class RoutedStageSolver<I, O> extends BaseSolver {
   private current?: ItemSolver<I, O>
   private readonly outputs: Produced<O>[] = []
-  private output?: Produced<O[]>
+  private output?: RoutedStageOutput<O>
   private readonly completedStats: Record<string, number> = {}
   private readonly inputs: I[]
   private readonly solverClass: ItemClass<I, O>
@@ -131,7 +134,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
     this.finish()
   }
   /** The immutable stage boundary is an array in admission order. */
-  override getOutput(): Produced<O[]> {
+  override getOutput(): RoutedStageOutput<O> {
     if (!this.output) throw new Error(`${this.getSolverName()} is incomplete`)
     return this.output
   }
