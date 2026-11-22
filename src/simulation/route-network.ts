@@ -453,7 +453,7 @@ function createRouteEndpoint({
   known: Map<RouteContactKey, string>
 }): RouteEndpoint {
   return ({ wire, point }) => {
-    if (scope.railTraceIds.includes(wire.trace)) return "0"
+    if (scope.railPcbTraceIds.includes(wire.trace)) return "0"
     const id = routeContactKey({ layer: wire.layer, point })
     const existing = known.get(id)
     if (existing) return existing

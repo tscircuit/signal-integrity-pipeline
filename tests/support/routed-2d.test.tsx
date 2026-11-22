@@ -129,7 +129,7 @@ describe("routed 2D board", () => {
   })
 
   test("keeps nearby copper in scope", () => {
-    assert.equal(fixture.scope.pcbTraceIds.length, 3)
+    assert.equal(fixture.scope.retainedPcbTraceIds.length, 3)
     assert.ok(fixture.geometry.slices.some((slice) => slice.wires.length === 2))
   })
 
