@@ -109,7 +109,7 @@ try {
   assert.ok(
     Object.values(manifest.peerDependenciesMeta).every((peer) => peer.optional),
   )
-  // A board without signal-integrity blocks admits nothing and never reaches the native capability.
+  // A board without transient channel simulations admits nothing and never reaches the native capability.
   await writeFile(
     join(consumer, "input.json"),
     JSON.stringify({ circuitJson: [], ibisSources: {} }),
@@ -135,7 +135,7 @@ const solver = new RoutedPipelineSolver({
   },
 })
 solver.solve()
-assert.deepEqual(solver.getOutput().blocks, [])
+assert.deepEqual(solver.getOutput().channelSimulations, [])
 const publicFunctions = [
   RouteTransientSolver,
   stackupFromCircuitJson,

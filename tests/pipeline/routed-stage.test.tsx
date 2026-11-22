@@ -9,7 +9,7 @@ import { RoutedStageSolver } from "../../src/pipeline"
 import { type RoutedCapture, RouteTransientSolver } from "../../src/simulation"
 import { routedVisualFixture } from "../fixtures/routed-visual"
 
-test("a flat stage drains real TSX block inputs in order", async () => {
+test("a flat stage drains real TSX channel simulation inputs in order", async () => {
   const { root } = await routedVisualFixture(2)
   const sections = root.getSolver<
     RoutedStageSolver<RouteSectionsInput, RoutedSections>
@@ -21,9 +21,9 @@ test("a flat stage drains real TSX block inputs in order", async () => {
   })
   stage.step()
   assert.equal(
-    stage.stats.completedBlocks,
+    stage.stats.completedChannelSimulations,
     0,
-    "one step cannot consume an entire multi-route block",
+    "one step cannot consume an entire multi-route channelSimulation",
   )
   assert.throws(() => stage.getOutput(), /incomplete/)
   stage.solve()
@@ -32,7 +32,7 @@ test("a flat stage drains real TSX block inputs in order", async () => {
     [...root.stageOutput("RouteSectionsSolver").value].reverse(),
   )
   assert.equal(stage.getOutput().artifacts.length, 4)
-  assert.equal(stage.stats.completedBlocks, 2)
+  assert.equal(stage.stats.completedChannelSimulations, 2)
   assert.equal(stage.progress, 1)
   assert.equal(stage.activeSubSolver, undefined)
 })
@@ -47,7 +47,7 @@ test("an empty transient stage completes synchronously without invoking the runt
   assert.equal(stage.progress, 1)
 })
 
-test("a failing block stops the flat stage before later blocks or partial outputs", async () => {
+test("a failing channel simulation stops the flat stage before later channel simulations or partial outputs", async () => {
   const { root } = await routedVisualFixture(2)
   type Input = ReturnType<RouteTransientSolver["getConstructorParams"]>[0]
   const transient = root.getSolver<RoutedStageSolver<Input, RoutedCapture>>(
@@ -72,6 +72,6 @@ test("a failing block stops the flat stage before later blocks or partial output
   assert.equal(calls, 1)
   assert.equal(stage.failed, true)
   assert.match(stage.error!, /bounded engine failure/)
-  assert.equal(stage.stats.completedBlocks, 0)
+  assert.equal(stage.stats.completedChannelSimulations, 0)
   assert.throws(() => stage.getOutput(), /incomplete/)
 })

@@ -35,8 +35,8 @@ const SNAPSHOT_DECIMAL_PLACES = 6
 const SNAPSHOT_WIDTH = 1100
 const SNAPSHOT_HEIGHT = 800
 
-/** Swap the board's single simulation declaration for the two-block fixture. */
-function twoBlockBoard(
+/** Swap the board's single simulation declaration for the two-channel simulation fixture. */
+function twoChannelSimulationBoard(
   board: ReturnType<typeof TwoTraceBoard>,
 ): ReturnType<typeof TwoTraceBoard> {
   const children = React.Children.toArray(board.props.children).filter(
@@ -44,7 +44,7 @@ function twoBlockBoard(
       !React.isValidElement(child) ||
       child.type !== simulation.pcbtransientchannelsimulation,
   )
-  const blocks = [0, 1].map((i) => (
+  const channelSimulations = [0, 1].map((i) => (
     <simulation.pcbtransientchannelsimulation
       key={i}
       name={`BLOCK${i}`}
@@ -59,7 +59,7 @@ function twoBlockBoard(
       />
     </simulation.pcbtransientchannelsimulation>
   ))
-  return React.cloneElement(board, {}, ...children, ...blocks)
+  return React.cloneElement(board, {}, ...children, ...channelSimulations)
 }
 
 /** Return one of the synthetic voltage series shown in the drawings. */
@@ -97,7 +97,7 @@ const context: SolverContext = {
 
 /** Render and solve the visual fixture with original drawing-only model tables. */
 async function solveVisualFixture(
-  blocks: number,
+  channelSimulations: number,
 ): Promise<RoutedVisualFixture> {
   const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
   const board = TwoTraceBoard({
@@ -105,7 +105,7 @@ async function solveVisualFixture(
     "duration-seconds": FIXTURE_DURATION_SECONDS,
   })
   let tree = board
-  if (blocks !== 1) tree = twoBlockBoard(board)
+  if (channelSimulations !== 1) tree = twoChannelSimulationBoard(board)
   circuit.add(tree)
   await circuit.renderUntilSettled()
   const root = new RoutedPipelineSolver({
@@ -120,17 +120,17 @@ async function solveVisualFixture(
   return { root }
 }
 
-/** Use the single-block fixture unless a test requests a different count. */
-const DEFAULT_VISUAL_BLOCK_COUNT = 1
+/** Use the single-channel simulation fixture unless a test requests a different count. */
+const DEFAULT_VISUAL_CHANNEL_SIMULATION_COUNT = 1
 
-/** Solve real TwoTraceBoard TSX once per block count in each test file. */
+/** Solve real TwoTraceBoard TSX once per channel simulation count in each test file. */
 export function routedVisualFixture(
-  blocks: number = DEFAULT_VISUAL_BLOCK_COUNT,
+  channelSimulations: number = DEFAULT_VISUAL_CHANNEL_SIMULATION_COUNT,
 ): Promise<RoutedVisualFixture> {
-  const existing = fixtures.get(blocks)
+  const existing = fixtures.get(channelSimulations)
   if (existing) return existing
-  const fixture = solveVisualFixture(blocks)
-  fixtures.set(blocks, fixture)
+  const fixture = solveVisualFixture(channelSimulations)
+  fixtures.set(channelSimulations, fixture)
   return fixture
 }
 

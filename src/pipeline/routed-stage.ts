@@ -2,12 +2,12 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { type Produced, snapshot } from "../kernel"
 
-/** A solver that produces one block’s output and artifacts. */
+/** A solver that produces one channel simulation’s output and artifacts. */
 type ItemSolver<I, O> = BaseSolver & {
   getOutput(): Produced<O>
   getConstructorParams(): ConstructorParameters<ItemClass<I, O>>
 }
-/** The constructor of a single-block solver. */
+/** The constructor of a single-channel simulation solver. */
 type ItemClass<I, O> = new (input: I) => ItemSolver<I, O>
 
 /** A flat stage constructor with its domain solver already bound. */
@@ -22,7 +22,7 @@ interface RoutedStageInput<I, O> {
 /** Ordered inputs used to reconstruct a stage whose solver class is bound. */
 type RoutedStageConstructorParams<I> = [I[]]
 
-/** One flat stage drains the domain algorithm one item at a time across all admitted blocks. */
+/** One flat stage drains the domain algorithm one item at a time across all admitted channel simulations. */
 export class RoutedStageSolver<I, O> extends BaseSolver {
   private current?: ItemSolver<I, O>
   private readonly outputs: Produced<O>[] = []
@@ -50,7 +50,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
       super.assertCanStepSynchronously()
     }
   }
-  /** Start the next block only after the previous block has completed successfully. */
+  /** Start the next channel simulation only after the previous channel simulation has completed successfully. */
   private prepare(): ItemSolver<I, O> | undefined {
     if (this.outputs.length === this.inputs.length) {
       this.output = {
@@ -59,8 +59,8 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
       }
       this.stats = {
         ...this.stats,
-        blocks: this.inputs.length,
-        completedBlocks: this.outputs.length,
+        channelSimulations: this.inputs.length,
+        completedChannelSimulations: this.outputs.length,
       }
       this.progress = 1
       this.solved = true
@@ -69,7 +69,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
     this.current ??= new this.solverClass(this.inputs[this.outputs.length])
     return this.current
   }
-  /** Include the current block in stage stats even when its step throws. */
+  /** Include the current channel simulation in stage stats even when its step throws. */
   private recordStats(): void {
     const current = this.current!
     const stats = { ...current.stats }
@@ -84,8 +84,8 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
     }
     this.stats = {
       ...stats,
-      blocks: this.inputs.length,
-      completedBlocks: this.outputs.length + Number(current.solved),
+      channelSimulations: this.inputs.length,
+      completedChannelSimulations: this.outputs.length + Number(current.solved),
     }
     if (current.solved) Object.assign(this.completedStats, stats)
   }
@@ -118,7 +118,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
     }
     this.finish()
   }
-  /** Await one item, so ngspice calls remain strictly sequential across blocks. */
+  /** Await one item, so ngspice calls remain strictly sequential across channel simulations. */
   override async _stepAsync(): Promise<void> {
     if (this.current?.solved) this.current = undefined
     const current = this.prepare()
@@ -139,7 +139,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
   override getConstructorParams(): RoutedStageConstructorParams<I> {
     return [this.inputs]
   }
-  /** Retain the last block's drawing when its stage completes, or a blank drawing when no blocks were admitted. */
+  /** Retain the last channel simulation's drawing when its stage completes, or a blank drawing when no channel simulations were admitted. */
   override visualize(): GraphicsObject {
     return this.current?.visualize() ?? { coordinateSystem: "cartesian" }
   }
@@ -150,7 +150,7 @@ export function routedStage<I, O>(
   solverClass: ItemClass<I, O>,
 ): RoutedStageClass<I, O> {
   return class extends RoutedStageSolver<I, O> {
-    /** One immutable input per admitted block; the stage owns its ordered work queue. */
+    /** One immutable input per admitted channel simulation; the stage owns its ordered work queue. */
     constructor(inputs: I[]) {
       super({ inputs, solverClass })
     }

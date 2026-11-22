@@ -24,12 +24,12 @@ import {
 import type { SolverContext } from "../solver"
 import {
   RoutedAdmissionSolver,
-  type RoutedBlockPlan,
+  type RoutedChannelSimulationPlan,
   type RoutedProblem,
 } from "./routed-admission"
 import { routedStage } from "./routed-stage"
 
-/** All six rows exist before the first step; every stage drains all admitted blocks in order. */
+/** All six rows exist before the first step; every stage drains all admitted channel simulations in order. */
 export const routedStages = [
   definePipelineStep(
     "RoutedAdmissionSolver",
@@ -74,7 +74,7 @@ export const routedStages = [
     routedStage(RouteNetworkSolver),
     (p: RoutedPipelineSolver) => [
       p.stageOutput("RoutedAdmissionSolver").value.map((plan, i) => ({
-        blockId: plan.id,
+        simulationPcbTransientChannelSimulationId: plan.id,
         name: plan.name,
         geometry: p.stageOutput("RouteSectionsSolver").value[i].geometry,
         extracted: p.stageOutput("RouteFieldsSolver").value[i],
@@ -102,7 +102,7 @@ export const routedStages = [
 
 /** Output types keyed by their debugger stage names. */
 interface RoutedStageOutputs {
-  RoutedAdmissionSolver: Produced<RoutedBlockPlan[]>
+  RoutedAdmissionSolver: Produced<RoutedChannelSimulationPlan[]>
   RouteSectionsSolver: Produced<RoutedSections[]>
   RouteFieldsSolver: Produced<ExtractedRoutes[]>
   RouteBindingsSolver: Produced<RoutedBindings[]>
@@ -110,17 +110,17 @@ interface RoutedStageOutputs {
   RouteTransientSolver: Produced<RoutedCapture[]>
 }
 
-/** A routed block’s compiled network and transient capture. */
-export interface RoutedBlockView {
-  id: RoutedBlockPlan["id"]
+/** A routed channel simulation’s compiled network and transient capture. */
+export interface RoutedChannelSimulationView {
+  id: RoutedChannelSimulationPlan["id"]
   name: string
   compiled: RoutedDeck
   capture: RoutedCapture
 }
-/** Completed block results and files from every routed stage. */
+/** Completed channel simulation results and files from every routed stage. */
 export interface RoutedInspection {
   kind: "routed-inspection"
-  blocks: RoutedBlockView[]
+  channelSimulations: RoutedChannelSimulationView[]
   files: FileMap
 }
 
@@ -162,7 +162,7 @@ export class RoutedPipelineSolver extends BasePipelineSolver<RoutedProblem> {
     if (!output) throw new Error(`Incomplete stage ${name}`)
     return output
   }
-  /** Fold each flat stage's artifacts once, preserving per-block values and paths. */
+  /** Fold each flat stage's artifacts once, preserving per-simulation values and paths. */
   override getOutput(): RoutedInspection {
     if (!this.solved) throw new Error("Routed pipeline is incomplete")
     if (this.output) return this.output
@@ -174,7 +174,7 @@ export class RoutedPipelineSolver extends BasePipelineSolver<RoutedProblem> {
     const plans = this.stageOutput("RoutedAdmissionSolver").value
     const compiled = this.stageOutput("RouteNetworkSolver").value
     const captures = this.stageOutput("RouteTransientSolver").value
-    const blocks = plans.map((plan, i) => ({
+    const channelSimulations = plans.map((plan, i) => ({
       id: plan.id,
       name: plan.name,
       compiled: compiled[i],
@@ -188,7 +188,7 @@ export class RoutedPipelineSolver extends BasePipelineSolver<RoutedProblem> {
     ])
     this.output = snapshot({
       kind: "routed-inspection",
-      blocks,
+      channelSimulations,
       files: ledger.seal(),
     })
     return this.output

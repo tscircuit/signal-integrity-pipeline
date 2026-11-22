@@ -44,5 +44,5 @@ const solver = new RoutedPipelineSolver({
   context: { runSolver: denied, progress: denied },
 })
 solver.solve()
-assert.deepEqual(solver.getOutput().blocks, [])
+assert.deepEqual(solver.getOutput().channelSimulations, [])
 assert.equal(JSON.stringify(input), before)

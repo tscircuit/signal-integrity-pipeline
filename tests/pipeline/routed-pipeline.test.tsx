@@ -116,7 +116,7 @@ const synthetic: SolverContext = {
 }
 
 test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
-  "six flat stages visit every block and produce deterministic artifacts",
+  "six flat stages visit every channelSimulation and produce deterministic artifacts",
   async () => {
     const input = await routedProblem()
     const solver = new RoutedPipelineSolver({ input, context: synthetic })
@@ -135,7 +135,7 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
       assert.ok(Object.keys(child.stats).length > 0)
     }
     const output = solver.getOutput()
-    assert.equal(output.blocks[0].capture.kind, "completed")
+    assert.equal(output.channelSimulations[0].capture.kind, "completed")
     assert.ok(
       Object.keys(output.files).some((path) =>
         path.endsWith("/simulation.cir"),
@@ -163,20 +163,20 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
     })
     await collision.solveAsync()
     assert.equal(
-      collision.getOutput().blocks[0].id,
+      collision.getOutput().channelSimulations[0].id,
       "getOutput",
-      "block IDs cannot overwrite debugger methods",
+      "channelSimulation IDs cannot overwrite debugger methods",
     )
   },
 )
 
-test("root with no SI blocks seals only admission and the tuple manifest", () => {
+test("root with no channel simulations seals only admission and the tuple manifest", () => {
   const solver = new RoutedPipelineSolver({
     input: { circuitJson: [], ibisSources: {} },
     context: synthetic,
   })
   solver.solve()
-  assert.equal(solver.getOutput().blocks.length, 0)
+  assert.equal(solver.getOutput().channelSimulations.length, 0)
   assert.deepEqual(
     JSON.parse(solver.getOutput().files["stages.json"]),
     routedStages.map((stage) => stage.solverName),
@@ -237,7 +237,7 @@ test("all six static stage definitions exist before the first step", () => {
   )
 })
 
-test("actual two-block TSX advances every flat stage and invokes transients sequentially", async () => {
+test("actual two-channel simulation TSX advances every flat stage and invokes transients sequentially", async () => {
   const { root: fixture } = await routedVisualFixture(2)
   let active = 0
   let calls = 0
@@ -261,11 +261,11 @@ test("actual two-block TSX advances every flat stage and invokes transients sequ
   assert.equal(root.stageOutput("RouteFieldsSolver").value.length, 2)
   await root.solveAsync()
   assert.equal(calls, 2)
-  assert.equal(root.getOutput().blocks.length, 2)
+  assert.equal(root.getOutput().channelSimulations.length, 2)
   assert.equal(root.getSolver("RouteTransientSolver")!.stats.invocations, 2)
   for (const stage of root.pipelineDef.slice(1)) {
     const child = root.getSolver(stage.solverName)!
-    assert.equal(child.stats.completedBlocks, 2)
+    assert.equal(child.stats.completedChannelSimulations, 2)
     assert.ok(child.iterations >= 2)
     assert.ok(root.timeSpentOnStage[stage.solverName] >= 0)
   }

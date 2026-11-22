@@ -8,8 +8,8 @@ export function routedStageDocumentation(): string {
   const table = ["| # | Stage solver |", "|---|---|", ...rows].join("\n")
 
   const nodes = names.map((name, i) => {
-    let step = "Admit one SI block per step"
-    if (i > 0) step = "All admitted blocks, one item per step"
+    let step = "Admit one channel simulation per step"
+    if (i > 0) step = "All admitted channel simulations, one item per step"
     return `  s${i}["${name}<br/>${step}"]`
   })
   const nextStages = names.slice(1)
@@ -19,7 +19,7 @@ export function routedStageDocumentation(): string {
   const flow = ["flowchart LR", ...nodes, ...edges, nativeEdge].join("\n")
 
   const transitions = nextStages.map(
-    (name, i) => `  ${names[i]} --> ${name}: all blocks completed`,
+    (name, i) => `  ${names[i]} --> ${name}: all channel simulations completed`,
   )
   const failures = names.map((name) => `  ${name} --> failed`)
   const states = [
@@ -33,7 +33,7 @@ export function routedStageDocumentation(): string {
   return `${table}\n\n\`\`\`mermaid\n${flow}\n\`\`\`\n\n\`\`\`mermaid\n${states}\n\`\`\`\n`
 }
 
-/** Replace the first complete generated block, leaving other text intact. */
+/** Replace the first complete generated channel simulation, leaving other text intact. */
 function replaceRoutedStageDocumentation({
   text,
   documentation,
