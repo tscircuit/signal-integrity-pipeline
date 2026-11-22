@@ -240,7 +240,7 @@ export class RouteNetworkSolver extends BaseSolver {
     )
     const ground = sourceNetMembers({
       connectivity,
-      seed: bindings.groundSourcePortId,
+      memberId: bindings.groundSourcePortId,
     })
     const powerReferences = geometry.slices.flatMap((slice) => {
       return slice.references

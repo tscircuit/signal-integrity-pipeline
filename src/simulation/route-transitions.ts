@@ -271,7 +271,7 @@ export function routeTransitions({
   const output: RouteTransitions = { lines: [], records: [], warnings: [] }
   const layers = geometry.stack.copperLayers
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
-  const ground = sourceNetMembers({ connectivity, seed: groundPort })
+  const ground = sourceNetMembers({ connectivity, memberId: groundPort })
   const sources = circuit.filter((record) => record.type === "source_trace")
   const vias = circuit.filter((record) => record.type === "pcb_via")
   const groundVias = vias.filter((via) => {

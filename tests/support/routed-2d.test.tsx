@@ -60,14 +60,17 @@ async function routeFixture(): Promise<RouteFixture> {
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
   const ground = sourceNetMembers({
     connectivity,
-    seed: groundNet.source_net_id,
+    memberId: groundNet.source_net_id,
   })
   const scope = channelCopperScope({
     circuit,
     connectivity,
-    selected: sourceNetMembers({ connectivity, seed: port.source_port_id }),
-    reference: ground,
-    rails: new Set(),
+    channelSourceIds: sourceNetMembers({
+      connectivity,
+      memberId: port.source_port_id,
+    }),
+    referenceSourceIds: ground,
+    railSourceIds: new Set(),
     distanceMm: 1,
   })
   const geometry = segmentRoutes({ circuit, scope })
@@ -236,12 +239,12 @@ test("solves overlapping copper as equipotential patches", async () => {
   const mergedScope = channelCopperScope({
     circuit: mergedCircuit,
     connectivity: mergedConnectivity,
-    selected: sourceNetMembers({
+    channelSourceIds: sourceNetMembers({
       connectivity: mergedConnectivity,
-      seed: portId,
+      memberId: portId,
     }),
-    reference: ground,
-    rails: new Set(),
+    referenceSourceIds: ground,
+    railSourceIds: new Set(),
     distanceMm: 1,
   })
   const merged = segmentRoutes({ circuit: mergedCircuit, scope: mergedScope })
@@ -267,9 +270,12 @@ describe("oblique route", () => {
     scope = channelCopperScope({
       circuit,
       connectivity,
-      selected: sourceNetMembers({ connectivity, seed: fixture.portId }),
-      reference: fixture.ground,
-      rails: new Set(),
+      channelSourceIds: sourceNetMembers({
+        connectivity,
+        memberId: fixture.portId,
+      }),
+      referenceSourceIds: fixture.ground,
+      railSourceIds: new Set(),
       distanceMm: 1,
     })
     geometry = segmentRoutes({ circuit, scope })
@@ -347,12 +353,12 @@ describe("via-in-pad route", () => {
     viaScope = channelCopperScope({
       circuit: viaCircuit,
       connectivity: viaConnectivity,
-      selected: sourceNetMembers({
+      channelSourceIds: sourceNetMembers({
         connectivity: viaConnectivity,
-        seed: viaSource.connected_source_port_ids[0],
+        memberId: viaSource.connected_source_port_ids[0],
       }),
-      reference: ground,
-      rails: new Set(),
+      referenceSourceIds: ground,
+      railSourceIds: new Set(),
       distanceMm: 1,
     })
     viaGeometry = segmentRoutes({ circuit: viaCircuit, scope: viaScope })
