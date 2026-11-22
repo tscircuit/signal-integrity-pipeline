@@ -205,7 +205,7 @@ export function routeView({
 }): RouteView {
   const cached = views.get(scope)?.get(circuit)
   if (cached) return cached
-  const traces = new Set(scope.selectedPcbTraceIds)
+  const traces = new Set(scope.channelPcbTraceIds)
   const points: Point[] = []
   const ends = new Set<PcbPortId>()
   const order: SourceTraceId[] = []
