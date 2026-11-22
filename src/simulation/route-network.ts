@@ -449,15 +449,16 @@ function createRouteEndpoint({
   known,
 }: {
   scope: RouteNetworkInput["bindings"]["scope"]
-  known: Map<RouteContactKey, string>
+  known: ReadonlyMap<RouteContactKey, string>
 }): RouteEndpoint {
+  const nodes = new Map(known)
   return ({ wire, point }) => {
     if (scope.nearbyRailPcbTraceIds.includes(wire.trace)) return "0"
     const id = routeContactKey({ layer: wire.layer, point })
-    const existing = known.get(id)
+    const existing = nodes.get(id)
     if (existing) return existing
-    const node = `route${known.size}`
-    known.set(id, node)
+    const node = `route${nodes.size}`
+    nodes.set(id, node)
     return node
   }
 }
