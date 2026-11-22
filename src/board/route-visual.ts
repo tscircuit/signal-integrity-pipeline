@@ -477,38 +477,50 @@ type RouteNetColor = (net: RouteNet | undefined) => string
 /** Emit the current run of one layer and width. */
 function drawRouteRun({
   style,
-  drawing,
 }: {
   style: {
     run?: RouteRun
     net?: RouteNet
     color?: RouteNetColor
   }
-  drawing: GraphicsObject
-}): void {
+}): Line[] {
   const { run, net, color } = style
-  if (!run || run.points.length <= 1) return
+  if (!run || run.points.length <= 1) return []
   let strokeColor = net?.color ?? routeTones.copper
   if (color) strokeColor = color(net)
-  drawing.lines!.push(
-    ...routeStroke({ ...run, color: strokeColor, label: net?.label }),
-  )
+  return routeStroke({ ...run, color: strokeColor, label: net?.label })
+}
+
+/** Add the overlay's primitives after the drawing's existing primitives. */
+export function withRouteDrawing({
+  drawing,
+  overlay,
+}: {
+  drawing: GraphicsObject
+  overlay: GraphicsObject
+}): GraphicsObject {
+  return {
+    ...drawing,
+    lines: [...drawing.lines!, ...overlay.lines!],
+    polygons: [...drawing.polygons!, ...overlay.polygons!],
+    rects: [...drawing.rects!, ...overlay.rects!],
+    texts: [...drawing.texts!, ...overlay.texts!],
+  }
 }
 
 /** Selected copper as layer-aware strokes, one colour per net unless `color` overrides it. */
 export function routeNets({
-  drawing,
   circuit,
   view,
   traceIds = view.traces,
   color,
 }: {
-  drawing: GraphicsObject
   circuit: CircuitJson
   view: RouteView
   traceIds?: Set<PcbTraceId>
   color?: RouteNetColor
-}): void {
+}): NonNullable<GraphicsObject["lines"]> {
+  const drawing = routeCanvas()
   const db = cju([...circuit])
   const fallback = db.pcb_board.getWhere({})?.min_trace_width ?? 0.15
   for (const trace of db.pcb_trace.list()) {
@@ -517,20 +529,21 @@ export function routeNets({
     let run: RouteRun | undefined
     for (const point of trace.route) {
       if (point.route_type !== "wire") {
-        drawRouteRun({ style: { run, net, color }, drawing })
+        drawing.lines!.push(...drawRouteRun({ style: { run, net, color } }))
         run = undefined
         continue
       }
       const width = point.width || fallback
       if (!run || run.layer !== point.layer || run.width !== width) {
         const points = run?.points.slice(-1) ?? []
-        drawRouteRun({ style: { run, net, color }, drawing })
+        drawing.lines!.push(...drawRouteRun({ style: { run, net, color } }))
         run = { points, layer: point.layer, width }
       }
       run.points.push({ x: point.x, y: point.y })
     }
-    drawRouteRun({ style: { run, net, color }, drawing })
+    drawing.lines!.push(...drawRouteRun({ style: { run, net, color } }))
   }
+  return drawing.lines!
 }
 
 /** A closed circle outline as polygon points. */
@@ -557,11 +570,9 @@ function circle({
  * spacing allows.
  */
 export function routeMarks({
-  drawing,
   marks,
   unit,
 }: {
-  drawing: GraphicsObject
   marks: readonly {
     point: Point
     color: string
@@ -569,7 +580,8 @@ export function routeMarks({
     label?: string
   }[]
   unit: number
-}): void {
+}): NonNullable<GraphicsObject["polygons"]> {
+  const drawing = routeCanvas()
   const radius = Math.min(
     unit * 1.1,
     spacing(marks.map((mark) => mark.point)) * 0.38,
@@ -597,18 +609,18 @@ export function routeMarks({
       label: mark.label,
     })
   }
+  return drawing.polygons!
 }
 
 /** The one via glyph every stage uses: a white ring over a dark halo. */
 export function routeVia({
-  drawing,
   center,
   radius,
 }: {
-  drawing: GraphicsObject
   center: Point
   radius: number
-}): void {
+}): NonNullable<GraphicsObject["polygons"]> {
+  const drawing = routeCanvas()
   drawing.polygons!.push({
     points: circle({ center, radius: radius * 1.2 }),
     stroke: routeTones.halo,
@@ -619,6 +631,7 @@ export function routeVia({
     stroke: routeTones.via,
     strokeWidth: radius * 0.28,
   })
+  return drawing.polygons!
 }
 
 /** The physical position of a source port. */
@@ -636,9 +649,11 @@ export function routePortPoint({
   return { x: port.x, y: port.y }
 }
 
+/** One label on a route drawing. */
+type RouteText = NonNullable<GraphicsObject["texts"]>[number]
+
 /** Small world-unit text; drawn only where a number cannot be shown by shape or colour. */
 export function routeText({
-  drawing,
   x,
   y,
   text,
@@ -646,34 +661,32 @@ export function routeText({
   size,
   anchor = "center",
 }: {
-  drawing: GraphicsObject
   x: number
   y: number
   text: string
   color: string
   size: number
   anchor?: NinePointAnchor
-}): void {
-  drawing.texts!.push({
+}): RouteText {
+  return {
     x,
     y,
     text,
     color,
     fontSize: size,
     anchorSide: anchor,
-  })
+  }
 }
 
 /** An opaque pane: a thick line at zIndex -1 fills it, because graphics-debug paints every line before other shapes. */
 export function routePane({
-  drawing,
   box,
   edge = routeTones.paneEdge,
 }: {
-  drawing: GraphicsObject
   box: Viewbox
   edge?: string
-}): void {
+}): GraphicsObject {
+  const drawing = routeCanvas()
   const middle = (box.minY + box.maxY) / 2
   drawing.lines!.push({
     points: [
@@ -694,6 +707,7 @@ export function routePane({
     stroke: edge,
     strokeWidth: Math.max(box.maxX - box.minX, box.maxY - box.minY) * 0.003,
   })
+  return drawing
 }
 
 /** Find up to three spans ending at whitespace or the end of the message. */
@@ -736,28 +750,29 @@ function failureLines({
 
 /** A failure reason in the pane slot (or across the board without one), wrapped to at most three lines that fit. */
 export function routeFailure({
-  drawing,
   box,
   message,
 }: {
-  drawing: GraphicsObject
   box: Viewbox
   message: string
-}): void {
+}): NonNullable<GraphicsObject["texts"]> {
+  const drawing = routeCanvas()
   const width = box.maxX - box.minX
   const size = Math.min((box.maxY - box.minY) * 0.06, width / 40)
   const perLine = Math.max(10, Math.floor((width * 0.9) / (size * 0.6)))
   const lines = failureLines({ message, perLine })
   for (const [i, line] of lines.entries())
-    routeText({
-      drawing,
-      x: box.minX + width * 0.05,
-      y: box.maxY - size * (1.6 + i * 1.3),
-      text: line.trim(),
-      color: routeTones.failure,
-      size,
-      anchor: "center_left",
-    })
+    drawing.texts!.push(
+      routeText({
+        x: box.minX + width * 0.05,
+        y: box.maxY - size * (1.6 + i * 1.3),
+        text: line.trim(),
+        color: routeTones.failure,
+        size,
+        anchor: "center_left",
+      }),
+    )
+  return drawing.texts!
 }
 
 /** The board's extent: its outline, its rectangle, else every positioned pcb record. */
@@ -803,12 +818,13 @@ export function routeBoardDrawing({
   if (!scope) return routeCanvas()
   const view = routeView({ circuit, scope })
   const drawing = routeCanvas(view)
-  routeNets({
-    drawing,
-    circuit,
-    view,
-    color,
-  })
+  drawing.lines!.push(
+    ...routeNets({
+      circuit,
+      view,
+      color,
+    }),
+  )
   return drawing
 }
 
@@ -864,14 +880,13 @@ type RouteBuffer = {
  * a dark halo.
  */
 export function routeBuffers({
-  drawing,
   buffers,
   unit,
 }: {
-  drawing: GraphicsObject
   buffers: readonly RouteBuffer[]
   unit: number
-}): void {
+}): NonNullable<GraphicsObject["polygons"]> {
+  const drawing = routeCanvas()
   const size = Math.min(
     unit * 1.6,
     spacing(buffers.map((buffer) => buffer.point)) * 0.48,
@@ -914,6 +929,7 @@ export function routeBuffers({
       label: buffer.label,
     })
   }
+  return drawing.polygons!
 }
 
 /** A component's outline as a rotated rectangle. */
@@ -986,21 +1002,23 @@ function routeStripX({
  * at the ends when `buffers` is set.
  */
 export function routeStrip({
-  drawing,
   pane,
   rows,
   buffers,
 }: {
-  drawing: GraphicsObject
   pane: Viewbox
   rows: readonly RouteStripRow[]
   buffers?: {
     driver: boolean
     receiver: boolean
   }
-}): void {
-  routePane({ drawing, box: pane })
-  if (!rows.length) return
+}): GraphicsObject {
+  let drawing = routeCanvas()
+  drawing = withRouteDrawing({
+    drawing: drawing,
+    overlay: routePane({ box: pane }),
+  })
+  if (!rows.length) return drawing
   const unit = Math.max(pane.maxX - pane.minX, pane.maxY - pane.minY) / 100
   const left = pane.minX + (pane.maxX - pane.minX) * 0.2
   const right = pane.maxX - unit * 4
@@ -1071,15 +1089,16 @@ export function routeStrip({
         strokeWidth: unit * 0.15,
       })
     if (rows.length <= 32)
-      routeText({
-        drawing,
-        x: left - unit * 2,
-        y,
-        text: row.net.label,
-        color: routeTones.quiet,
-        size: Math.min(unit * 2.6, pitch * 0.8),
-        anchor: "center_right",
-      })
+      drawing.texts!.push(
+        routeText({
+          x: left - unit * 2,
+          y,
+          text: row.net.label,
+          color: routeTones.quiet,
+          size: Math.min(unit * 2.6, pitch * 0.8),
+          anchor: "center_right",
+        }),
+      )
     if (buffers)
       glyphs.push(
         {
@@ -1101,18 +1120,21 @@ export function routeStrip({
         },
       )
   }
-  if (glyphs.length) routeBuffers({ drawing, buffers: glyphs, unit })
+  if (glyphs.length)
+    drawing.polygons!.push(...routeBuffers({ buffers: glyphs, unit }))
   let decimals = 1
   if (longest < 10) decimals = 2
-  routeText({
-    drawing,
-    x: right,
-    y: (pane.minY + pane.maxY) / 2 + pitch * (rows.length / 2) + unit * 2,
-    text: `${longest.toFixed(decimals)} mm`,
-    color: routeTones.quiet,
-    size: unit * 2.6,
-    anchor: "center_right",
-  })
+  drawing.texts!.push(
+    routeText({
+      x: right,
+      y: (pane.minY + pane.maxY) / 2 + pitch * (rows.length / 2) + unit * 2,
+      text: `${longest.toFixed(decimals)} mm`,
+      color: routeTones.quiet,
+      size: unit * 2.6,
+      anchor: "center_right",
+    }),
+  )
+  return drawing
 }
 
 /** Each selected net's routed length from its copper, in net order. */

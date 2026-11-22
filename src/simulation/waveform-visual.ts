@@ -14,6 +14,7 @@ import {
   routeTones,
   routeView,
   type SourcePortId,
+  withRouteDrawing,
 } from "../board"
 import type { IbisSources, TextRange } from "../buffers"
 import { sha256 } from "../kernel"
@@ -368,7 +369,7 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
       minY: 0,
       maxY: 40,
     })
-  const drawing = waveformCanvas({ frame, board })
+  let drawing = waveformCanvas({ frame, board })
   const styles = probes.map((probe, i) => {
     const net = view?.ports.get(probe.sourcePortId)
     return {
@@ -398,7 +399,7 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
         },
       ]
     })
-    routeMarks({ drawing, marks, unit: frame.unit })
+    drawing.polygons!.push(...routeMarks({ marks, unit: frame.unit }))
   }
   const pane = frame.pane
   let paneColor: string | undefined
@@ -407,8 +408,12 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
     paneColor = routeTones.failure
     topPadding = 14
   }
-  routePane({ drawing, box: pane, edge: paneColor })
-  if (state.error) routeFailure({ drawing, box: pane, message: state.error })
+  drawing = withRouteDrawing({
+    drawing: drawing,
+    overlay: routePane({ box: pane, edge: paneColor }),
+  })
+  if (state.error)
+    drawing.texts!.push(...routeFailure({ box: pane, message: state.error }))
   const unit = Math.max(pane.maxX - pane.minX, pane.maxY - pane.minY) / 100
   const plot: Viewbox = {
     minX: pane.minX + unit * 10,
@@ -484,24 +489,27 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
       strokeColor: color,
       strokeWidth: unit * 0.15,
     })
-    routeText({
-      drawing,
-      x: plot.minX - unit * 1.2,
-      y,
-      text: `${level.text} V`,
-      color: routeTones.quiet,
-      size,
-      anchor: "center_right",
-    })
+    drawing.texts!.push(
+      routeText({
+        x: plot.minX - unit * 1.2,
+        y,
+        text: `${level.text} V`,
+        color: routeTones.quiet,
+        size,
+        anchor: "center_right",
+      }),
+    )
   }
-  drawTimeAxis({
-    drawing,
-    coordinates,
-    eye,
-    start,
-    durationSeconds,
-    unit,
-    size,
+  drawing = withRouteDrawing({
+    drawing: drawing,
+    overlay: drawTimeAxis({
+      coordinates,
+      eye,
+      start,
+      durationSeconds,
+      unit,
+      size,
+    }),
   })
   if (threshold) {
     const low = plotY({ coordinates, voltage: threshold.low })
@@ -546,10 +554,11 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
     eye,
   }
   if (far.length > MAX_INDIVIDUAL_PROBES && !eye) {
-    drawEnvelope({
-      drawing,
-      input: { series: far, curveContext, unit, start, durationSeconds },
-    })
+    drawing.lines!.push(
+      ...drawEnvelope({
+        input: { series: far, curveContext, unit, start, durationSeconds },
+      }),
+    )
     const worst = greatestExcursion({ series: far, from })
     const style = styles[worst.index] ?? styles[0]
     const runs = waveformCurve({
@@ -614,12 +623,11 @@ interface EnvelopeInput {
 
 /** Shade the full far-end voltage range in each time bucket. */
 function drawEnvelope({
-  drawing,
   input,
 }: {
-  drawing: GraphicsObject
   input: EnvelopeInput
-}): void {
+}): NonNullable<GraphicsObject["lines"]> {
+  const drawing = routeCanvas()
   const { series, curveContext, unit, start, durationSeconds } = input
   const { coordinates, times, from } = curveContext
   const { plot, timeSpan } = coordinates
@@ -656,6 +664,7 @@ function drawEnvelope({
       zIndex: -0.4,
     })
   }
+  return drawing.lines!
 }
 
 /** Use the middle 90% of samples as the common voltage band. */
@@ -739,7 +748,6 @@ function plotY({
 
 /** Draw the time scale for a transient capture or an eye spanning two unit intervals. */
 function drawTimeAxis({
-  drawing,
   coordinates,
   eye,
   start,
@@ -747,14 +755,14 @@ function drawTimeAxis({
   unit,
   size,
 }: {
-  drawing: GraphicsObject
   coordinates: PlotCoordinates
   eye: boolean
   start: number
   durationSeconds: number
   unit: number
   size: number
-}): void {
+}): GraphicsObject {
+  const drawing = routeCanvas()
   const { plot } = coordinates
   if (eye) {
     for (const tick of [0, 1, EYE_INTERVALS]) {
@@ -769,17 +777,18 @@ function drawTimeAxis({
       })
       let label = "0"
       if (tick) label = `${tick} UI`
-      routeText({
-        drawing,
-        x,
-        y: plot.minY - unit * 1.5,
-        text: label,
-        color: routeTones.quiet,
-        size,
-        anchor: "top_center",
-      })
+      drawing.texts!.push(
+        routeText({
+          x,
+          y: plot.minY - unit * 1.5,
+          text: label,
+          color: routeTones.quiet,
+          size,
+          anchor: "top_center",
+        }),
+      )
     }
-    return
+    return drawing
   }
   const [scale, name] = (
     [
@@ -809,16 +818,18 @@ function drawTimeAxis({
       strokeColor: routeTones.quiet,
       strokeWidth: unit * 0.15,
     })
-    routeText({
-      drawing,
-      x: plotX({ coordinates, time: tick.value / scale }),
-      y: plot.minY - unit * 1.5,
-      text: `${tick.text} ${name}`,
-      color: routeTones.quiet,
-      size,
-      anchor: "top_center",
-    })
+    drawing.texts!.push(
+      routeText({
+        x: plotX({ coordinates, time: tick.value / scale }),
+        y: plot.minY - unit * 1.5,
+        text: `${tick.text} ${name}`,
+        color: routeTones.quiet,
+        size,
+        anchor: "top_center",
+      }),
+    )
   }
+  return drawing
 }
 
 /** Points in one continuous segment of a plotted waveform. */

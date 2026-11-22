@@ -19,6 +19,7 @@ import {
   routeTones,
   routeView,
   type SectionGeometry,
+  withRouteDrawing,
 } from "../board"
 import type { CrossSection } from "./cross-section-types"
 import type {
@@ -82,25 +83,25 @@ function drawingPoint([x, y]: RouteXY): Point {
 
 /** Draw the copper picked by the scope, or every wire when there is no scope. */
 function drawCopper({
-  drawing,
   geometry,
   circuitJson,
   view,
 }: {
-  drawing: GraphicsObject
   geometry: SectionGeometry
   circuitJson?: CircuitJson
   view?: RouteView
-}): void {
+}): NonNullable<GraphicsObject["lines"]> {
+  const drawing = routeCanvas()
   if (view && circuitJson) {
-    routeNets({
-      drawing,
-      circuit: circuitJson,
-      view,
-      traceIds: view.traces,
-      color: () => routeTones.copper,
-    })
-    return
+    drawing.lines!.push(
+      ...routeNets({
+        circuit: circuitJson,
+        view,
+        traceIds: view.traces,
+        color: () => routeTones.copper,
+      }),
+    )
+    return drawing.lines!
   }
   for (const wire of geometry.wires)
     drawing.lines!.push(
@@ -111,6 +112,7 @@ function drawCopper({
         layer: wire.layer,
       }),
     )
+  return drawing.lines!
 }
 
 export interface FieldsState {
@@ -146,13 +148,14 @@ export function fieldsDrawing(state: FieldsState): GraphicsObject {
         maxY: 1,
       },
     )
-  const drawing = routeCanvas(frame)
-  drawCopper({
-    drawing,
-    geometry,
-    circuitJson,
-    view,
-  })
+  let drawing = routeCanvas(frame)
+  drawing.lines!.push(
+    ...drawCopper({
+      geometry,
+      circuitJson,
+      view,
+    }),
+  )
   const impedances = state.solved.flatMap((slice) =>
     slice.wires.flatMap((wire, i) => {
       if (view && !view.traces.has(wire.trace)) return []
@@ -184,46 +187,56 @@ export function fieldsDrawing(state: FieldsState): GraphicsObject {
     }
   let edge: string | undefined
   if (state.error) edge = routeTones.failure
-  routePane({ drawing, box: frame.pane, edge })
-  drawSlice({
-    drawing,
-    state,
-    frame,
-    view,
-    low,
-    high,
+  drawing = withRouteDrawing({
+    drawing: drawing,
+    overlay: routePane({ box: frame.pane, edge }),
   })
-  if (impedances.length)
-    impedanceBar({
-      drawing,
-      pane: frame.pane,
+  drawing = withRouteDrawing({
+    drawing: drawing,
+    overlay: drawSlice({
+      state,
+      frame,
+      view,
       low,
       high,
+    }),
+  })
+  if (impedances.length)
+    drawing = withRouteDrawing({
+      drawing: drawing,
+      overlay: impedanceBar({
+        pane: frame.pane,
+        low,
+        high,
+      }),
     })
   if (state.error)
-    routeFailure({ drawing, box: frame.pane, message: state.error })
+    drawing.texts!.push(
+      ...routeFailure({ box: frame.pane, message: state.error }),
+    )
   return drawing
 }
 
 /** Link the selected cut to its cross-section pane, sharing the board's impedance scale. */
 function drawSlice({
-  drawing,
   state,
   frame,
   view,
   low,
   high,
 }: {
-  drawing: GraphicsObject
   state: FieldsState
   frame: RouteFrame
   view?: RouteView
   low: number
   high: number
-}): void {
+}): GraphicsObject {
+  let drawing = routeCanvas()
   const { slice, section, line, materials } = state
-  if (!slice || !section) return
-  const cut = routeBounds(sliceCut({ drawing, slice, unit: frame.unit }))!
+  if (!slice || !section) return drawing
+  const marker = sliceCut({ slice, unit: frame.unit })
+  drawing.polygons!.push(marker)
+  const cut = routeBounds(marker.points)!
   const from = { x: (cut.minX + cut.maxX) / 2, y: (cut.minY + cut.maxY) / 2 }
   let to = { x: from.x, y: frame.pane.maxY }
   if (frame.pane.minX > frame.focus.maxX) to = { x: frame.pane.minX, y: from.y }
@@ -249,29 +262,33 @@ function drawSlice({
       label: `${z0.toFixed(0)} Ω`,
     }
   })
-  stackPane({
-    drawing,
-    pane: frame.pane,
-    section,
-    conductorDisplay,
-    line,
-    materials,
+  drawing = withRouteDrawing({
+    drawing: drawing,
+    overlay: stackPane({
+      pane: frame.pane,
+      section,
+      conductorDisplay,
+      line,
+      materials,
+    }),
   })
+  return drawing
 }
+
+/** One polygon marking a slice on the board. */
+type SliceMarker = NonNullable<GraphicsObject["polygons"]>[number]
 
 /**
  * An amber band across the slice's conductors at its midpoint, at least a few camera units long so it reads at
  * any zoom.
  */
 function sliceCut({
-  drawing,
   slice,
   unit,
 }: {
-  drawing: GraphicsObject
   slice: RouteSlice
   unit: number
-}): Point[] {
+}): SliceMarker {
   const middle = (slice.start + slice.end) / 2
   const reach = Math.max(...slice.wires.map((wire) => wire.width), unit * 1.2)
   const half = unit * 0.35
@@ -293,13 +310,12 @@ function sliceCut({
       }),
     ),
   )
-  drawing.polygons!.push({
+  return {
     points,
     fill: routeTones.slice,
     stroke: routeTones.halo,
     strokeWidth: unit * 0.08,
-  })
-  return points
+  }
 }
 
 /** One stack axis in pane coordinates, using the common millimetre scale. */
@@ -352,14 +368,12 @@ function bandArc({
  * coupling bands over the top.
  */
 function stackPane({
-  drawing,
   pane,
   section,
   conductorDisplay,
   line,
   materials,
 }: {
-  drawing: GraphicsObject
   pane: Viewbox
   section: CrossSection
   conductorDisplay: {
@@ -368,7 +382,8 @@ function stackPane({
   }[]
   line?: RouteCoefficients
   materials: RouteMaterials
-}): void {
+}): GraphicsObject {
+  const drawing = routeCanvas()
   const unit = Math.max(pane.maxX - pane.minX, pane.maxY - pane.minY) / 100
   const inner = {
     minX: pane.minX + unit * 5,
@@ -448,7 +463,7 @@ function stackPane({
       stroke: color,
     })
   }
-  if (!line) return
+  if (!line) return drawing
   const top = paneCoordinate({ mm: zHigh, axis: heightToPane }) + unit
   const pairs = section.conductors
     .flatMap((a, i) =>
@@ -509,7 +524,7 @@ function stackPane({
       },
     ]
   })
-  if (labelled.length > 8) return
+  if (labelled.length > 8) return drawing
   // Neighbouring labels closer than a label's width alternate between two rows.
   const crowded = labelled.some(
     (entry, i) =>
@@ -520,29 +535,30 @@ function stackPane({
   for (const [i, entry] of labelled.entries()) {
     let row = 3.5
     if (crowded && i % 2) row = 7
-    routeText({
-      drawing,
-      x: entry.x,
-      y: paneCoordinate({ mm: zLow, axis: heightToPane }) - unit * row,
-      text: entry.text,
-      color: entry.color,
-      size: unit * 2.8,
-    })
+    drawing.texts!.push(
+      routeText({
+        x: entry.x,
+        y: paneCoordinate({ mm: zLow, axis: heightToPane }) - unit * row,
+        text: entry.text,
+        color: entry.color,
+        size: unit * 2.8,
+      }),
+    )
   }
+  return drawing
 }
 
 /** The impedance scale at the pane's foot: a gradient strip between the lowest and highest Z0. */
 function impedanceBar({
-  drawing,
   pane,
   low,
   high,
 }: {
-  drawing: GraphicsObject
   pane: Viewbox
   low: number
   high: number
-}): void {
+}): GraphicsObject {
+  const drawing = routeCanvas()
   const unit = Math.max(pane.maxX - pane.minX, pane.maxY - pane.minY) / 100
   const left = pane.minX + (pane.maxX - pane.minX) * 0.3
   const right = pane.maxX - (pane.maxX - pane.minX) * 0.3
@@ -554,22 +570,25 @@ function impedanceBar({
       height: unit * 1.2,
       fill: impedanceColorAt((i + 0.5) / 24),
     })
-  routeText({
-    drawing,
-    x: left - unit,
-    y,
-    text: `${low.toFixed(0)} Ω`,
-    color: routeTones.quiet,
-    size: unit * 2.6,
-    anchor: "center_right",
-  })
-  routeText({
-    drawing,
-    x: right + unit,
-    y,
-    text: `${high.toFixed(0)} Ω`,
-    color: routeTones.quiet,
-    size: unit * 2.6,
-    anchor: "center_left",
-  })
+  drawing.texts!.push(
+    routeText({
+      x: left - unit,
+      y,
+      text: `${low.toFixed(0)} Ω`,
+      color: routeTones.quiet,
+      size: unit * 2.6,
+      anchor: "center_right",
+    }),
+  )
+  drawing.texts!.push(
+    routeText({
+      x: right + unit,
+      y,
+      text: `${high.toFixed(0)} Ω`,
+      color: routeTones.quiet,
+      size: unit * 2.6,
+      anchor: "center_left",
+    }),
+  )
+  return drawing
 }

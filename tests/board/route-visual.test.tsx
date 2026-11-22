@@ -12,6 +12,7 @@ import {
   routeStrip,
   routeStroke,
   routeView,
+  withRouteDrawing,
 } from "../../src/board"
 import { routedCopper } from "../fixtures/routed-copper"
 import {
@@ -164,22 +165,23 @@ test("the layer is in the stroke: top solid, inner hollow, bottom dimmed", () =>
 
 test("pin marks never grow past half their closest spacing, and sit on a dark halo", () => {
   const drawing: GraphicsObject = { polygons: [] }
-  routeMarks({
-    drawing,
-    marks: [
-      {
-        point: { x: 0, y: 0 },
-        color: "red",
-        driver: true,
-      },
-      {
-        point: { x: 0.8, y: 0 },
-        color: "red",
-        driver: false,
-      },
-    ],
-    unit: 10,
-  })
+  drawing.polygons!.push(
+    ...routeMarks({
+      marks: [
+        {
+          point: { x: 0, y: 0 },
+          color: "red",
+          driver: true,
+        },
+        {
+          point: { x: 0.8, y: 0 },
+          color: "red",
+          driver: false,
+        },
+      ],
+      unit: 10,
+    }),
+  )
   assert.equal(drawing.polygons!.length, 4)
   const [first, second] = [
     drawing.polygons!.slice(0, 2),
@@ -195,15 +197,17 @@ test("the strip unrolls nets to scale, centred in the pane, with one length labe
   const { circuitJson, scope } = root.stageOutput("RouteSectionsSolver")
     .value[0]
   const view = routeView({ circuit: circuitJson, scope })
-  const drawing: GraphicsObject = { lines: [], polygons: [], texts: [] }
+  let drawing: GraphicsObject = { lines: [], polygons: [], texts: [] }
   const nets = [...new Set(view.sources.values())]
-  routeStrip({
-    drawing,
-    pane: view.pane,
-    rows: [
-      { net: nets[0], length: 8 },
-      { net: nets[1], length: 4 },
-    ],
+  drawing = withRouteDrawing({
+    drawing: drawing,
+    overlay: routeStrip({
+      pane: view.pane,
+      rows: [
+        { net: nets[0], length: 8 },
+        { net: nets[1], length: 4 },
+      ],
+    }),
   })
   const bars = drawing.lines!.filter((line) => line.label)
   const [long, short] = bars.map((line) => line.points[1].x - line.points[0].x)
