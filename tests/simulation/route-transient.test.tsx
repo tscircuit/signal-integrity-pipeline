@@ -6,7 +6,7 @@ import { routedRequest } from "../../src/simulation/route-transient"
 import type { RunSolver, SolverResult } from "../../src/solver"
 
 const compiled: RoutedDeck = {
-  blockId: "test",
+  simulationPcbTransientChannelSimulationId: "test",
   name: "test",
   deck: "test",
   requestSha256: "test-request",
