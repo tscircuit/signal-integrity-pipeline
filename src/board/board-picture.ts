@@ -9,7 +9,7 @@ import {
   type Viewbox,
 } from "graphics-debug"
 import { routeBoardBox, routeBounds } from "./route-visual"
-import type { CircuitJson, Point } from "./schema"
+import type { CircuitJsonSnapshot, Point } from "./schema"
 
 /** Keep a visible view box for drawings with coincident coordinates. */
 const MINIMUM_EXTENT_MM = 1e-3
@@ -47,7 +47,7 @@ export function boardPictureView({
   circuit,
   drawing,
 }: {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   drawing: GraphicsObject
 }): Viewbox {
   const frame = drawing.rects?.find((rect) => rect.label === "camera")
@@ -75,7 +75,7 @@ function drawingBounds({
   circuit,
   drawing,
 }: {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   drawing: GraphicsObject
 }): Viewbox {
   if (
@@ -107,7 +107,10 @@ function recordPoints(record: object): Point[] {
 
 /** Serialized camera bounds used to cache cropped Circuit JSON. */
 type CameraKey = string
-const crops = new WeakMap<CircuitJson, Map<CameraKey, CircuitJson>>()
+const crops = new WeakMap<
+  CircuitJsonSnapshot,
+  Map<CameraKey, CircuitJsonSnapshot>
+>()
 
 /**
  * Only records near the camera reach circuit-to-svg, and silkscreen text never does, so the board layer stays
@@ -117,11 +120,11 @@ function cropCircuit({
   circuit,
   view,
 }: {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   view: Viewbox
-}): CircuitJson {
+}): CircuitJsonSnapshot {
   const key = JSON.stringify(view)
-  const cache = crops.get(circuit) ?? new Map<CameraKey, CircuitJson>()
+  const cache = crops.get(circuit) ?? new Map<CameraKey, CircuitJsonSnapshot>()
   crops.set(circuit, cache)
   const margin =
     Math.max(view.maxX - view.minX, view.maxY - view.minY) * CROP_MARGIN
@@ -156,7 +159,7 @@ function cropCircuit({
 
 /** Serialized bounds and dimensions used to cache board SVGs. */
 type BoardSvgKey = string
-const boards = new WeakMap<CircuitJson, Map<BoardSvgKey, string>>()
+const boards = new WeakMap<CircuitJsonSnapshot, Map<BoardSvgKey, string>>()
 
 /** circuit-to-svg is the slow part on large boards, so keep the last few cameras per board. */
 function boardSvg({
@@ -165,7 +168,7 @@ function boardSvg({
   width,
   height,
 }: {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   view: Viewbox
   width: number
   height: number
@@ -198,7 +201,7 @@ function boardSvg({
 
 /** The drawing, board and render dimensions for one board picture. */
 interface BoardPictureInput {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   drawing: GraphicsObject
   width: number
   height: number

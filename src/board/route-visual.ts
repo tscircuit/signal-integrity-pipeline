@@ -1,5 +1,4 @@
 /* eslint-disable local/max-file-lines -- Keep the common route camera, glyphs and pane layouts together. */
-import { cju } from "@tscircuit/circuit-json-util"
 import type {
   GraphicsObject,
   Line,
@@ -7,6 +6,8 @@ import type {
   Point,
   Viewbox,
 } from "graphics-debug"
+import type { Snapshot } from "../kernel"
+import { circuitJsonDb } from "./circuit-json-db"
 import {
   getSourcePortConnectivityMapFromCircuitJson,
   sourceNetMembers,
@@ -20,7 +21,7 @@ import type {
   SourceTraceId,
 } from "./ids"
 import type { RouteWire } from "./route-sections"
-import type { CircuitJson } from "./schema"
+import type { CircuitJsonSnapshot } from "./schema"
 import {
   type SimulationPcbDriverReceiverChannel,
   signalEndpointPortIds,
@@ -191,7 +192,10 @@ export function routeFrame(box: Viewbox): RouteFrame {
   }
 }
 
-const views = new WeakMap<CopperScope, WeakMap<CircuitJson, RouteView>>()
+const views = new WeakMap<
+  Snapshot<CopperScope>,
+  WeakMap<CircuitJsonSnapshot, RouteView>
+>()
 
 /**
  * Selected copper plus its endpoint components frame the problem; nets follow electrical connectivity, and
@@ -201,12 +205,12 @@ export function routeView({
   circuit,
   scope,
 }: {
-  circuit: CircuitJson
-  scope: CopperScope
+  circuit: CircuitJsonSnapshot
+  scope: Snapshot<CopperScope>
 }): RouteView {
   const cached = views.get(scope)?.get(circuit)
   if (cached) return cached
-  const db = cju([...circuit])
+  const db = circuitJsonDb(circuit)
   const traces = new Set(scope.channelPcbTraceIds)
   const points: Point[] = []
   const ends = new Set<PcbPortId>()
@@ -277,7 +281,8 @@ export function routeView({
     traces,
     ...routeViewNets({ circuit, order }),
   }
-  const byCircuit = views.get(scope) ?? new WeakMap<CircuitJson, RouteView>()
+  const byCircuit =
+    views.get(scope) ?? new WeakMap<CircuitJsonSnapshot, RouteView>()
   byCircuit.set(circuit, view)
   views.set(scope, byCircuit)
   return view
@@ -311,12 +316,12 @@ function routeViewNets({
   circuit,
   order,
 }: {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   order: SourceTraceId[]
 }): RouteNetStyles {
-  const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
+  const db = circuitJsonDb(circuit)
+  const connectivity = getSourcePortConnectivityMapFromCircuitJson(db.toArray())
   const nets: RouteSourceNet[] = []
-  const db = cju([...circuit])
   const sourceTraces = db.source_trace.list()
   for (const id of order) {
     const source = sourceTraces.find((record) => record.source_trace_id === id)
@@ -515,13 +520,13 @@ export function routeNets({
   traceIds = view.traces,
   color,
 }: {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   view: RouteView
   traceIds?: Set<PcbTraceId>
   color?: RouteNetColor
 }): NonNullable<GraphicsObject["lines"]> {
   const drawing = routeCanvas()
-  const db = cju([...circuit])
+  const db = circuitJsonDb(circuit)
   const fallback = db.pcb_board.getWhere({})?.min_trace_width ?? 0.15
   for (const trace of db.pcb_trace.list()) {
     if (!traceIds.has(trace.pcb_trace_id)) continue
@@ -639,10 +644,10 @@ export function routePortPoint({
   circuit,
   sourcePortId,
 }: {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   sourcePortId: SourcePortId
 }): Point | undefined {
-  const port = cju([...circuit]).pcb_port.getWhere({
+  const port = circuitJsonDb(circuit).pcb_port.getWhere({
     source_port_id: sourcePortId,
   })
   if (!port) return undefined
@@ -776,8 +781,8 @@ export function routeFailure({
 }
 
 /** The board's extent: its outline, its rectangle, else every positioned pcb record. */
-export function routeBoardBox(circuit: CircuitJson): Viewbox {
-  const board = cju([...circuit]).pcb_board.getWhere({})
+export function routeBoardBox(circuit: CircuitJsonSnapshot): Viewbox {
+  const board = circuitJsonDb(circuit).pcb_board.getWhere({})
   if (board?.outline?.length) return routeBounds(board.outline)!
   if (board?.width && board.height)
     return {
@@ -811,8 +816,8 @@ export function routeBoardDrawing({
   scope,
   color,
 }: {
-  circuit: CircuitJson
-  scope: CopperScope | undefined
+  circuit: CircuitJsonSnapshot
+  scope: Snapshot<CopperScope> | undefined
   color?: RouteNetColor
 }): GraphicsObject {
   if (!scope) return routeCanvas()
@@ -845,11 +850,11 @@ export function routePinDirection({
   view,
   pin,
 }: {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   view: RouteView
   pin: Point
 }): Point {
-  for (const trace of cju([...circuit]).pcb_trace.list()) {
+  for (const trace of circuitJsonDb(circuit).pcb_trace.list()) {
     if (!view.traces.has(trace.pcb_trace_id)) continue
     const wires = trace.route.filter((point) => point.route_type === "wire")
     for (const [i, point] of wires.entries()) {
@@ -1142,11 +1147,11 @@ export function routeLengths({
   circuit,
   view,
 }: {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   view: RouteView
 }): RouteStripRow[] {
   const lengths = new Map<RouteNet, number>()
-  for (const trace of cju([...circuit]).pcb_trace.list()) {
+  for (const trace of circuitJsonDb(circuit).pcb_trace.list()) {
     if (!view.traces.has(trace.pcb_trace_id)) continue
     const net = view.sources.get(trace.source_trace_id ?? "")
     if (!net) continue

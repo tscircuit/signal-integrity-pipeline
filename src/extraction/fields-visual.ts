@@ -1,6 +1,6 @@
 import type { GraphicsObject, Point, Viewbox } from "graphics-debug"
 import {
-  type CircuitJson,
+  type CircuitJsonSnapshot,
   type CopperScope,
   type RouteFrame,
   type RouteSlice,
@@ -21,6 +21,7 @@ import {
   type SectionGeometry,
   withRouteDrawing,
 } from "../board"
+import type { Snapshot } from "../kernel"
 import type { CrossSection } from "./cross-section-types"
 import type {
   ExtractedRouteSlice,
@@ -77,7 +78,7 @@ function impedanceColorAt(t: number): string {
 }
 
 /** Convert route coordinates to the points used by drawing primitives. */
-function drawingPoint([x, y]: RouteXY): Point {
+function drawingPoint([x, y]: Snapshot<RouteXY>): Point {
   return { x, y }
 }
 
@@ -87,8 +88,8 @@ function drawCopper({
   circuitJson,
   view,
 }: {
-  geometry: SectionGeometry
-  circuitJson?: CircuitJson
+  geometry: Snapshot<SectionGeometry>
+  circuitJson?: CircuitJsonSnapshot
   view?: RouteView
 }): NonNullable<GraphicsObject["lines"]> {
   const drawing = routeCanvas()
@@ -116,13 +117,13 @@ function drawCopper({
 }
 
 export interface FieldsState {
-  geometry: SectionGeometry
-  circuitJson?: CircuitJson
-  scope?: CopperScope
+  geometry: Snapshot<SectionGeometry>
+  circuitJson?: CircuitJsonSnapshot
+  scope?: Snapshot<CopperScope>
   materials: RouteMaterials
   solved: ExtractedRouteSlice[]
   /** The slice on screen and its cross-section; when solving has finished, the most informative selected slice. */
-  slice?: RouteSlice
+  slice?: Snapshot<RouteSlice>
   section?: CrossSection
   line?: RouteCoefficients
   error?: string
@@ -286,7 +287,7 @@ function sliceCut({
   slice,
   unit,
 }: {
-  slice: RouteSlice
+  slice: Snapshot<RouteSlice>
   unit: number
 }): SliceMarker {
   const middle = (slice.start + slice.end) / 2

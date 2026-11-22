@@ -17,6 +17,7 @@ import {
   withRouteDrawing,
 } from "../board"
 import type { IbisSources, TextRange } from "../buffers"
+import type { Snapshot } from "../kernel"
 import { sha256 } from "../kernel"
 import type { RouteBuffer, RoutedCapture } from "./routed-types"
 
@@ -191,7 +192,7 @@ export function receiverThreshold({
   receivers,
 }: {
   ibisSources: IbisSources
-  models: readonly RouteBuffer[]
+  models: readonly Snapshot<RouteBuffer>[]
   receivers: ReadonlySet<SourcePortId>
 }): ReceiverThreshold | undefined {
   const texts = Object.values(ibisSources).map((bytes) => {
