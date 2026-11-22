@@ -4,19 +4,22 @@ import React from "react"
 import { createNativeSolver } from "../../src/adapters"
 import { RouteSectionsSolver } from "../../src/board"
 import { RouteFieldsSolver } from "../../src/extraction"
-import { RoutedAdmissionSolver, type RoutedProblem } from "../../src/pipeline"
+import {
+  type RoutedAdmissionInput,
+  RoutedAdmissionSolver,
+} from "../../src/pipeline"
 import { RouteBindingsSolver, RouteNetworkSolver } from "../../src/simulation"
 import { routedRequest } from "../../src/simulation/route-transient"
+import { routedProblem } from "../fixtures/routed-fixture"
 import { quietDriverIbis } from "../fixtures/routed-visual-fixture"
 import Single from "../fixtures/unit-single-ended"
+import { vendorAvailable } from "../fixtures/vendor-models"
 import { renderCoreSignals } from "../support/core-render"
-import { routedProblem } from "../support/routed-fixture"
-import { vendorAvailable } from "../support/vendor-models"
 
 let testNetwork: RouteNetworkSolver | undefined
 
 /** Compile the complete routed deck from a core-rendered board and its IBIS sources. */
-function compileNetwork(input: RoutedProblem): RouteNetworkSolver {
+function compileNetwork(input: RoutedAdmissionInput): RouteNetworkSolver {
   const admission = new RoutedAdmissionSolver(input)
   admission.solve()
   const plan = admission.getOutput().value[0]
@@ -34,10 +37,14 @@ function compileNetwork(input: RoutedProblem): RouteNetworkSolver {
   })
   fields.solve()
   const extracted = fields.getOutput().value
-  const bindings = new RouteBindingsSolver({ ...plan.bindings, scope })
+  const bindings = new RouteBindingsSolver({
+    ...plan.bindings,
+    copperScope: scope,
+  })
   bindings.solve()
   const network = new RouteNetworkSolver({
-    simulationPcbTransientChannelSimulationId: plan.id,
+    simulationPcbTransientChannelSimulationId:
+      plan.simulationPcbTransientChannelSimulationId,
     name: plan.name,
     geometry,
     extracted,
