@@ -9,7 +9,7 @@ import type { GraphicsObject, Viewbox } from "graphics-debug"
 import type React from "react"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { createHttpSolver } from "../src/adapters/browser"
-import type { CircuitJson } from "../src/board"
+import type { CircuitJson, CircuitJsonSnapshot } from "../src/board"
 // Imported directly: circuit-to-svg is a development dependency and never enters the library bundle.
 import { boardPicture, boardPictureView } from "../src/board/board-picture"
 import type { IbisSources } from "../src/buffers"
@@ -134,7 +134,7 @@ function RoutedAtlas({
   circuit,
   graphics,
 }: {
-  circuit: CircuitJson
+  circuit: CircuitJsonSnapshot
   graphics: GraphicsObject
 }): React.JSX.Element {
   const container = useRef<HTMLDivElement>(null)
