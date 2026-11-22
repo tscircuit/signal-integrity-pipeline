@@ -8,7 +8,7 @@ async function loadBoard(): Promise<CircuitJson> {
   return withDdr3Signals({
     physicalRecords: JSON.parse(await localAsset("ddr3-board.json")),
     options: {
-      block: "DDR3_ADDR_CMD",
+      channelSimulation: "DDR3_ADDR_CMD",
     },
   })
 }

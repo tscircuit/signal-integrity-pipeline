@@ -61,9 +61,12 @@ type Middleware = (
 /** Submit a probe or simulation to the shared one-at-a-time queue. */
 type SolverQueue = <T>(run: () => Promise<T>) => Promise<T>
 
-type SolverMiddlewareContext = Required<SolverMiddlewareOptions> & {
+type SolverMiddlewareContext = Omit<
+  Required<SolverMiddlewareOptions>,
+  "detectSolvers"
+> & {
   queue: SolverQueue
-  solvers?: Promise<LocalSolvers>
+  solvers: () => Promise<LocalSolvers>
 }
 type HttpError = Error & {
   status?: number
@@ -445,14 +448,10 @@ async function routeHttpRequest({
       message: "Expected same-origin 127.0.0.1 request",
     })
   if (path === "/api/solvers" && request.method === "GET") {
-    context.solvers ??= context.queue(context.detectSolvers).catch((error) => {
-      context.solvers = undefined
-      throw error
-    })
     return writeJsonResponse({
       response,
       status: 200,
-      body: await context.solvers,
+      body: await context.solvers(),
     })
   }
   if (path.startsWith("/api/local-assets/") && request.method === "GET")
@@ -492,6 +491,24 @@ function createSolverQueue(): SolverQueue {
   }
 }
 
+/** Cache a successful version probe and allow retry after a rejected probe. */
+function createSolverLookup({
+  queue,
+  detectSolvers,
+}: {
+  queue: SolverQueue
+  detectSolvers: () => Promise<LocalSolvers>
+}): () => Promise<LocalSolvers> {
+  let solvers: Promise<LocalSolvers> | undefined
+  return () => {
+    solvers ??= queue(detectSolvers).catch((error) => {
+      solvers = undefined
+      throw error
+    })
+    return solvers
+  }
+}
+
 /** Same-origin local API. Native runs and version probes share one bounded queue and one CPU thread. */
 export function createSolverMiddleware({
   runSolver = createNativeSolver({ timeoutMs: SOLVER_TIMEOUT_MS }),
@@ -500,13 +517,14 @@ export function createSolverMiddleware({
   modelDirectory = process.env.IBIS_MODEL_DIR ?? "models",
   boardFile = process.env.SI_DDR3_BOARD ?? join(modelDirectory, boardAsset),
 }: SolverMiddlewareOptions = {}): Middleware {
+  const queue = createSolverQueue()
   const context = {
     runSolver,
-    detectSolvers,
     maxRequestBytes,
     modelDirectory,
     boardFile,
-    queue: createSolverQueue(),
+    queue,
+    solvers: createSolverLookup({ queue, detectSolvers }),
   }
   return (request, response, next) => {
     const path = request.url?.split("?")[0] ?? ""

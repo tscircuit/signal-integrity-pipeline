@@ -30,7 +30,7 @@ export default function CircuitJsonPage(): React.JSX.Element {
       <h1>Paste / upload Circuit JSON</h1>
       <p>
         Include physical copper, stackup, IBIS declarations and transient
-        channel blocks.
+        channel simulations.
       </p>
       <label>
         Circuit JSON file{" "}
