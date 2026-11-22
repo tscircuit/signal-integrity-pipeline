@@ -1,3 +1,4 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import { Circuit, simulation } from "@tscircuit/core"
 import type { SourceComponentBase, SourcePort } from "circuit-json"
 import React from "react"
@@ -379,14 +380,12 @@ function declarationIds({
   declarations: CircuitJson
 }): DeclarationIds {
   const ids: DeclarationIds = new Map()
-  const components = declarations.filter(
-    (record) => record.type === "source_component",
-  )
-  const ports = declarations.filter((record) => record.type === "source_port")
-  const boardComponents = board.filter(
-    (record) => record.type === "source_component",
-  )
-  const boardPorts = board.filter((record) => record.type === "source_port")
+  const declarationDb = cju([...declarations])
+  const boardDb = cju([...board])
+  const components = declarationDb.source_component.list()
+  const ports = declarationDb.source_port.list()
+  const boardComponents = boardDb.source_component.list()
+  const boardPorts = boardDb.source_port.list()
   for (const component of components) {
     const actual = boardComponents.find(
       (record) => record.name === component.name,
@@ -461,7 +460,8 @@ export async function withDdr3Signals({
   const errors = declarations.filter((record) => record.type.endsWith("_error"))
   if (errors.length) throw new Error(JSON.stringify(errors))
   const ids = declarationIds({ board, declarations })
-  const physicalBoard = board.find((record) => record.type === "pcb_board")!
+  const boardDb = cju([...board])
+  const physicalBoard = boardDb.pcb_board.getWhere({})!
   const scope = physicalBoard.subcircuit_id
   if (
     physicalBoard.thickness !== BOARD_THICKNESS_MM ||
@@ -471,10 +471,8 @@ export async function withDdr3Signals({
       "DDR3 fixture requires the supplied 1.2 mm eight-layer JLC08121H-3313 board",
     )
   }
-  if (!board.some((record) => record.type === "pcb_stackup")) {
-    const stackup = declarations.find(
-      (record) => record.type === "pcb_stackup",
-    )!
+  if (!boardDb.pcb_stackup.getWhere({})) {
+    const stackup = cju([...declarations]).pcb_stackup.getWhere({})!
     board.push({
       ...stackup,
       pcb_board_id: physicalBoard.pcb_board_id,
