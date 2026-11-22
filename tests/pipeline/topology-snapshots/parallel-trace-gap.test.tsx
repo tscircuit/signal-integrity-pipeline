@@ -6,7 +6,7 @@ test("parallel traces separated by a gap", async () => {
   const { circuit, signal } = await parallelTraceGap()
   expectTopologySnapshot({
     circuit,
-    signals: [signal],
+    driverReceiverChannels: [signal],
     allowUnroutedTraces: false,
     testPath: import.meta.path,
   })

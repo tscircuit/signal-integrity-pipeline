@@ -6,7 +6,7 @@ test("a trace that changes layer through an inline via", async () => {
   const { circuit, signal } = await inlineVia()
   expectTopologySnapshot({
     circuit,
-    signals: [signal],
+    driverReceiverChannels: [signal],
     allowUnroutedTraces: false,
     testPath: import.meta.path,
   })

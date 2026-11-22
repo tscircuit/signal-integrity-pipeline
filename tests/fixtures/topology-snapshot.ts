@@ -31,18 +31,18 @@ type Verdict = string[]
 /** Run the routed copper checks and describe their outcome. */
 function verdict({
   circuit,
-  signals,
+  driverReceiverChannels,
   allowUnroutedTraces,
 }: {
   circuit: CircuitJson
-  signals: readonly SimulationPcbDriverReceiverChannel[]
+  driverReceiverChannels: readonly SimulationPcbDriverReceiverChannel[]
   allowUnroutedTraces: boolean
 }): Verdict {
   try {
     validateSignalGraph({
       circuit,
       topology: signalTopology({ circuit, rails: new Set() }),
-      signals,
+      driverReceiverChannels,
       allowUnroutedTraces,
     })
   } catch (error) {
@@ -59,12 +59,12 @@ function verdict({
  */
 export function expectTopologySnapshot({
   circuit,
-  signals,
+  driverReceiverChannels,
   allowUnroutedTraces,
   testPath,
 }: {
   circuit: CircuitJson
-  signals: readonly SimulationPcbDriverReceiverChannel[]
+  driverReceiverChannels: readonly SimulationPcbDriverReceiverChannel[]
   allowUnroutedTraces: boolean
   testPath: string
 }): void {
@@ -72,7 +72,11 @@ export function expectTopologySnapshot({
   if (!board?.height)
     throw new Error("Expected the circuit to contain a sized pcb_board")
   const top = board.center.y + board.height / 2 - VERDICT_TOP_MARGIN_MM
-  const lines = verdict({ circuit, signals, allowUnroutedTraces })
+  const lines = verdict({
+    circuit,
+    driverReceiverChannels,
+    allowUnroutedTraces,
+  })
   let color = REJECTED_COLOR
   if (lines[0] === ACCEPTED) color = ACCEPTED_COLOR
   const notes = lines.map(

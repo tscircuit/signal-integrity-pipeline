@@ -9,7 +9,7 @@ test("a T-branch at a pass-through pin", async () => {
   })
   expectTopologySnapshot({
     circuit,
-    signals: [signal],
+    driverReceiverChannels: [signal],
     allowUnroutedTraces: false,
     testPath: import.meta.path,
   })

@@ -6,7 +6,7 @@ test("a fly-by route through two receivers", async () => {
   const { circuit, signal } = await daisyChain({ receivers: ["MID", "RX"] })
   expectTopologySnapshot({
     circuit,
-    signals: [signal],
+    driverReceiverChannels: [signal],
     allowUnroutedTraces: false,
     testPath: import.meta.path,
   })

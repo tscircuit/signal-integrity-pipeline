@@ -6,7 +6,7 @@ test("a straight trace from the driver pad to the receiver pad", async () => {
   const { circuit, signal } = await padContactRoute({ offset: 0 })
   expectTopologySnapshot({
     circuit,
-    signals: [signal],
+    driverReceiverChannels: [signal],
     allowUnroutedTraces: false,
     testPath: import.meta.path,
   })

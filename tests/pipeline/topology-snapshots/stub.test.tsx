@@ -6,7 +6,7 @@ test("a stub leaving a series resistor", async () => {
   const { circuit, signal } = await seriesResistor({ stub: true })
   expectTopologySnapshot({
     circuit,
-    signals: [signal],
+    driverReceiverChannels: [signal],
     allowUnroutedTraces: false,
     testPath: import.meta.path,
   })

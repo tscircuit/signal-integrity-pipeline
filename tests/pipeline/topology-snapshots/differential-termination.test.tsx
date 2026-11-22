@@ -6,7 +6,7 @@ test("a differential pair through a cross-leg termination", async () => {
   const { circuit, signal } = await differentialTerminationRoute()
   expectTopologySnapshot({
     circuit,
-    signals: [signal],
+    driverReceiverChannels: [signal],
     allowUnroutedTraces: false,
     testPath: import.meta.path,
   })

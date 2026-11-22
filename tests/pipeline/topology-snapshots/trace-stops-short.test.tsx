@@ -6,7 +6,7 @@ test("a trace that stops short of the other trace", async () => {
   const { circuit, signal } = await collinearTraceGap()
   expectTopologySnapshot({
     circuit,
-    signals: [signal],
+    driverReceiverChannels: [signal],
     allowUnroutedTraces: false,
     testPath: import.meta.path,
   })

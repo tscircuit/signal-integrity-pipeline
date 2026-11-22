@@ -6,7 +6,7 @@ test("an off-centre via in a pass-through pad", async () => {
   const { circuit, signal } = await viaInIntermediatePad()
   expectTopologySnapshot({
     circuit,
-    signals: [signal],
+    driverReceiverChannels: [signal],
     allowUnroutedTraces: false,
     testPath: import.meta.path,
   })
