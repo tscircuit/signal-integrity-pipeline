@@ -12,7 +12,7 @@ import { boardPictureSvg } from "../src/board/board-picture"
 import { sha256 } from "../src/kernel"
 import {
   RoutedPipelineSolver,
-  type RoutedProblem,
+  type RoutedAdmissionInput,
   routedStages,
 } from "../src/pipeline"
 
@@ -87,7 +87,7 @@ async function stages({
   input,
 }: {
   name: string
-  input: RoutedProblem
+  input: RoutedAdmissionInput
 }): Promise<void> {
   const execute =
     name === "two-trace" && process.argv.includes("--native-two-trace")
