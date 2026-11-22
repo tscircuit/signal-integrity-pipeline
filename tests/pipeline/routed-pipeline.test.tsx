@@ -147,10 +147,10 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
     })
     await repeat.solveAsync()
     assert.deepEqual(repeat.getOutput(), output)
-    const renamed: {
-      circuitJson: CircuitJson
-      ibisSources: typeof input.ibisSources
-    } = JSON.parse(JSON.stringify(input))
+    const renamed = {
+      ...input,
+      circuitJson: JSON.parse(JSON.stringify(input.circuitJson)) as CircuitJson,
+    }
     for (const record of renamed.circuitJson) {
       if (
         record.type === "simulation_pcb_transient_channel_simulation" ||
