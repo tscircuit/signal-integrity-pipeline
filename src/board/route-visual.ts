@@ -1,4 +1,5 @@
 /* eslint-disable local/max-file-lines -- Keep the common route camera, glyphs and pane layouts together. */
+import { cju } from "@tscircuit/circuit-json-util"
 import type {
   GraphicsObject,
   Line,
@@ -205,12 +206,13 @@ export function routeView({
 }): RouteView {
   const cached = views.get(scope)?.get(circuit)
   if (cached) return cached
+  const db = cju([...circuit])
   const traces = new Set(scope.channelPcbTraceIds)
   const points: Point[] = []
   const ends = new Set<PcbPortId>()
   const order: SourceTraceId[] = []
-  for (const trace of circuit) {
-    if (trace.type !== "pcb_trace" || !traces.has(trace.pcb_trace_id)) continue
+  for (const trace of db.pcb_trace.list()) {
+    if (!traces.has(trace.pcb_trace_id)) continue
     if (trace.source_trace_id && !order.includes(trace.source_trace_id))
       order.push(trace.source_trace_id)
     for (const point of trace.route) {
@@ -231,22 +233,13 @@ export function routeView({
     Math.max(copper.maxX - copper.minX, copper.maxY - copper.minY) *
     FOCUS_REACH_RATIO
   const components = new Set(
-    circuit.flatMap((port) => {
-      if (
-        port.type !== "pcb_port" ||
-        !ends.has(port.pcb_port_id) ||
-        !port.pcb_component_id
-      )
-        return []
+    db.pcb_port.list().flatMap((port) => {
+      if (!ends.has(port.pcb_port_id) || !port.pcb_component_id) return []
       return [port.pcb_component_id]
     }),
   )
-  for (const component of circuit) {
-    if (
-      component.type !== "pcb_component" ||
-      !components.has(component.pcb_component_id)
-    )
-      continue
+  for (const component of db.pcb_component.list()) {
+    if (!components.has(component.pcb_component_id)) continue
     const corners = routeOutline(component)
     for (const corner of corners)
       points.push({
@@ -323,9 +316,8 @@ function routeViewNets({
 }): RouteNetStyles {
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
   const nets: RouteSourceNet[] = []
-  const sourceTraces = circuit.filter(
-    (record) => record.type === "source_trace",
-  )
+  const db = cju([...circuit])
+  const sourceTraces = db.source_trace.list()
   for (const id of order) {
     const source = sourceTraces.find((record) => record.source_trace_id === id)
     const seed =
@@ -346,9 +338,7 @@ function routeViewNets({
     })
   }
   const channels = new Map<SignalName, RouteChannelPorts>()
-  for (const signal of circuit.filter(
-    (record) => record.type === "simulation_pcb_driver_receiver_channel",
-  )) {
+  for (const signal of db.simulation_pcb_driver_receiver_channel.list()) {
     const legs = signalEndpointPortIds(signal.driver)
     channels.set(signal.name, {
       ends: [...legs, ...signal.receivers.flatMap(signalEndpointPortIds)],
@@ -380,9 +370,7 @@ function routeViewNets({
   const sources = new Map<SourceTraceId, RouteNet>()
   const ports = new Map<SourcePortId, RouteNet>()
   const sourcePorts = new Set(
-    circuit
-      .filter((record) => record.type === "source_port")
-      .map((port) => port.source_port_id),
+    db.source_port.list().map((port) => port.source_port_id),
   )
   for (const [i, unit] of units.entries())
     for (const [leg, net] of unit.nets.entries()) {
@@ -521,12 +509,10 @@ export function routeNets({
   traceIds?: Set<PcbTraceId>
   color?: RouteNetColor
 }): void {
-  const fallback =
-    circuit.find((record) => record.type === "pcb_board")?.min_trace_width ??
-    0.15
-  for (const trace of circuit) {
-    if (trace.type !== "pcb_trace" || !traceIds.has(trace.pcb_trace_id))
-      continue
+  const db = cju([...circuit])
+  const fallback = db.pcb_board.getWhere({})?.min_trace_width ?? 0.15
+  for (const trace of db.pcb_trace.list()) {
+    if (!traceIds.has(trace.pcb_trace_id)) continue
     const net = view.sources.get(trace.source_trace_id ?? "")
     let run: RouteRun | undefined
     for (const point of trace.route) {
@@ -643,11 +629,10 @@ export function routePortPoint({
   circuit: CircuitJson
   sourcePortId: SourcePortId
 }): Point | undefined {
-  const port = circuit.find(
-    (record) =>
-      record.type === "pcb_port" && record.source_port_id === sourcePortId,
-  )
-  if (!port || port.type !== "pcb_port") return undefined
+  const port = cju([...circuit]).pcb_port.getWhere({
+    source_port_id: sourcePortId,
+  })
+  if (!port) return undefined
   return { x: port.x, y: port.y }
 }
 
@@ -777,7 +762,7 @@ export function routeFailure({
 
 /** The board's extent: its outline, its rectangle, else every positioned pcb record. */
 export function routeBoardBox(circuit: CircuitJson): Viewbox {
-  const board = circuit.find((record) => record.type === "pcb_board")
+  const board = cju([...circuit]).pcb_board.getWhere({})
   if (board?.outline?.length) return routeBounds(board.outline)!
   if (board?.width && board.height)
     return {
@@ -848,9 +833,8 @@ export function routePinDirection({
   view: RouteView
   pin: Point
 }): Point {
-  for (const trace of circuit) {
-    if (trace.type !== "pcb_trace" || !view.traces.has(trace.pcb_trace_id))
-      continue
+  for (const trace of cju([...circuit]).pcb_trace.list()) {
+    if (!view.traces.has(trace.pcb_trace_id)) continue
     const wires = trace.route.filter((point) => point.route_type === "wire")
     for (const [i, point] of wires.entries()) {
       if (Math.hypot(point.x - pin.x, point.y - pin.y) > 1e-3) continue
@@ -1140,9 +1124,8 @@ export function routeLengths({
   view: RouteView
 }): RouteStripRow[] {
   const lengths = new Map<RouteNet, number>()
-  for (const trace of circuit) {
-    if (trace.type !== "pcb_trace" || !view.traces.has(trace.pcb_trace_id))
-      continue
+  for (const trace of cju([...circuit]).pcb_trace.list()) {
+    if (!view.traces.has(trace.pcb_trace_id)) continue
     const net = view.sources.get(trace.source_trace_id ?? "")
     if (!net) continue
     const wires = trace.route.filter((point) => point.route_type === "wire")
