@@ -250,15 +250,12 @@ function parseGoldenRow(line: string): number[] {
 /** Rows from ngspice wrdata with a scale value followed by the saved vectors. */
 export type GoldenRows = number[][]
 
-/** Allow up to two minutes for a sequential native golden deck. */
-const GOLDEN_TIMEOUT_MS = 120_000
-
 /**
  * Run one small deck through the repo's sequential native adapter (OMP_NUM_THREADS=1) and return
  * its `wrdata golden.dat ...` rows: time (or sweep) first, then each saved vector.
  */
 export async function runGoldenDeck(deck: string): Promise<GoldenRows> {
-  const run = createNativeSolver({ timeoutMs: GOLDEN_TIMEOUT_MS })
+  const run = createNativeSolver()
   const output = await run({
     solver: "ngspice",
     files: { "golden.cir": deck },
