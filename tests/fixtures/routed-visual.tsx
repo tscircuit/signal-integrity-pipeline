@@ -1,14 +1,14 @@
 import assert from "node:assert/strict"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { Circuit, simulation } from "@tscircuit/core"
+import { simulation } from "@tscircuit/core"
 import { type GraphicsObject, getSvgFromGraphicsObject } from "graphics-debug"
 import React from "react"
 import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
-import type { CircuitJson } from "../../src/board"
 import { formatSpiceVectors } from "../../src/observation"
 import { RoutedPipelineSolver } from "../../src/pipeline"
 import type { SolverContext } from "../../src/solver"
+import { renderCoreSignals } from "../support/core-render"
 import {
   savedVectors,
   transientDurationSeconds,
@@ -50,6 +50,7 @@ function twoChannelSimulationBoard(
       name={`BLOCK${i}`}
       bitRate={FIXTURE_BIT_RATE}
       duration={FIXTURE_DURATION_SECONDS}
+      aggressorPattern="0"
     >
       <simulation.pcbdriverreceiverchannel
         name={`DATA${i}`}
@@ -99,18 +100,16 @@ const context: SolverContext = {
 async function solveVisualFixture(
   channelSimulations: number,
 ): Promise<RoutedVisualFixture> {
-  const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
   const board = TwoTraceBoard({
     "bit-rate": FIXTURE_BIT_RATE,
     "duration-seconds": FIXTURE_DURATION_SECONDS,
   })
   let tree = board
   if (channelSimulations !== 1) tree = twoChannelSimulationBoard(board)
-  circuit.add(tree)
-  await circuit.renderUntilSettled()
+  const circuitJson = await renderCoreSignals(tree)
   const root = new RoutedPipelineSolver({
     input: {
-      circuitJson: circuit.getCircuitJson() as CircuitJson,
+      circuitJson,
       ibisSources: { "models/sn74lvc1g04.ibs": routedVisualIbis },
       scopeDistanceMm: FIXTURE_SCOPE_DISTANCE_MM,
     },

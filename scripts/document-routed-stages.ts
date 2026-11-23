@@ -21,7 +21,11 @@ export function routedStageDocumentation(): string {
   const transitions = nextStages.map(
     (name, i) => `  ${names[i]} --> ${name}: all channel simulations completed`,
   )
-  const failures = names.map((name) => `  ${name} --> failed`)
+  const failures = names.map((name, i) => {
+    if (i === 0)
+      return `  ${name} --> failed: invalid admission, including undeclared aggressors`
+    return `  ${name} --> failed`
+  })
   const states = [
     "stateDiagram-v2",
     `  [*] --> ${names[0]}`,
