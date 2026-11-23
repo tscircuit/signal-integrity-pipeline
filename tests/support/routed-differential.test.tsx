@@ -2,10 +2,9 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import type { SourceTrace } from "circuit-json"
-import React from "react"
-import Differential from "../../examples/level1-differential/level1-differential"
 import { RoutedPipelineSolver } from "../../src/pipeline"
 import { prepareChannelSimulations } from "../fixtures/signal-render"
+import { VendorDifferential } from "../fixtures/vendor-differential"
 import { renderCoreSignals } from "./core-render"
 
 /** Evidence for the routed length of one bus leg. */
@@ -17,7 +16,7 @@ interface RouteEvidence {
 test.skipIf(!process.env.IBIS_MODEL_DIR)(
   "differential receiver shares its pin with a termination stub",
   async () => {
-    const circuit = await renderCoreSignals(<Differential />)
+    const circuit = await renderCoreSignals(<VendorDifferential />)
     const sources = {
       "models/sn65hvd72.ibs": await readFile(
         `${process.env.IBIS_MODEL_DIR}/sn65hvd72.ibs`,
