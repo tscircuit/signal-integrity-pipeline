@@ -23,8 +23,8 @@ import type {
 import type { RouteWire } from "./route-sections"
 import type { CircuitJsonSnapshot } from "./schema"
 import {
+  endpointPorts,
   type SimulationPcbDriverReceiverChannel,
-  signalEndpointPortIds,
 } from "./signals"
 
 /** Fixed roles over the dark board; nets get their own bright hues. */
@@ -344,9 +344,9 @@ function routeViewNets({
   }
   const channels = new Map<SignalName, RouteChannelPorts>()
   for (const signal of db.simulation_pcb_driver_receiver_channel.list()) {
-    const legs = signalEndpointPortIds(signal.driver)
+    const legs = endpointPorts(signal.driver)
     channels.set(signal.name, {
-      ends: [...legs, ...signal.receivers.flatMap(signalEndpointPortIds)],
+      ends: [...legs, ...signal.receivers.flatMap(endpointPorts)],
       legs,
       unitIntervalSeconds: 1 / signal.bit_rate_bps,
     })
