@@ -27,6 +27,7 @@ export type RoutedStageOutput<O> = Produced<readonly Snapshot<O>[]>
 
 /** One flat stage drains the domain algorithm one item at a time across all admitted channel simulations. */
 export class RoutedStageSolver<I, O> extends BaseSolver {
+  override MAX_ITERATIONS = Infinity
   private current?: ItemSolver<I, O>
   private readonly outputs: Produced<O>[] = []
   private output?: RoutedStageOutput<O>

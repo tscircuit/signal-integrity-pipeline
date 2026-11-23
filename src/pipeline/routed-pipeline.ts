@@ -140,6 +140,7 @@ type RoutedPipelineConstructorParams = [RoutedPipelineInput]
 
 /** A single static pipeline, from admission through sequential live transients. */
 export class RoutedPipelineSolver extends BasePipelineSolver<RoutedAdmissionInput> {
+  override MAX_ITERATIONS = Infinity
   override pipelineDef: PipelineStep<BaseSolver>[] = [...routedStages]
   private output?: RoutedInspection
   readonly context: SolverContext
