@@ -372,20 +372,12 @@ test("stamps a dielectric relaxation branch", () => {
   assert.deepEqual(loss, ["CTS0 a TS0c 1e-12", "RTS0 TS0c 0 1000"])
 })
 
-test("memory admission counts actual entries, including hybrid dense couplings, rather than cells", () => {
+test("sparse route energy stores one entry per nonzero coefficient", () => {
   const sparse = new RouteEnergy({ size: 2000 })
   for (let i = 0; i < 2000; i++)
     sparse.add({ row: i, column: i, coefficient: 1 })
   assert.equal(
     sparse.rows.reduce((sum, row) => sum + row.size, 0),
     2000,
-  )
-  const budget = { entries: 499999 }
-  const bounded = new RouteEnergy({ size: 2, budget })
-  bounded.add({ row: 0, column: 0, coefficient: 1 })
-  bounded.add({ row: 0, column: 0, coefficient: 1 })
-  assert.throws(
-    () => bounded.add({ row: 0, column: 1, coefficient: 0.1 }),
-    /sparse-memory limit/,
   )
 })

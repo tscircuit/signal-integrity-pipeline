@@ -1,7 +1,5 @@
 import { crossoverPoles, type LossPole, skinCrossover } from "../extraction"
 
-/** Maximum number of stored sparse entries or entries in a dense modal realization. */
-const MAX_MATRIX_ENTRIES = 500_000
 /** Significant digits written for SPICE coefficients. */
 const COEFFICIENT_PRECISION = 12
 /** Ignore resistance couplings too small to affect the deck. */
@@ -16,35 +14,13 @@ const SKIN_REMAINDER_TOLERANCE = 1e-12
 /** A stored column and its coefficient in a sparse route energy row. */
 type RouteEnergyEntry = [column: number, coefficient: number]
 
-/** Counts stored entries across the energy matrices of a route. */
-interface RouteEnergyBudget {
-  entries: number
-}
-
 /** Sparse energy rows retain only terms integrated from a common physical slice. */
 export class RouteEnergy {
   readonly rows: Map<number, number>[]
-  private budget: RouteEnergyBudget
 
-  /** Share a bound across the assembled matrices, independent of raw cell count. */
-  constructor({
-    size,
-    budget = { entries: 0 },
-  }: {
-    size: number
-    budget?: Readonly<RouteEnergyBudget>
-  }) {
-    this.budget = { ...budget }
+  /** Allocate one sparse row per node or cell. */
+  constructor({ size }: { size: number }) {
     this.rows = Array.from({ length: size }, () => new Map())
-  }
-  /** Matrices assembled together share a single sparse-memory limit. */
-  static shared(sizes: readonly number[]): RouteEnergy[] {
-    const budget = { entries: 0 }
-    return sizes.map((size) => {
-      const matrix = new RouteEnergy({ size })
-      matrix.budget = budget
-      return matrix
-    })
   }
   /** Preserve integration order exactly; structural zeros consume no storage. */
   add({
@@ -77,19 +53,9 @@ export class RouteEnergy {
     if (!Number.isFinite(coefficient))
       throw new Error("Route energy requires finite coefficients")
     if (coefficient === 0) {
-      if (entries.delete(column)) this.budget.entries--
+      entries.delete(column)
       return
     }
-    if (entries.has(column)) {
-      entries.set(column, coefficient)
-      return
-    }
-    if (this.budget.entries >= MAX_MATRIX_ENTRIES) {
-      throw new Error(
-        `Route energy exceeds sparse-memory limit of ${MAX_MATRIX_ENTRIES} matrix entries`,
-      )
-    }
-    this.budget.entries++
     entries.set(column, coefficient)
   }
   /** Stable column order preserves the dense deck's text and floating-point summation. */
@@ -424,11 +390,6 @@ function modalShunt({
   rate?: number
 }): string[] {
   const lines: string[] = []
-  if (nodes.length ** 2 > MAX_MATRIX_ENTRIES) {
-    throw new Error(
-      `Route energy modal realization exceeds ${MAX_MATRIX_ENTRIES} dense entries`,
-    )
-  }
   const residual = matrix.rows.map((row) =>
     nodes.map((_, j) => row.get(j) ?? 0),
   )

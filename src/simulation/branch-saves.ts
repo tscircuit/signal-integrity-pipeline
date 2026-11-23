@@ -3,8 +3,6 @@ import { spiceSubcircuitName, spiceWords } from "./spice-header"
 /** A name used to resolve a SPICE subcircuit definition. */
 type SubcircuitName = string
 
-/** Stop expanding branch names beyond this SPICE instance nesting depth. */
-const MAX_SUBCIRCUIT_DEPTH = 12
 const SUBCIRCUIT_END = ".ends"
 
 /** Expand voltage-source branch names through a compiled IBIS library without storing all ladder states. */
@@ -33,7 +31,7 @@ export function branchSaves({
     ...collectBranchSaves({
       name: wrapper,
       path: instance.toLowerCase(),
-      depth: 0,
+      ancestors: new Set(),
       definitions,
     }),
   ]
@@ -43,17 +41,20 @@ export function branchSaves({
 function* collectBranchSaves({
   name,
   path,
-  depth,
+  ancestors,
   definitions,
 }: {
   name: SubcircuitName
   path: string
-  depth: number
+  ancestors: ReadonlySet<SubcircuitName>
   definitions: ReadonlyMap<SubcircuitName, string[]>
 }): Generator<string> {
-  if (depth > MAX_SUBCIRCUIT_DEPTH)
-    throw new Error("Recursive/deep SPICE library cannot be saved safely")
-  for (const line of definitions.get(name.toLowerCase()) ?? []) {
+  const key = name.toLowerCase()
+  if (ancestors.has(key)) throw new Error(`Recursive SPICE subcircuit: ${name}`)
+  const lines = definitions.get(key)
+  if (lines === undefined) return
+  const nextAncestors = new Set([...ancestors, key])
+  for (const line of lines) {
     const tokens = spiceWords(line)
     const device = tokens[0].toLowerCase()
     if (device.startsWith("v")) yield `i(v.${path}.${device})`
@@ -61,7 +62,7 @@ function* collectBranchSaves({
     yield* collectBranchSaves({
       name: tokens.at(-1)!,
       path: `${path}.${device}`,
-      depth: depth + 1,
+      ancestors: nextAncestors,
       definitions,
     })
   }

@@ -33,12 +33,8 @@ const CUT_EDGE_TOLERANCE = 1e-8
 const MIN_INTEGRATION_LENGTH = 1e-12
 /** Base spatial sampling density before refinement. */
 const DEFAULT_CELLS_PER_RISE = 10
-/** Maximum refinement keeps ladder assembly bounded. */
-const MAX_REFINEMENT = 4
 /** Coarsest supported sampling of one rising edge. */
 const MIN_CELLS_PER_RISE = 0.5
-/** Finest supported sampling of one rising edge. */
-const MAX_CELLS_PER_RISE = 40
 /** Tighten cell spacing once a route delay exceeds two rise times. */
 const DISPERSION_RISE_TIMES = 2
 /** More than two wire ends at the same position mark a branch. */
@@ -189,19 +185,16 @@ export function* routeLadderSteps({
   refinement = 1,
   cellsPerRise = DEFAULT_CELLS_PER_RISE,
 }: RouteLadderInput): Generator<RouteLadder, RouteLadder> {
-  const validRefinement =
-    Number.isInteger(refinement) &&
-    refinement >= 1 &&
-    refinement <= MAX_REFINEMENT
-  if (!(riseSeconds > 0) || !validRefinement) {
+  const validRefinement = Number.isInteger(refinement) && refinement >= 1
+  if (!Number.isFinite(riseSeconds) || riseSeconds <= 0 || !validRefinement) {
     throw new Error(
-      "Positive rise time and bounded integer spatial refinement (1..4) required",
+      "Finite positive rise time and positive integer spatial refinement required",
     )
   }
-  if (
-    !(cellsPerRise >= MIN_CELLS_PER_RISE && cellsPerRise <= MAX_CELLS_PER_RISE)
-  ) {
-    throw new Error("Cells per rise time must be in [0.5,40]")
+  if (!Number.isFinite(cellsPerRise) || cellsPerRise < MIN_CELLS_PER_RISE) {
+    throw new Error(
+      `Cells per rise time must be finite and at least ${MIN_CELLS_PER_RISE}`,
+    )
   }
   const lines: string[] = []
   const wireNodes: RouteLadder["wireNodes"] = new Map()
@@ -333,14 +326,13 @@ export function* routeLadderSteps({
     ...new Set(cells.flatMap((cell) => [cell.before, cell.after])),
   ].filter((node) => node !== "0")
   const nodeIds = new Map(nodeNames.map((node, i) => [node, i]))
-  /** Bound actual stored coupling terms, rather than unrelated route cells. */
-  const [R, L, skin, C, D] = RouteEnergy.shared([
+  const [R, L, skin, C, D] = [
     cells.length,
     cells.length,
     cells.length,
     nodeNames.length,
     nodeNames.length,
-  ])
+  ].map((size) => new RouteEnergy({ size }))
   const strip = cells.map(() => 0)
   for (const slice of extracted.slices) {
     const grounded = slice.wires.flatMap((wire, i) => {
