@@ -113,20 +113,8 @@ test(rejectedRequests, async () => {
   assert.equal(calls, 0)
 })
 
-test("bounds body size, rejects malformed JSON/content types and rejects foreign hosts/origins", async () => {
-  const url = await server({ maxRequestBytes: 512 })
-  assert.equal(
-    (
-      await post({
-        url,
-        body: {
-          ...request,
-          files: { "simulation.cir": "x".repeat(1024) },
-        },
-      })
-    ).status,
-    413,
-  )
+test("rejects malformed JSON/content types and rejects foreign hosts/origins", async () => {
+  const url = await server()
   assert.equal(
     (
       await fetch(`${url}/api/run-solver`, {
@@ -176,10 +164,7 @@ test("serializes requests, including version probes, and releases the slot after
       const call = ++calls
       await new Promise<void>((resolve) => setTimeout(resolve, 20))
       active--
-      if (call === 1)
-        throw Object.assign(new Error("native timeout"), {
-          code: "native_timeout",
-        })
+      if (call === 1) throw new Error("native process failed")
       return result
     },
   })
@@ -191,7 +176,7 @@ test("serializes requests, including version probes, and releases the slot after
   ])
   assert.deepEqual(
     replies.map((reply) => reply.status),
-    [504, 200, 200, 200],
+    [502, 200, 200, 200],
   )
   assert.equal(calls, 3)
 })
@@ -247,35 +232,6 @@ test("detects only the fixed ngspice executable on PATH and reports its version 
     ngspice: { available: true, version: "ngspice-test" },
   })
 })
-
-test("rejects an overfull queue and admits later work after a failed process", async () => {
-  let release!: () => void
-  const blocked = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  onTestFinished(() => release())
-  let calls = 0
-  const url = await server({
-    runSolver: async () => {
-      const call = ++calls
-      if (call === 1) {
-        await blocked
-        throw new Error("ngspice failed")
-      }
-      return result
-    },
-  })
-  const pending = Array.from({ length: 5 }, () => post({ url, body: request }))
-  const extra = await Promise.race(pending)
-  release()
-  assert.equal(extra.status, 429)
-  const replies = await Promise.all(pending)
-  assert.deepEqual(
-    replies.map((reply) => reply.status).sort(),
-    [200, 200, 200, 429, 502],
-  )
-  assert.equal((await post({ url, body: request })).status, 200)
-}, 3000)
 
 test("admits a routed DDR-sized deck above the old 16 MiB body limit", async () => {
   const deck = `title\n*${"x".repeat(17 * 1024 * 1024)}\n.tran 1e-11 8e-9\n.end`

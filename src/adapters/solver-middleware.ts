@@ -1,4 +1,3 @@
-/* eslint-disable local/max-file-lines -- Keep the local HTTP routes and their shared request limits together. */
 import { execFile } from "node:child_process"
 import { constants } from "node:fs"
 import { access, readFile } from "node:fs/promises"
@@ -12,29 +11,16 @@ import { relativeFile } from "./paths"
 
 const exec = promisify(execFile)
 
-/** Limit the input and output file lists to the existing routed request budget. */
-const MAX_SOLVER_FILES = 256
-/** Bound the argument list before checking its exact routed batch shape. */
-const MAX_SOLVER_ARGS = 16
 /** Leave at most two seconds for the executable version probe. */
 const VERSION_TIMEOUT_MS = 2000
 /** A version banner must fit in 64 KiB of output. */
 const MAX_VERSION_BYTES = 65536
-/** Give each request body at most ten seconds to arrive. */
-const BODY_TIMEOUT_MS = 10000
-/** Allow a routed native simulation up to 45 minutes. */
-const SOLVER_TIMEOUT_MS = 45 * 60 * 1000
-/** Accept routed decks up to 64 MiB including JSON overhead. */
-const MAX_REQUEST_BYTES = 64 * 1024 * 1024
-/** Bound pending requests, including the active run, to keep memory use bounded. */
-const MAX_PENDING_RUNS = 4
-
 const requestSchema = z
   .object({
     solver: z.literal("ngspice"),
     files: z.record(z.string()),
-    args: z.array(z.string()).max(MAX_SOLVER_ARGS),
-    outputFiles: z.array(z.string()).max(MAX_SOLVER_FILES),
+    args: z.array(z.string()),
+    outputFiles: z.array(z.string()),
   })
   .strict()
 /** Availability and version information for one local executable. */
@@ -48,7 +34,6 @@ export type LocalSolvers = Record<"ngspice", LocalSolver>
 export interface SolverMiddlewareOptions {
   runSolver?: RunSolver
   detectSolvers?: () => Promise<LocalSolvers>
-  maxRequestBytes?: number
   modelDirectory?: string
   boardFile?: string
 }
@@ -70,7 +55,6 @@ type SolverMiddlewareContext = Omit<
 }
 type HttpError = Error & {
   status?: number
-  code?: string
 }
 
 /** Find the first executable named ngspice on PATH. */
@@ -192,8 +176,6 @@ function hasExternalDirective(deck: string): boolean {
 function solverRequest(body: unknown): SolverRequest {
   const request = requestSchema.parse(body)
   const inputPaths = Object.keys(request.files)
-  if (!inputPaths.length || inputPaths.length > MAX_SOLVER_FILES)
-    throw new Error("Expected 1–256 input files")
   for (const path of [...inputPaths, ...request.outputFiles]) relativeFile(path)
   if (
     JSON.stringify(request.args) !==
@@ -212,96 +194,15 @@ function solverRequest(body: unknown): SolverRequest {
   return request
 }
 
-/** One bounded JSON body and its request listeners. */
-class RequestBodyReader {
-  private readonly chunks: Buffer[] = []
-  private size = 0
-  private readonly request: IncomingMessage
-  private readonly limit: number
-  private readonly resolve: (value: unknown) => void
-  private readonly reject: (error: Error) => void
-  private readonly timer: ReturnType<typeof setTimeout>
-
-  /** Attach the deadline and listeners for this request. */
-  constructor({
-    request,
-    limit,
-    resolve,
-    reject,
-  }: {
-    request: IncomingMessage
-    limit: number
-    resolve: (value: unknown) => void
-    reject: (error: Error) => void
-  }) {
-    this.request = request
-    this.limit = limit
-    this.resolve = resolve
-    this.reject = reject
-    this.timer = setTimeout(
-      () =>
-        this.finish(
-          Object.assign(new Error("Request body timed out"), { status: 408 }),
-        ),
-      BODY_TIMEOUT_MS,
-    )
-    request
-      .on("data", this.chunk)
-      .once("end", this.end)
-      .once("error", this.finish)
-      .once("aborted", this.aborted)
+/** Parse a complete JSON request body. An interrupted transfer rejects before deck admission. */
+async function readRequestBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = []
+  for await (const chunk of request) chunks.push(chunk)
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"))
+  } catch {
+    throw new Error("Expected JSON request")
   }
-
-  /** Stop the deadline and detach the listeners before resolving or rejecting. */
-  private readonly finish = (error?: Error): void => {
-    clearTimeout(this.timer)
-    this.request.removeListener("data", this.chunk)
-    this.request.removeListener("end", this.end)
-    this.request.removeListener("error", this.finish)
-    this.request.removeListener("aborted", this.aborted)
-    if (!error) return
-    this.request.resume()
-    this.reject(error)
-  }
-
-  /** Reject a disconnected request promptly. */
-  private readonly aborted = (): void =>
-    this.finish(new Error("Request aborted"))
-
-  /** Check the byte limit before storing each chunk. */
-  private readonly chunk = (bytes: Buffer): void => {
-    this.size += bytes.length
-    if (this.size > this.limit) {
-      this.finish(
-        Object.assign(new Error("Request body too large"), { status: 413 }),
-      )
-      return
-    }
-    this.chunks.push(bytes)
-  }
-
-  /** Parse only a complete body. */
-  private readonly end = (): void => {
-    this.finish()
-    try {
-      this.resolve(JSON.parse(Buffer.concat(this.chunks).toString("utf8")))
-    } catch {
-      this.reject(new Error("Expected JSON request"))
-    }
-  }
-}
-
-/** Read a bounded JSON body with a deadline and per-request listeners. */
-async function readRequestBody({
-  request,
-  limit,
-}: {
-  request: IncomingMessage
-  limit: number
-}): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    new RequestBodyReader({ request, limit, resolve, reject })
-  })
 }
 
 /** Keep local responses out of browser caches. */
@@ -384,7 +285,7 @@ async function writeLocalAssetResponse({
 async function runSolverRequest({
   request,
   response,
-  context: { maxRequestBytes, queue, runSolver },
+  context: { queue, runSolver },
 }: {
   request: IncomingMessage
   response: ServerResponse
@@ -396,20 +297,17 @@ async function runSolverRequest({
       status: 415,
       message: "Expected application/json",
     })
-  const input = solverRequest(
-    await readRequestBody({ request, limit: maxRequestBytes }),
-  )
+  const input = solverRequest(await readRequestBody(request))
   try {
     const result = await queue(() => runSolver(input))
     writeJsonResponse({ response, status: 200, body: result })
   } catch (error) {
     const failure = error as HttpError
-    let status = failure.status
-    if (status == null) {
-      status = 502
-      if (failure.code === "native_timeout") status = 504
-    }
-    writeErrorResponse({ response, status, message: failure.message })
+    writeErrorResponse({
+      response,
+      status: failure.status ?? 502,
+      message: failure.message,
+    })
   }
 }
 
@@ -471,22 +369,12 @@ async function routeHttpRequest({
   })
 }
 
-/** Limit queued memory and preserve the slot even when a solver fails. */
+/** Serialize requests even when a solver fails. */
 function createSolverQueue(): SolverQueue {
   let tail: Promise<unknown> = Promise.resolve()
-  let pending = 0
   return (run) => {
-    if (pending >= MAX_PENDING_RUNS)
-      return Promise.reject(
-        Object.assign(new Error("Local solver queue is full"), { status: 429 }),
-      )
-    pending++
     const next = tail.then(run)
-    tail = next
-      .catch(() => undefined)
-      .finally(() => {
-        pending--
-      })
+    tail = next.catch(() => undefined)
     return next
   }
 }
@@ -509,18 +397,16 @@ function createSolverLookup({
   }
 }
 
-/** Same-origin local API. Native runs and version probes share one bounded queue and one CPU thread. */
+/** Same-origin local API. Native runs and version probes share one queue and one CPU thread. */
 export function createSolverMiddleware({
-  runSolver = createNativeSolver({ timeoutMs: SOLVER_TIMEOUT_MS }),
+  runSolver = createNativeSolver(),
   detectSolvers = detectLocalSolvers,
-  maxRequestBytes = MAX_REQUEST_BYTES,
   modelDirectory = process.env.IBIS_MODEL_DIR ?? "models",
   boardFile = process.env.SI_DDR3_BOARD ?? join(modelDirectory, boardAsset),
 }: SolverMiddlewareOptions = {}): Middleware {
   const queue = createSolverQueue()
   const context = {
     runSolver,
-    maxRequestBytes,
     modelDirectory,
     boardFile,
     queue,

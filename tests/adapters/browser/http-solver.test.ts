@@ -31,19 +31,14 @@ test("posts the solver protocol to the local backend and forwards cancellation",
   assert.deepEqual(await run(request), result)
 })
 
-test("backend failures retain diagnostics and native timeout codes", async () => {
-  for (const [status, code] of [
-    [502, "native_solver"],
-    [504, "native_timeout"],
-  ] as const) {
-    await assert.rejects(
-      createHttpSolver({
-        fetch: async () =>
-          Response.json({ error: "ngspice rejected deck" }, { status }),
-      })(request),
-      { code, message: `${code}: ngspice rejected deck` },
-    )
-  }
+test("backend failures retain solver diagnostics", async () => {
+  await assert.rejects(
+    createHttpSolver({
+      fetch: async () =>
+        Response.json({ error: "ngspice rejected deck" }, { status: 502 }),
+    })(request),
+    { code: "native_solver", message: "native_solver: ngspice rejected deck" },
+  )
 })
 
 test("rejects incomplete, malformed and unsuccessful results", async () => {

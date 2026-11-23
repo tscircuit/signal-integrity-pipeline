@@ -23,7 +23,6 @@ export function createHttpSolver({
     if (!response.ok) {
       const message =
         result?.error ?? `Local backend returned HTTP ${response.status}`
-      if (response.status === 504) fail("native_timeout", message)
       fail("native_solver", message)
     }
     if (
