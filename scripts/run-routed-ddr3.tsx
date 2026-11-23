@@ -18,7 +18,6 @@ const LINE_FEED = "\n"
 /** Keep the fallback diagnostic short enough to scan in the failure summary. */
 const MAX_FAILURE_REASON_LENGTH = 240
 /** Milliseconds allowed for the one native DDR3 simulation. */
-const NATIVE_TIMEOUT_MS = 45 * 60 * 1000
 /** Milliseconds between live progress reports. */
 const PROGRESS_INTERVAL_MS = 15000
 /** Keep the completed and failed stage drawings at a common export size. */
@@ -97,7 +96,7 @@ async function loadBoard(addressCommand: boolean): Promise<CircuitJson> {
 }
 
 const circuitJson = await loadBoard(process.argv.includes("--addr-cmd"))
-const native = createNativeSolver({ timeoutMs: NATIVE_TIMEOUT_MS })
+const native = createNativeSolver()
 let invocations = 0
 let nativeMilliseconds = 0
 const started = performance.now()
