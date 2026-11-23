@@ -17,7 +17,6 @@ const WINDOWS_LINE_ENDING = "\r\n"
 const LINE_FEED = "\n"
 /** Keep the fallback diagnostic short enough to scan in the failure summary. */
 const MAX_FAILURE_REASON_LENGTH = 240
-/** Milliseconds allowed for the one native DDR3 simulation. */
 /** Milliseconds between live progress reports. */
 const PROGRESS_INTERVAL_MS = 15000
 /** Keep the completed and failed stage drawings at a common export size. */
