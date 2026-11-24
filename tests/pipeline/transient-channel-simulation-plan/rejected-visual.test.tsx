@@ -1,6 +1,6 @@
-import assert from "node:assert/strict"
-import { routeTones } from "../../../src/board"
 import { test } from "bun:test"
+import assert from "node:assert/strict"
+import { admissionColors } from "../../../src/board"
 import { RoutedAdmissionSolver } from "../../../src/pipeline"
 import {
   assertRouteVisual,
@@ -15,14 +15,12 @@ test("rejected admission carries a visible red reason without inventing an admit
   })
   assert.throws(() => solver.solve(), /scope distance/)
   const drawing = solver.visualize()
-  assert.ok(
-    drawing.texts!.every((text) => text.color === routeTones.failure),
-    "only the red reason is written",
+  const reason = drawing.texts?.find((text) =>
+    text.text.includes("scope distance"),
   )
-  assert.match(
-    drawing.texts!.map((text) => text.text).join(" "),
-    /scope distance/,
-  )
+  assert.equal(reason?.color, admissionColors.failure)
+  assert.ok(drawing.texts?.every((text) => text.anchorSide === "center"))
+  assert.match(drawing.title || "", /^ADMISSION FAILED$/)
   assertRouteVisual({
     drawing,
     module: "pipeline",
