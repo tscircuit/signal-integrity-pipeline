@@ -269,7 +269,7 @@ test("composed board pictures of every two-trace stage match their PNG snapshots
     }
     // The stage 1 ledger adds text whose rasterisation varies across systems.
     let tolerance = 0.01
-    if (number === 1) tolerance = 0.011
+    if (number === 1) tolerance = 0.014
     assert.ok(
       differing / (width * height) < tolerance,
       `stage ${number}: ${differing} pixels differ; inspect the PNG before updating snapshots`,
