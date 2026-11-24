@@ -82,7 +82,7 @@ test.skipIf(!path || !models)(modelSelection, async () => {
     local.settings.copperScope!.channelPcbTraceIds,
     prepared.settings.copperScope!.channelPcbTraceIds,
   )
-  assert.equal(local.settings.lanes.length, 24)
+  assert.equal(local.settings.traceContacts.length, 24)
   assert.ok(
     local.settings.copperScope!.extractedPcbTraceIds.length <
       prepared.settings.copperScope!.extractedPcbTraceIds.length,

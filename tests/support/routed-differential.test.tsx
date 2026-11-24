@@ -25,7 +25,7 @@ test.skipIf(!process.env.IBIS_MODEL_DIR)(
     }
     const [channelSimulation] = prepareChannelSimulations({ circuit, sources })
     assert.equal(
-      channelSimulation.settings.lanes.length,
+      channelSimulation.settings.traceContacts.length,
       4,
       "two bus routes and two termination stubs",
     )
