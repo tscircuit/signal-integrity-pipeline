@@ -48,7 +48,7 @@
     "@stdlib/math": "0.4.1",
     "@tscircuit/circuit-json-util": "https://pkg.pr.new/tscircuit/circuit-json-util/@tscircuit/circuit-json-util@d22d831fdbacb9e130b288da4e0f9e06b57e203e",
     "@tscircuit/ibis-to-spice": "https://api.github.com/repos/tscircuit/ibis-to-spice/tarball/fa69dda02cd93d8260f3ba5fd795056d15ce3b33",
-    "@tscircuit/solver-utils": "0.0.25",
+    "@tscircuit/solver-utils": "https://pkg.pr.new/tscircuit/solver-utils/@tscircuit/solver-utils@127f17012c7c391005254993864b26801f418249",
     "circuit-json-to-connectivity-map": "0.0.35",
     "format-si-unit": "0.0.12",
     "graphics-debug": "0.0.101",
