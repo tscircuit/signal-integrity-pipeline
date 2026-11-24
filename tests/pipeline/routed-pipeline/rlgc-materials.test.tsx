@@ -15,6 +15,7 @@ test("carries explicit dielectric materials from planning to the RLGC artifact",
   const root = new RoutedPipelineSolver({
     input: { ...fixture.inputProblem, materials },
     context: {
+      progress: (): void => undefined,
       runSolver: async (): Promise<never> => {
         throw new Error("This fixture stops after the RLGC stage")
       },
