@@ -1,16 +1,15 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
-import React from "react"
 import { createNativeSolver } from "../../src/adapters"
 import {
   CopperGeometryExtractionSolver,
   cloneCircuitJson,
 } from "../../src/board"
-import { RouteFieldsSolver } from "../../src/extraction"
 import {
   type TransientChannelSimulationPlanInput,
   TransientChannelSimulationPlanSolver,
 } from "../../src/pipeline"
+import { TransmissionLineRlgcSolver } from "../../src/rlgc"
 import { RouteBindingsSolver, RouteNetworkSolver } from "../../src/simulation"
 import { routedRequest } from "../../src/simulation/route-transient"
 import { quietDriverIbis } from "../fixtures/routed-visual-fixture"
@@ -30,18 +29,10 @@ function compileNetwork(
   const plan = planner.getOutput().value[0]
   const sections = new CopperGeometryExtractionSolver(plan.sections)
   sections.solve()
-  const {
-    geometry,
-    circuitJson,
-    copperScope: scope,
-    maskThicknessMm,
-  } = sections.getOutput().value
-  const fields = new RouteFieldsSolver({
-    geometry,
-    circuitJson: cloneCircuitJson(circuitJson),
-    scope,
-    maskThicknessMm,
-    materials: plan.bindings.options.materials,
+  const copperGeometry = sections.getOutput().value
+  const { geometry, copperScope: scope } = copperGeometry
+  const fields = new TransmissionLineRlgcSolver({
+    copperGeometry,
     artifactPrefix: plan.sections.artifactPrefix,
   })
   fields.solve()

@@ -1,17 +1,14 @@
 import { beforeAll, describe, setDefaultTimeout, test } from "bun:test"
 import assert from "node:assert/strict"
-import {
-  type CopperPoint,
-  extractCopperGeometry,
-  type TraceWire,
-} from "../../src/board"
-import { RouteFieldsSolver } from "../../src/extraction"
+import type { CopperPoint, TraceWire } from "../../src/board"
 import type { Snapshot } from "../../src/kernel"
+import { TransmissionLineRlgcSolver } from "../../src/rlgc"
 import {
   type RouteLadder,
   routeLadder,
 } from "../../src/simulation/route-ladder"
 import { renderRoutedCopper } from "../fixtures/routed-copper"
+import { solveBoardCopperGeometry } from "../fixtures/transmission-line-rlgc"
 
 setDefaultTimeout(150_000)
 
@@ -37,9 +34,9 @@ describe("large routed TSX ladder", () => {
 
   beforeAll(async () => {
     const { circuitJson, copperScope: scope } = await renderRoutedCopper()
-    const fields = new RouteFieldsSolver({
-      geometry: extractCopperGeometry({
-        circuit: circuitJson,
+    const fields = new TransmissionLineRlgcSolver({
+      copperGeometry: solveBoardCopperGeometry({
+        circuitJson,
         copperScope: scope,
       }),
       artifactPrefix: "test",

@@ -76,10 +76,6 @@ export class RouteNetworkSolver extends BaseSolver {
     const { scope, models, receiverPaths } = bindings
     const probes = [...bindings.plan.probes]
     const db = cju(cloneCircuitJson(bindings.circuitJson))
-    const stackup = db.pcb_stackup.list()[0]
-    const maskLayers = stackup.layers.filter(
-      (layer) => layer.layer_type === "soldermask",
-    )
     const ports = db.pcb_port.list()
     const aliases: string[] = []
     const known = new Map<RouteContactKey, string>()
@@ -271,25 +267,21 @@ export class RouteNetworkSolver extends BaseSolver {
         }),
       )
     })
-    let maskThicknessSource = "assumed"
-    let maskDescription = "assumed; absent from preset"
-    if (maskLayers.length) {
-      maskThicknessSource = "preset"
-      maskDescription = "preset"
-    }
-    if (options.materials) {
-      maskThicknessSource = "explicit"
-      maskDescription = "explicit material option"
-    }
+    const { maskThicknessSource } = extracted
+    const maskDescription = {
+      assumed: "assumed; absent from stackup",
+      stackup: "stackup",
+      explicit: "explicit material option",
+    }[maskThicknessSource]
     const warnings = [
       ...extracted.warnings,
       ...transitions.warnings,
       ...models.flatMap((model) => model.warnings),
       [
         "JLC standard stackup (assumed): JLC08121H-3313;",
-        `mask thickness ${materials.maskMm} mm (${maskDescription}).`,
-        `Mask er=${materials.maskEr}, tan(delta)=${materials.maskLoss}`,
-        `and laminate tan(delta)=${materials.substrateLoss}; explicit assumptions, not measured material data.`,
+        `mask thickness ${materials.maskThicknessMm} mm (${maskDescription}).`,
+        `Mask er=${materials.maskRelativePermittivity}, tan(delta)=${materials.maskLossTangent}`,
+        `and laminate tan(delta)=${materials.laminateLossTangent}; explicit assumptions, not measured material data.`,
       ].join(" "),
       [
         "Numerical DC anchors: 1 Gohm per coarse route node;",
@@ -347,11 +339,12 @@ export class RouteNetworkSolver extends BaseSolver {
       cells: ladder.cells,
       capped_skin_cells: ladder.cappedSkinCells,
       maximum_cell_delay_s: ladder.maximumDelaySeconds,
-      coupling: extracted.coupling,
-      unique_cross_sections: extracted.sections.length + oblique.solves,
+      coupling: extracted.pairCouplings,
+      unique_cross_sections:
+        extracted.crossSectionSolutions.length + oblique.solves,
       oblique_cross_sections: oblique.solves,
       oblique_encounters: oblique.records,
-      sections: extracted.slices.length,
+      sections: extracted.solvedWireSections.length,
       geometry_wires: geometry.wires.length,
       wires: geometry.wires,
       vias: geometry.vias,
@@ -394,16 +387,18 @@ export class RouteNetworkSolver extends BaseSolver {
           ),
         }
       }),
-      cross_sections: extracted.sections.map(({ key, line }) => ({
-        geometry: JSON.parse(key),
-        C: line.C,
-        L: line.L,
-        dcResistance: line.dcResistance,
-        skinResistance: line.skinResistance,
-        dielectricLoss: line.dielectricLoss,
-        diagnostics: line.diagnostics,
-      })),
-      slices: extracted.slices.map((slice) => ({
+      cross_sections: extracted.crossSectionSolutions.map(
+        ({ crossSectionKey, rlgcMatrices }) => ({
+          geometry: JSON.parse(crossSectionKey),
+          C: rlgcMatrices.capacitanceFaradsPerMeter,
+          L: rlgcMatrices.externalInductanceHenriesPerMeter,
+          dcResistance: rlgcMatrices.dcResistanceOhmsPerMeter,
+          skinResistance: rlgcMatrices.totalSkinResistanceOhmsPerMeterPerSqrtHz,
+          dielectricLoss: rlgcMatrices.dielectricLossFaradsPerMeter,
+          diagnostics: rlgcMatrices.diagnostics,
+        }),
+      ),
+      slices: extracted.solvedWireSections.map((slice) => ({
         start: slice.startMm,
         end: slice.endMm,
         point: getWirePoint({
@@ -412,7 +407,7 @@ export class RouteNetworkSolver extends BaseSolver {
         }),
         wires: slice.wires.map((wire) => wire.wireIndex),
         references: slice.references,
-        key: slice.key,
+        key: slice.crossSectionKey,
       })),
     }
     evidence.warnings.unshift(...this.input.warnings)
