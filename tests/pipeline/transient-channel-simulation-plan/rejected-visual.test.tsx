@@ -16,12 +16,11 @@ test("rejected plan carries a visible red reason without inventing a planned cha
   assert.throws(() => solver.solve(), /scope distance/)
   const drawing = solver.visualize()
   const reason = drawing.texts?.find(
-    (text) =>
-      text.text === "Choose a copper search distance greater than zero.",
+    (text) => text.text === "Copper search distance must be greater than 0 mm.",
   )
   assert.equal(reason?.color, planColors.failure)
   assert.ok(drawing.texts?.every((text) => text.anchorSide === "center"))
-  assert.equal(drawing.title, "Simulation — can't simulate")
+  assert.equal(drawing.title, "Plan: can't simulate")
   assert.ok(
     drawing.rects?.some((rect) =>
       rect.label?.includes("Copper scope distance must be finite and positive"),
@@ -32,6 +31,6 @@ test("rejected plan carries a visible red reason without inventing a planned cha
     module: "pipeline",
     name: "transient-channel-simulation-plan-rejected",
     caption:
-      "Two parallel traces each connect a driver to a receiver. The plan stops because the test sets the distance to look for nearby copper to zero.",
+      "Two parallel traces connect TX0 to RX0 and TX1 to RX1. This test sets the copper search distance to 0 mm and checks that the plan stops.",
   })
 })
