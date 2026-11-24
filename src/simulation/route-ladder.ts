@@ -1,12 +1,8 @@
 import type { CopperPoint, TraceWire } from "../board"
-import {
-  causalLossPoles,
-  causalLossResponse,
-  type ExtractedRouteSlice,
-  type ExtractedRoutes,
-  referenceSeries,
-} from "../extraction"
+import { causalLossPoles, causalLossResponse } from "../extraction"
 import { hypotenuse, type Snapshot } from "../kernel"
+import type { SolvedWireSection, TransmissionLineRlgc } from "../rlgc"
+import { projectAcGroundedSeries } from "./ac-grounded-series"
 import {
   RouteEnergy,
   seriesEnergy,
@@ -61,7 +57,9 @@ export interface RouteLadder {
 }
 
 /** Largest absolute row sum of a per-length matrix. */
-function matrixInfinityNorm(matrix: ExtractedRouteSlice["line"]["L"]): number {
+function matrixInfinityNorm(
+  matrix: SolvedWireSection["rlgcMatrices"]["externalInductanceHenriesPerMeter"],
+): number {
   return Math.max(
     ...matrix.map((row) =>
       row.reduce((total, entry) => total + Math.abs(entry), 0),
@@ -70,9 +68,13 @@ function matrixInfinityNorm(matrix: ExtractedRouteSlice["line"]["L"]): number {
 }
 
 /** Deliberately conservative modal delay upper bound from matrix infinity norms. */
-function delaySecondsPerMetre(slice: ExtractedRouteSlice): number {
-  const inductanceNorm = matrixInfinityNorm(slice.line.L)
-  const capacitanceNorm = matrixInfinityNorm(slice.line.C)
+function delaySecondsPerMetre(slice: SolvedWireSection): number {
+  const inductanceNorm = matrixInfinityNorm(
+    slice.rlgcMatrices.externalInductanceHenriesPerMeter,
+  )
+  const capacitanceNorm = matrixInfinityNorm(
+    slice.rlgcMatrices.capacitanceFaradsPerMeter,
+  )
   return Math.sqrt(inductanceNorm * capacitanceNorm)
 }
 
@@ -172,7 +174,7 @@ export function routeContactKey({
 }
 
 interface RouteLadderInput {
-  extracted: ExtractedRoutes
+  extracted: TransmissionLineRlgc
   endpoint: RouteEndpoint
   riseSeconds: number
   refinement?: number
@@ -200,14 +202,14 @@ export function* routeLadderSteps({
   }
   const lines: string[] = []
   const wireNodes: RouteLadder["wireNodes"] = new Map()
-  const wireEntries = extracted.slices.flatMap((slice) =>
+  const wireEntries = extracted.solvedWireSections.flatMap((slice) =>
     slice.wires.map((wire) => [wire.wireIndex, wire] as const),
   )
   const wires = [...new Map(wireEntries).values()].sort(
     (a, b) => a.wireIndex - b.wireIndex,
   )
   const maximumDelaySecondsPerMetre = Math.max(
-    ...extracted.slices.map(delaySecondsPerMetre),
+    ...extracted.solvedWireSections.map(delaySecondsPerMetre),
   )
   const targetMm =
     (riseSeconds / cellsPerRise / refinement / maximumDelaySecondsPerMetre) *
@@ -340,12 +342,15 @@ export function* routeLadderSteps({
     nodeNames.length,
   ].map((size) => new RouteEnergy({ size }))
   const strip = cells.map(() => 0)
-  for (const slice of extracted.slices) {
+  for (const slice of extracted.solvedWireSections) {
     const grounded = slice.wires.flatMap((wire, i) => {
       if (arc.has(wire.wireIndex)) return []
       return [i]
     })
-    const series = referenceSeries({ line: slice.line, grounded })
+    const series = projectAcGroundedSeries({
+      rlgcMatrices: slice.rlgcMatrices,
+      groundedConductorIndices: grounded,
+    })
     const cuts = [slice.startMm, slice.endMm]
     for (const wire of slice.wires) {
       const entry = arc.get(wire.wireIndex)
@@ -405,33 +410,44 @@ export function* routeLadderSteps({
           R.add({
             row: a.index,
             column: b.index,
-            coefficient: slice.line.dcResistance[i][j] * signedLength,
+            coefficient:
+              slice.rlgcMatrices.dcResistanceOhmsPerMeter[i][j] * signedLength,
           })
           L.add({
             row: a.index,
             column: b.index,
-            coefficient: series.L[i][j] * signedLength,
+            coefficient:
+              series.externalInductanceHenriesPerMeter[i][j] * signedLength,
           })
           skin.add({
             row: a.index,
             column: b.index,
             coefficient:
-              skinResistanceForDeck(series.skinResistance[i][j]) * signedLength,
+              skinResistanceForDeck(
+                series.totalSkinResistanceOhmsPerMeterPerSqrtHz[i][j],
+              ) * signedLength,
           })
           if (i === j)
             strip[a.index] +=
-              skinResistanceForDeck(series.stripSkinResistance[i][i]) * metres
+              skinResistanceForDeck(
+                series.conductorSkinResistanceOhmsPerMeterPerSqrtHz[i][i],
+              ) * metres
           for (const side of ["before", "after"] as const) {
             if (a[side] === undefined || b[side] === undefined) continue
             C.add({
               row: a[side]!,
               column: b[side]!,
-              coefficient: (slice.line.C[i][j] * metres) / 2,
+              coefficient:
+                (slice.rlgcMatrices.capacitanceFaradsPerMeter[i][j] * metres) /
+                2,
             })
             D.add({
               row: a[side]!,
               column: b[side]!,
-              coefficient: (slice.line.dielectricLoss[i][j] * metres) / 2,
+              coefficient:
+                (slice.rlgcMatrices.dielectricLossFaradsPerMeter[i][j] *
+                  metres) /
+                2,
             })
           }
         }

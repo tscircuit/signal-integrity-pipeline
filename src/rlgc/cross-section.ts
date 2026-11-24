@@ -42,6 +42,23 @@ const MAX_RECESSION_FRACTION = 0.1
 /** Cross-sectional area is in square millimeters and DC resistance is computed in SI units. */
 const SQUARE_MILLIMETERS_PER_SQUARE_METER = 1e6
 
+/** Check the panel count supported by the field discretization. */
+function isPanelCountValid(panelsPerEdge: number): boolean {
+  return Number.isInteger(panelsPerEdge) && panelsPerEdge >= MIN_PANELS_PER_EDGE
+}
+
+/** Resolve the default conductor edge resolution before starting a stepped solve. */
+export function resolvePanelsPerEdge(
+  panelsPerEdge: number = DEFAULT_PANELS_PER_EDGE,
+): number {
+  if (!isPanelCountValid(panelsPerEdge))
+    fail({
+      code: "cross_section_options",
+      text: `Use an integer >=${MIN_PANELS_PER_EDGE} panels per edge`,
+    })
+  return panelsPerEdge
+}
+
 /** Check panel resolution and interface padding shared by the capacitance and full RLGC calculation. */
 function hasValidMeshOptions({
   panelsPerEdge,
@@ -51,8 +68,7 @@ function hasValidMeshOptions({
   interfaceExtent: number
 }): boolean {
   return (
-    Number.isInteger(panelsPerEdge) &&
-    panelsPerEdge >= MIN_PANELS_PER_EDGE &&
+    isPanelCountValid(panelsPerEdge) &&
     Number.isFinite(interfaceExtent) &&
     interfaceExtent >= MIN_INTERFACE_EXTENT
   )
