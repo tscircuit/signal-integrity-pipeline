@@ -25,7 +25,7 @@ type RoutedStageConstructorParams<I> = [I[]]
 /** The completed channel outputs and their artifacts. */
 export type RoutedStageOutput<O> = Produced<readonly O[]>
 
-/** One flat stage drains the domain algorithm one item at a time across all admitted channel simulations. */
+/** One flat stage drains the domain algorithm one item at a time across all planned channel simulations. */
 export class RoutedStageSolver<I, O> extends BaseSolver {
   override MAX_ITERATIONS = Infinity
   private current?: ItemSolver<I, O>
@@ -134,7 +134,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
     }
     this.finish()
   }
-  /** The immutable stage boundary is an array in admission order. */
+  /** The immutable stage boundary is an array in planning order. */
   override getOutput(): RoutedStageOutput<O> {
     if (!this.output) throw new Error(`${this.getSolverName()} is incomplete`)
     return this.output
@@ -143,7 +143,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
   override getConstructorParams(): RoutedStageConstructorParams<I> {
     return [this.inputs]
   }
-  /** Retain the last channel simulation's drawing when its stage completes, or a blank drawing when no channel simulations were admitted. */
+  /** Retain the last channel simulation's drawing when its stage completes, or a blank drawing when no channel simulations were planned. */
   override visualize(): GraphicsObject {
     return this.current?.visualize() ?? { coordinateSystem: "cartesian" }
   }
@@ -154,7 +154,7 @@ export function routedStage<I, O>(
   solverClass: ItemClass<I, O>,
 ): RoutedStageClass<I, O> {
   return class extends RoutedStageSolver<I, O> {
-    /** One immutable input per admitted channel simulation; the stage owns its ordered work queue. */
+    /** One immutable input per planned channel simulation; the stage owns its ordered work queue. */
     constructor(inputs: I[]) {
       super({ inputs, solverClass })
     }

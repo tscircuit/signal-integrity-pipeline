@@ -2,7 +2,7 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { createNativeSolver } from "../../../src/adapters"
 import { RoutedPipelineSolver } from "../../../src/pipeline"
-import { routedAdmissionInput } from "../../fixtures/routed-fixture"
+import { channelPlanInput } from "../../fixtures/routed-fixture"
 import { vendorAvailable } from "../../fixtures/vendor-models"
 
 const CAPTURE_DURATION_SECONDS = 4e-9
@@ -11,7 +11,7 @@ test.skipIf(
   Bun.which("ngspice") === null || !vendorAvailable("sn74lvc1g04.ibs"),
 )("renders, admits and captures the two-trace board with ngspice", async () => {
   const solver = new RoutedPipelineSolver({
-    input: await routedAdmissionInput({
+    input: await channelPlanInput({
       props: {
         "bit-rate": "400Mbps",
         "duration-seconds": CAPTURE_DURATION_SECONDS,
@@ -22,7 +22,9 @@ test.skipIf(
   })
   await solver.solveAsync()
   assert.equal(solver.MAX_ITERATIONS, Infinity)
-  const [{ bindings }] = solver.stageOutput("RoutedAdmissionSolver").value
+  const [{ bindings }] = solver.stageOutput(
+    "TransientChannelSimulationPlanSolver",
+  ).value
   assert.deepEqual(
     bindings.mappings.map(({ port }) => port),
     ["DATA", "VICTIM"],

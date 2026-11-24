@@ -164,7 +164,7 @@ for (const value of publicFunctions) assert.equal(typeof value, 'function')
 import {
   RoutedPipelineSolver,
   type RoutedInspection,
-  type RoutedAdmissionInput,
+  type TransientChannelSimulationPlanInput,
   type SolverRequest,
 } from '@tscircuit/signal-integrity-pipeline'
 import {createNativeSolver,loadIbisSources} from '@tscircuit/signal-integrity-pipeline/node';
@@ -185,7 +185,7 @@ const circuitJson: CircuitJson = [{
 /** Type-check the public pipeline against a host-supplied Circuit JSON type. */
 const simulate = async (circuitJson: CircuitJson): Promise<RoutedInspection> => {
   const ibisSources = await loadIbisSources({ circuitJson, baseDir: '.' })
-  const problem: RoutedAdmissionInput = { circuitJson, ibisSources }
+  const problem: TransientChannelSimulationPlanInput = { circuitJson, ibisSources }
   const solver = new RoutedPipelineSolver({ input: problem, context: { runSolver, progress: () => {} } })
   await solver.solveAsync()
   return solver.getOutput()

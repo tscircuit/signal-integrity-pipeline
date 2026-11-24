@@ -5,7 +5,10 @@ export { stackupFromCircuitJson } from "./board"
 export type { IbisSources } from "./buffers"
 export type { Diagnostic, DiagnosticSubject, FileMap } from "./kernel"
 export type { DiagnosticCode } from "./modules.generated"
-export type { RoutedAdmissionInput, RoutedInspection } from "./pipeline"
+export type {
+  RoutedInspection,
+  TransientChannelSimulationPlanInput,
+} from "./pipeline"
 export { RoutedPipelineSolver } from "./pipeline"
 export { RouteTransientSolver, transmittedBits } from "./simulation"
 export type { RunSolver, Solver, SolverRequest, SolverResult } from "./solver"

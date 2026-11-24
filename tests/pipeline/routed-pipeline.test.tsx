@@ -25,7 +25,7 @@ import {
   transientDurationSeconds,
   voltageNames,
 } from "../fixtures/routed-deck"
-import { routedAdmissionInput } from "../fixtures/routed-fixture"
+import { channelPlanInput } from "../fixtures/routed-fixture"
 import { routedVisualFixture } from "../fixtures/routed-visual"
 import { vendorAvailable } from "../fixtures/vendor-models"
 import { renderCoreSignals } from "../support/core-render"
@@ -116,7 +116,7 @@ const synthetic: SolverContext = {
 test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
   "six flat stages visit every channelSimulation and produce deterministic artifacts",
   async () => {
-    const input = await routedAdmissionInput()
+    const input = await channelPlanInput()
     const solver = new RoutedPipelineSolver({ input, context: synthetic })
     assert.throws(() => solver.getOutput(), /incomplete/)
     await solver.solveAsync()
@@ -171,7 +171,7 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
   },
 )
 
-test("root with no channel simulations seals only admission and the tuple manifest", () => {
+test("root with no channel simulations seals only the plan and the tuple manifest", () => {
   const solver = new RoutedPipelineSolver({
     input: { circuitJson: [], ibisSources: {} },
     context: synthetic,
@@ -190,12 +190,12 @@ type DriverWeight = [timeSeconds: number, weight: number]
 test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
   "driver lead-in fits the default capture",
   async () => {
-    const input = await routedAdmissionInput()
+    const input = await channelPlanInput()
     const solver = new RoutedPipelineSolver({ input, context: synthetic })
     solver.solveUntilStage("RouteTransientSolver")
     assert.equal(
-      solver.stageOutput("RoutedAdmissionSolver").value[0].bindings.options
-        .durationSeconds,
+      solver.stageOutput("TransientChannelSimulationPlanSolver").value[0]
+        .bindings.options.durationSeconds,
       40e-9,
     )
     const deck = solver.stageOutput("RouteNetworkSolver").value[0]
@@ -234,7 +234,7 @@ test("all six static stage definitions exist before the first step", () => {
   assert.deepEqual(
     root.pipelineDef,
     definitions,
-    "admission never creates stage definitions at runtime",
+    "channel planning never creates stage definitions at runtime",
   )
 })
 
@@ -257,7 +257,10 @@ test("actual two-channel simulation TSX advances every flat stage and invokes tr
     },
   })
   root.solveUntilStage("RouteBindingsSolver")
-  assert.equal(root.stageOutput("RoutedAdmissionSolver").value.length, 2)
+  assert.equal(
+    root.stageOutput("TransientChannelSimulationPlanSolver").value.length,
+    2,
+  )
   assert.equal(root.stageOutput("RouteSectionsSolver").value.length, 2)
   assert.equal(root.stageOutput("RouteFieldsSolver").value.length, 2)
   await root.solveAsync()

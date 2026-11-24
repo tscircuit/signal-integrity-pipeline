@@ -8,8 +8,8 @@ export function routedStageDocumentation(): string {
   const table = ["| # | Stage solver |", "|---|---|", ...rows].join("\n")
 
   const nodes = names.map((name, i) => {
-    let step = "Admit one channel simulation per step"
-    if (i > 0) step = "All admitted channel simulations, one item per step"
+    let step = "Plan one transient channel simulation per step"
+    if (i > 0) step = "All planned channel simulations, one item per step"
     return `  s${i}["${name}<br/>${step}"]`
   })
   const nextStages = names.slice(1)
@@ -23,7 +23,7 @@ export function routedStageDocumentation(): string {
   )
   const failures = names.map((name, i) => {
     if (i === 0)
-      return `  ${name} --> failed: invalid admission, including undeclared aggressors`
+      return `  ${name} --> failed: invalid channel simulation input, including undeclared aggressors`
     return `  ${name} --> failed`
   })
   const states = [

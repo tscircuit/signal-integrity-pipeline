@@ -23,28 +23,30 @@ import {
   RouteTransientSolver,
 } from "../simulation"
 import type { SolverContext } from "../solver"
-import {
-  RoutedAdmissionSolver,
-  type RoutedChannelSimulationPlan,
-} from "./routed-admission"
-import {
-  captureRoutedAdmissionInput,
-  type RoutedAdmissionInput,
-} from "./routed-admission-input"
 import { type RoutedStageOutput, routedStage } from "./routed-stage"
+import {
+  type TransientChannelSimulationPlan,
+  TransientChannelSimulationPlanSolver,
+} from "./transient-channel-simulation-plan"
+import {
+  captureTransientChannelSimulationPlanInput,
+  type TransientChannelSimulationPlanInput,
+} from "./transient-channel-simulation-plan-input"
 
-/** All six rows exist before the first step; every stage drains all admitted channel simulations in order. */
+/** All six rows exist before the first step; every stage drains all planned channel simulations in order. */
 export const routedStages = [
   definePipelineStep(
-    "RoutedAdmissionSolver",
-    RoutedAdmissionSolver,
+    "TransientChannelSimulationPlanSolver",
+    TransientChannelSimulationPlanSolver,
     (p: RoutedPipelineSolver) => [p.inputProblem],
   ),
   definePipelineStep(
     "RouteSectionsSolver",
     routedStage(RouteSectionsSolver),
     (p: RoutedPipelineSolver) => [
-      p.stageOutput("RoutedAdmissionSolver").value.map((plan) => plan.sections),
+      p
+        .stageOutput("TransientChannelSimulationPlanSolver")
+        .value.map((plan) => plan.sections),
     ],
   ),
   definePipelineStep(
@@ -56,10 +58,11 @@ export const routedStages = [
         circuitJson: sections.circuitJson,
         scope: sections.scope,
         maskThicknessMm: sections.maskThicknessMm,
-        materials: p.stageOutput("RoutedAdmissionSolver").value[i].bindings
-          .options.materials,
-        artifactPrefix: p.stageOutput("RoutedAdmissionSolver").value[i].sections
-          .artifactPrefix,
+        materials: p.stageOutput("TransientChannelSimulationPlanSolver").value[
+          i
+        ].bindings.options.materials,
+        artifactPrefix: p.stageOutput("TransientChannelSimulationPlanSolver")
+          .value[i].sections.artifactPrefix,
       })),
     ],
   ),
@@ -67,28 +70,32 @@ export const routedStages = [
     "RouteBindingsSolver",
     routedStage(RouteBindingsSolver),
     (p: RoutedPipelineSolver) => [
-      p.stageOutput("RoutedAdmissionSolver").value.map((plan, i) => ({
-        ...plan.bindings,
-        copperScope: p.stageOutput("RouteSectionsSolver").value[i].scope,
-      })),
+      p
+        .stageOutput("TransientChannelSimulationPlanSolver")
+        .value.map((plan, i) => ({
+          ...plan.bindings,
+          copperScope: p.stageOutput("RouteSectionsSolver").value[i].scope,
+        })),
     ],
   ),
   definePipelineStep(
     "RouteNetworkSolver",
     routedStage(RouteNetworkSolver),
     (p: RoutedPipelineSolver) => [
-      p.stageOutput("RoutedAdmissionSolver").value.map((plan, i) => ({
-        simulationPcbTransientChannelSimulationId:
-          plan.simulationPcbTransientChannelSimulationId,
-        name: plan.name,
-        geometry: p.stageOutput("RouteSectionsSolver").value[i].geometry,
-        extracted: p.stageOutput("RouteFieldsSolver").value[i],
-        bindings: p.stageOutput("RouteBindingsSolver").value[i],
-        materials: p.stageOutput("RouteFieldsSolver").value[i].materials,
-        options: plan.bindings.options,
-        warnings: plan.warnings,
-        artifactPrefix: plan.sections.artifactPrefix,
-      })),
+      p
+        .stageOutput("TransientChannelSimulationPlanSolver")
+        .value.map((plan, i) => ({
+          simulationPcbTransientChannelSimulationId:
+            plan.simulationPcbTransientChannelSimulationId,
+          name: plan.name,
+          geometry: p.stageOutput("RouteSectionsSolver").value[i].geometry,
+          extracted: p.stageOutput("RouteFieldsSolver").value[i],
+          bindings: p.stageOutput("RouteBindingsSolver").value[i],
+          materials: p.stageOutput("RouteFieldsSolver").value[i].materials,
+          options: plan.bindings.options,
+          warnings: plan.warnings,
+          artifactPrefix: plan.sections.artifactPrefix,
+        })),
     ],
   ),
   definePipelineStep(
@@ -97,8 +104,8 @@ export const routedStages = [
     (p: RoutedPipelineSolver) => [
       p.stageOutput("RouteNetworkSolver").value.map((compiled, i) => ({
         compiled,
-        artifactPrefix: p.stageOutput("RoutedAdmissionSolver").value[i].sections
-          .artifactPrefix,
+        artifactPrefix: p.stageOutput("TransientChannelSimulationPlanSolver")
+          .value[i].sections.artifactPrefix,
         context: p.context,
       })),
     ],
@@ -107,7 +114,9 @@ export const routedStages = [
 
 /** Output types keyed by their debugger stage names. */
 interface RoutedStageOutputs {
-  RoutedAdmissionSolver: Produced<readonly RoutedChannelSimulationPlan[]>
+  TransientChannelSimulationPlanSolver: Produced<
+    readonly TransientChannelSimulationPlan[]
+  >
   RouteSectionsSolver: RoutedStageOutput<RoutedSections>
   RouteFieldsSolver: RoutedStageOutput<ExtractedRoutes>
   RouteBindingsSolver: RoutedStageOutput<RoutedBindings>
@@ -117,7 +126,7 @@ interface RoutedStageOutputs {
 
 /** A routed channel simulation’s compiled network and transient capture. */
 export interface RoutedChannelSimulationView {
-  id: RoutedChannelSimulationPlan["simulationPcbTransientChannelSimulationId"]
+  id: TransientChannelSimulationPlan["simulationPcbTransientChannelSimulationId"]
   name: string
   compiled: RoutedDeck
   capture: RoutedCapture
@@ -131,7 +140,7 @@ export type RoutedInspection = Snapshot<{
 
 /** The circuit problem and the runtime capability used by one routed pipeline. */
 interface RoutedPipelineInput {
-  input: RoutedAdmissionInput
+  input: TransientChannelSimulationPlanInput
   context: SolverContext
 }
 
@@ -139,17 +148,17 @@ interface RoutedPipelineInput {
 type RoutedPipelineConstructorParams = [RoutedPipelineInput]
 
 /** A single static pipeline, from admission through sequential live transients. */
-export class RoutedPipelineSolver extends BasePipelineSolver<RoutedAdmissionInput> {
+export class RoutedPipelineSolver extends BasePipelineSolver<TransientChannelSimulationPlanInput> {
   override MAX_ITERATIONS = Infinity
   override pipelineDef: PipelineStep<BaseSolver>[] = [...routedStages]
   private output?: RoutedInspection
   readonly context: SolverContext
   /** Preserve exact model bytes while keeping runtime capabilities outside immutable input. */
   constructor({ input, context }: RoutedPipelineInput) {
-    super(captureRoutedAdmissionInput(input))
+    super(captureTransientChannelSimulationPlanInput(input))
     this.context = context
   }
-  /** Each completed row exposes its domain array in admission order. */
+  /** Each completed row exposes its domain array in planning order. */
   stageOutput<K extends keyof RoutedStageOutputs>(
     name: K,
   ): RoutedStageOutputs[K] {
@@ -166,7 +175,7 @@ export class RoutedPipelineSolver extends BasePipelineSolver<RoutedAdmissionInpu
       const output = this.getStageOutput<Produced<unknown>>(stage.solverName)!
       ledger = ledger.add(output.artifacts)
     }
-    const plans = this.stageOutput("RoutedAdmissionSolver").value
+    const plans = this.stageOutput("TransientChannelSimulationPlanSolver").value
     const compiled = this.stageOutput("RouteNetworkSolver").value
     const captures = this.stageOutput("RouteTransientSolver").value
     const channelSimulations = plans.map((plan, i) => ({
