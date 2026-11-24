@@ -1,7 +1,9 @@
 /* eslint-disable local/max-file-lines -- Keep transient, eye and envelope drawings on one shared scale. */
 import type { GraphicsObject, Point, Viewbox } from "graphics-debug"
 import {
-  type RoutedSections,
+  type CircuitJson,
+  type CopperGeometry,
+  cloneCircuitJson,
   routeBoardDrawing,
   routeCanvas,
   routeFailure,
@@ -19,7 +21,7 @@ import {
 import type { IbisSources, TextRange } from "../buffers"
 import type { Snapshot } from "../kernel"
 import { sha256 } from "../kernel"
-import type { RouteBuffer, RoutedCapture } from "./routed-types"
+import type { RouteBuffer, RoutedCapture } from "./route-inputs"
 
 /** A board port and its transient waveform label. */
 export interface WaveformProbe {
@@ -37,7 +39,7 @@ export interface ReceiverThreshold {
 
 /** Inputs for drawing a pending, completed or failed transient. */
 export interface WaveformState {
-  board?: RoutedSections
+  board?: CopperGeometry
   probes: readonly WaveformProbe[]
   capture?: RoutedCapture
   durationSeconds: number
@@ -360,8 +362,9 @@ interface WaveformCurveContext {
  */
 export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
   const { board, probes, capture, durationSeconds } = state
+  const circuit = board && cloneCircuitJson(board.circuitJson)
   const view =
-    board && routeView({ circuit: board.circuitJson, scope: board.scope })
+    board && circuit && routeView({ circuit, scope: board.copperScope })
   const frame =
     view ??
     routeFrame({
@@ -370,7 +373,7 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
       minY: 0,
       maxY: 40,
     })
-  let drawing = waveformCanvas({ frame, board })
+  let drawing = waveformCanvas({ frame, board, circuit })
   const styles = probes.map((probe, i) => {
     const net = view?.ports.get(probe.sourcePortId)
     return {
@@ -384,10 +387,10 @@ export function routeWaveformDrawing(state: WaveformState): GraphicsObject {
   let threshold: ReceiverThreshold | undefined
   if (probes.some((probe, i) => !probe.near && !styles[i].differential))
     threshold = state.threshold
-  if (board) {
+  if (board && circuit) {
     const marks = probes.flatMap((probe, i) => {
       const point = routePortPoint({
-        circuit: board.circuitJson,
+        circuit,
         sourcePortId: probe.sourcePortId,
       })
       if (!point) return []
@@ -712,12 +715,14 @@ interface PlotCoordinates {
 function waveformCanvas({
   frame,
   board,
+  circuit,
 }: {
   frame: ReturnType<typeof routeFrame>
-  board?: RoutedSections
+  board?: CopperGeometry
+  circuit?: CircuitJson
 }): GraphicsObject {
-  if (board)
-    return routeBoardDrawing({ circuit: board.circuitJson, scope: board.scope })
+  if (board && circuit)
+    return routeBoardDrawing({ circuit, scope: board.copperScope })
   return routeCanvas(frame)
 }
 

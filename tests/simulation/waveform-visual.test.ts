@@ -114,7 +114,7 @@ test("pending, running and failed captures draw status and empty axes", () => {
 
 test("long captures fold into a two-unit-interval eye and crowded plots draw an envelope", async () => {
   const { root } = await routedVisualFixture()
-  const board = root.stageOutput("RouteSectionsSolver").value[0]
+  const board = root.stageOutput("CopperGeometryExtractionSolver").value[0]
   const ports = root
     .stageOutput("RouteBindingsSolver")
     .value[0].mappings.map((mapping) => mapping.to)

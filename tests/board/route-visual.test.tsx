@@ -5,6 +5,7 @@ import type { GraphicsObject } from "graphics-debug"
 import React from "react"
 import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
 import {
+  cloneCircuitJson,
   routeBoardDrawing,
   routeDisplayItems,
   routeFrame,
@@ -13,17 +14,19 @@ import {
   routeStroke,
   routeView,
 } from "../../src/board"
-import { routedCopper } from "../fixtures/routed-copper"
+import { renderRoutedCopper } from "../fixtures/routed-copper"
 import {
-  assertRouteVisual,
+  assertPlanDrawingSnapshot,
   routedVisualFixture,
 } from "../fixtures/routed-visual"
 import { renderCoreSignals } from "../support/core-render"
 
 test("one camera frames connected copper, its endpoint parts and a pane", async () => {
   const { root } = await routedVisualFixture()
-  const { circuitJson, scope } = root.stageOutput("RouteSectionsSolver")
-    .value[0]
+  const { circuitJson: sectionsCircuit, copperScope: scope } = root.stageOutput(
+    "CopperGeometryExtractionSolver",
+  ).value[0]
+  const circuitJson = cloneCircuitJson(sectionsCircuit)
   const view = routeView({ circuit: circuitJson, scope })
   const nets = new Set(view.sources.values())
   assert.equal(nets.size, 2)
@@ -51,12 +54,12 @@ test("one camera frames connected copper, its endpoint parts and a pane", async 
     drawing.lines!.every((line) => line.strokeWidth === 0.1 && line.label),
     "real copper width, labelled with its net for hover",
   )
-  const copper = await routedCopper()
+  const copper = await renderRoutedCopper()
   assert.equal(
     new Set(
       routeView({
         circuit: copper.circuitJson,
-        scope: copper.scope,
+        scope: copper.copperScope,
       }).sources.values(),
     ).size,
     1,
@@ -74,7 +77,9 @@ test("one camera frames connected copper, its endpoint parts and a pane", async 
 
 test("a differential channel colours its two nets as two shades of one hue and carries its bit period", async () => {
   const { root } = await routedVisualFixture()
-  const { scope } = root.stageOutput("RouteSectionsSolver").value[0]
+  const { copperScope: scope } = root.stageOutput(
+    "CopperGeometryExtractionSolver",
+  ).value[0]
   const board = TwoTraceBoard()
   const children = React.Children.toArray(board.props.children).filter(
     (child) =>
@@ -193,8 +198,10 @@ test("pin marks never grow past half their closest spacing, and sit on a dark ha
 
 test("the strip unrolls nets to scale, centred in the pane, with one length label", async () => {
   const { root } = await routedVisualFixture()
-  const { circuitJson, scope } = root.stageOutput("RouteSectionsSolver")
-    .value[0]
+  const { circuitJson: sectionsCircuit, copperScope: scope } = root.stageOutput(
+    "CopperGeometryExtractionSolver",
+  ).value[0]
+  const circuitJson = cloneCircuitJson(sectionsCircuit)
   const view = routeView({ circuit: circuitJson, scope })
   const nets = [...new Set(view.sources.values())]
   const drawing = routeStrip({
@@ -216,12 +223,16 @@ test("the strip unrolls nets to scale, centred in the pane, with one length labe
 
 test("two-trace TSX board drawing SVG snapshot", async () => {
   const { root } = await routedVisualFixture()
-  const sections = root.stageOutput("RouteSectionsSolver").value[0]
+  const sections = root.stageOutput("CopperGeometryExtractionSolver").value[0]
   const drawing = routeBoardDrawing({
     circuit: root.inputProblem.circuitJson,
-    scope: sections.scope,
+    scope: sections.copperScope,
   })
-  assertRouteVisual({ drawing, module: "board", name: "route-visual-board" })
+  assertPlanDrawingSnapshot({
+    drawing,
+    module: "board",
+    name: "route-visual-board",
+  })
 })
 
 test("display sampling bounds object counts and preserves the first and last item", () => {
