@@ -17,7 +17,7 @@ Each extracted trace keeps both physical contacts. Binding checks their selected
 Removing an extracted trace or series passive from the receiver graph must disconnect its two ends.
 An alternate path reports the physical contacts and distinguishes an entirely routed loop from a bypass through ideal wiring.
 `CopperGeometryExtractionSolver` models scoped traces, vias, reference pours, and pad contacts. It groups wires into sections with consistent nearby copper and reference surfaces.
-RouteFieldsSolver screens nearby conductor pairs and calculates coupled coefficients for each unique section.
+`TransmissionLineRlgcSolver` screens nearby wire pairs for coupling and calculates per-unit-length RLGC matrices for each coupled group.
 IBIS conversion resolves scalar or coupled package elements and validates selected package matrices during planning.
 RouteBindingsSolver associates compiled buffers, sources and probes with the allocated circuit node map.
 RouteNetworkSolver integrates route energies into a coupled ladder with via and oblique corrections and emits a deck.
@@ -73,7 +73,7 @@ Core#5286 emits JLC preset plating (0.018 mm), preserving explicit imported stac
 
 ## RLGC in the routed pipeline
 
-`RouteFieldsSolver` calls `calculateRlgc` for each unique routed cross-section. The route network consumes the resulting capacitance, inductance and loss coefficients when distributing electrical energy across cells. The routed root publishes its artifacts once all channel simulation stages complete.
+`TransmissionLineRlgcSolver` calls `calculateRlgc` for each unique routed cross-section. The route network consumes the resulting capacitance, inductance and loss coefficients when distributing electrical energy across cells. The routed root publishes its artifacts once all channel simulation stages complete.
 
 ## Routed coupling
 
@@ -110,7 +110,7 @@ Regenerate with `bun scripts/document-routed-stages.ts`.
 |---|---|
 | 1 | TransientChannelSimulationPlanSolver |
 | 2 | CopperGeometryExtractionSolver |
-| 3 | RouteFieldsSolver |
+| 3 | TransmissionLineRlgcSolver |
 | 4 | RouteBindingsSolver |
 | 5 | RouteNetworkSolver |
 | 6 | RouteTransientSolver |
@@ -119,7 +119,7 @@ Regenerate with `bun scripts/document-routed-stages.ts`.
 flowchart LR
   s0["TransientChannelSimulationPlanSolver<br/>Plan one transient channel simulation per step"]
   s1["CopperGeometryExtractionSolver<br/>All planned channel simulations, one item per step"]
-  s2["RouteFieldsSolver<br/>All planned channel simulations, one item per step"]
+  s2["TransmissionLineRlgcSolver<br/>All planned channel simulations, one item per step"]
   s3["RouteBindingsSolver<br/>All planned channel simulations, one item per step"]
   s4["RouteNetworkSolver<br/>All planned channel simulations, one item per step"]
   s5["RouteTransientSolver<br/>All planned channel simulations, one item per step"]
@@ -135,14 +135,14 @@ flowchart LR
 stateDiagram-v2
   [*] --> TransientChannelSimulationPlanSolver
   TransientChannelSimulationPlanSolver --> CopperGeometryExtractionSolver: all channel simulations completed
-  CopperGeometryExtractionSolver --> RouteFieldsSolver: all channel simulations completed
-  RouteFieldsSolver --> RouteBindingsSolver: all channel simulations completed
+  CopperGeometryExtractionSolver --> TransmissionLineRlgcSolver: all channel simulations completed
+  TransmissionLineRlgcSolver --> RouteBindingsSolver: all channel simulations completed
   RouteBindingsSolver --> RouteNetworkSolver: all channel simulations completed
   RouteNetworkSolver --> RouteTransientSolver: all channel simulations completed
   RouteTransientSolver --> [*]
   TransientChannelSimulationPlanSolver --> failed: invalid channel simulation input, including undeclared aggressors
   CopperGeometryExtractionSolver --> failed
-  RouteFieldsSolver --> failed
+  TransmissionLineRlgcSolver --> failed
   RouteBindingsSolver --> failed
   RouteNetworkSolver --> failed
   RouteTransientSolver --> failed
@@ -150,7 +150,7 @@ stateDiagram-v2
 ```
 <!-- routed-stages:end -->
 
-`RouteFieldsSolver` owns its geometry-keyed BEM cache; completed snapshots contain
+`TransmissionLineRlgcSolver` owns its geometry-keyed BEM cache; completed snapshots contain
 numeric coefficients without Maps or frequency callbacks. `routedSimulation`,
 its bulk `extractRoutes` loop and caller-owned field cache are deleted. Segmentation
 and ladder generators retain one canonical algorithm, also drained by existing
@@ -235,7 +235,7 @@ flowchart LR
   traces --> groups["Group ideal source contacts"]
   groups --> paths["Map ordered driver-to-receiver paths"]
   traces --> geometry["CopperGeometryExtractionSolver"]
-  geometry --> routeFields["RouteFieldsSolver"]
+  geometry --> transmissionLineRlgc["TransmissionLineRlgcSolver"]
   paths --> bindings["Binding inputs"]
   bindings --> checks["Check contacts and alternate paths around each segment"]
   paths --> manifest["Transient channel simulation plan manifest"]
@@ -246,8 +246,8 @@ stateDiagram-v2
   [*] --> Ready
   Ready --> Planned: TransientChannelSimulationPlanSolver
   Planned --> GeometryReady: CopperGeometryExtractionSolver
-  GeometryReady --> Complete: RouteFieldsSolver
-  GeometryReady --> Failed: invalid field geometry or inputs
+  GeometryReady --> Complete: TransmissionLineRlgcSolver
+  GeometryReady --> Failed: invalid cross-section geometry or material options
   Planned --> Failed: missing required contact or reference, unsupported route or soldermask
   Ready --> Failed: invalid input, conflicting IBIS model selections or undeclared aggressors
   Complete --> [*]

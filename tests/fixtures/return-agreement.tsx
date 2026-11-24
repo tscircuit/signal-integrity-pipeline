@@ -1,10 +1,10 @@
 import React from "react"
 
 interface ReturnAgreementProps {
-  spacing?: number
+  spacingMm?: number
   count?: number
-  thickness?: number
-  length?: number
+  thicknessMm?: number
+  lengthMm?: number
 }
 
 /** Straight TSX microstrips with broad end contacts on a close, solid bottom reference.
@@ -12,25 +12,25 @@ interface ReturnAgreementProps {
  * The physical 0.4 mm dielectric comes from the JLC two-layer stackup, without rescaling.
  */
 export default function ReturnAgreement({
-  spacing = 0.3,
+  spacingMm = 0.3,
   count = 3,
-  thickness = 0.4,
-  length = 10,
+  thicknessMm = 0.4,
+  lengthMm = 10,
 }: ReturnAgreementProps): React.JSX.Element {
-  const half = ((count - 1) * spacing) / 2 + 1
+  const halfHeightMm = ((count - 1) * spacingMm) / 2 + 1
   return (
     <board
-      width={length + 2}
-      height={2 * half + 1}
+      width={lengthMm + 2}
+      height={2 * halfHeightMm + 1}
       layers={2}
-      thickness={thickness}
+      thickness={thicknessMm}
       fabricatorPreset="jlcpcb_standard"
       routeRemaining={false}
       schematicDisabled
     >
       {[
-        { name: "TX", x: -length / 2 },
-        { name: "RX", x: length / 2 },
+        { name: "TX", x: -lengthMm / 2 },
+        { name: "RX", x: lengthMm / 2 },
       ].map(({ name, x }) => (
         <chip
           key={name}
@@ -52,7 +52,7 @@ export default function ReturnAgreement({
                     <smtpad
                       portHints={[pin]}
                       pcbX={0}
-                      pcbY={(j - (count - 1) / 2) * spacing}
+                      pcbY={(j - (count - 1) / 2) * spacingMm}
                       width={0.15}
                       height={0.15}
                       shape="rect"
@@ -65,7 +65,7 @@ export default function ReturnAgreement({
                 pcbX={0}
                 pcbY={0}
                 width={0.3}
-                height={2 * half}
+                height={2 * halfHeightMm}
                 shape="rect"
                 layer="bottom"
               />

@@ -22,22 +22,22 @@ import {
   withRouteDrawing,
 } from "../board"
 import type { Snapshot } from "../kernel"
-import type {
-  ExtractedRouteSlice,
-  RouteCoefficients,
-  RouteCrossSection,
-  RouteMaterials,
-} from "./route-lines"
+import type { CrossSection, RlgcMatrices } from "./cross-section"
+import type { DielectricMaterials } from "./dielectric-materials"
+import type { SolvedWireSection } from "./transmission-line-rlgc-types"
 
 /** Characteristic impedance of conductor `i` from its self terms. */
-export function sliceImpedance({
+function calculateImpedanceOhms({
   line,
   i,
 }: {
-  line: RouteCoefficients
+  line: Snapshot<RlgcMatrices>
   i: number
 }): number {
-  return Math.sqrt(line.L[i][i] / line.C[i][i])
+  return Math.sqrt(
+    line.externalInductanceHenriesPerMeter[i][i] /
+      line.capacitanceFaradsPerMeter[i][i],
+  )
 }
 
 /** A three-stop scale (sky, lime, orange) from the lowest to the highest impedance on the board. */
@@ -116,16 +116,16 @@ function drawCopper({
   return drawing.lines!
 }
 
-export interface FieldsState {
+export interface TransmissionLineRlgcDrawing {
   geometry: Snapshot<ExtractedCopper>
   circuitJson?: CircuitJson
   scope?: Snapshot<CopperScope>
-  materials: RouteMaterials
-  solved: ExtractedRouteSlice[]
+  materials: DielectricMaterials
+  solved: SolvedWireSection[]
   /** The slice on screen and its cross-section; when solving has finished, the most informative selected slice. */
   slice?: Snapshot<WireSection>
-  section?: RouteCrossSection
-  line?: RouteCoefficients
+  section?: CrossSection
+  line?: Snapshot<RlgcMatrices>
   error?: string
 }
 
@@ -133,7 +133,9 @@ export interface FieldsState {
  * The selected copper coloured by solved Z0, an amber cut at the slice on screen, and its to-scale stack in
  * the pane.
  */
-export function fieldsDrawing(state: FieldsState): GraphicsObject {
+export function drawTransmissionLineRlgc(
+  state: TransmissionLineRlgcDrawing,
+): GraphicsObject {
   const { geometry, circuitJson, scope } = state
   let view: RouteView | undefined
   if (circuitJson && scope) view = routeView({ circuit: circuitJson, scope })
@@ -162,7 +164,7 @@ export function fieldsDrawing(state: FieldsState): GraphicsObject {
   const impedances = state.solved.flatMap((slice) =>
     slice.wires.flatMap((wire, i) => {
       if (view && !view.traces.has(wire.pcbTraceId)) return []
-      return [sliceImpedance({ line: slice.line, i })]
+      return [calculateImpedanceOhms({ line: slice.rlgcMatrices, i })]
     }),
   )
   // Never stretch a few ohms across the whole scale: it always spans at least ±10 % of the median.
@@ -174,7 +176,7 @@ export function fieldsDrawing(state: FieldsState): GraphicsObject {
   for (const slice of state.solved)
     for (const [i, wire] of slice.wires.entries()) {
       if (view && !view.traces.has(wire.pcbTraceId)) continue
-      const z0 = sliceImpedance({ line: slice.line, i })
+      const z0 = calculateImpedanceOhms({ line: slice.rlgcMatrices, i })
       const points = [slice.startMm, slice.endMm].map((position) =>
         drawingPoint(getWirePoint({ wire, positionMm: position })),
       )
@@ -228,7 +230,7 @@ function drawSlice({
   low,
   high,
 }: {
-  state: FieldsState
+  state: TransmissionLineRlgcDrawing
   frame: RouteFrame
   view?: RouteView
   low: number
@@ -256,7 +258,7 @@ function drawSlice({
         color:
           view?.sources.get(wire.sourceTraceId)?.color ?? routeTones.copper,
       }
-    const z0 = sliceImpedance({ line, i })
+    const z0 = calculateImpedanceOhms({ line, i })
     return {
       color: impedanceColor({
         impedance: z0,
@@ -381,13 +383,13 @@ function stackPane({
   materials,
 }: {
   pane: Viewbox
-  section: RouteCrossSection
+  section: CrossSection
   conductorDisplay: {
     color: string
     label?: string
   }[]
-  line?: RouteCoefficients
-  materials: RouteMaterials
+  line?: Snapshot<RlgcMatrices>
+  materials: DielectricMaterials
 }): GraphicsObject {
   const drawing = routeCanvas()
   const unit = Math.max(pane.maxX - pane.minX, pane.maxY - pane.minY) / 100
@@ -398,11 +400,11 @@ function stackPane({
     maxY: pane.maxY - unit * 11,
   }
   const zLow = Math.min(
-    ...section.dielectrics.map((d) => d.zMm),
+    ...section.dielectricLayers.map((d) => d.zMm),
     ...section.planes.map((p) => p.zMm),
   )
   const zHigh = Math.max(
-    ...section.dielectrics.map((d) => d.zMm + d.thicknessMm),
+    ...section.dielectricLayers.map((d) => d.zMm + d.thicknessMm),
     ...section.conductors.map((c) => c.zMm + c.thicknessMm),
     ...section.planes.map((p) => p.zMm),
   )
@@ -421,11 +423,12 @@ function stackPane({
   const heightToPane = { center: center.y, origin: (zLow + zHigh) / 2, scale }
   // Reference planes are infinite: the slabs run the full pane width.
   const width = inner.maxX - inner.minX
-  for (const [i, slab] of [...section.dielectrics]
+  for (const [i, slab] of [...section.dielectricLayers]
     .sort((a, b) => a.zMm - b.zMm)
     .entries()) {
     const mask =
-      slab.er === materials.maskEr && slab.lossTangent === materials.maskLoss
+      slab.relativePermittivity === materials.maskRelativePermittivity &&
+      slab.lossTangent === materials.maskLossTangent
     let color = ["#53442f", "#5e4d36"][i % 2]
     if (mask) color = "#24573f"
     drawing.rects!.push({
@@ -479,8 +482,16 @@ function stackPane({
           a,
           b,
           k: Math.max(
-            Math.abs(line.C[i][j]) / Math.sqrt(line.C[i][i] * line.C[j][j]),
-            Math.abs(line.L[i][j]) / Math.sqrt(line.L[i][i] * line.L[j][j]),
+            Math.abs(line.capacitanceFaradsPerMeter[i][j]) /
+              Math.sqrt(
+                line.capacitanceFaradsPerMeter[i][i] *
+                  line.capacitanceFaradsPerMeter[j][j],
+              ),
+            Math.abs(line.externalInductanceHenriesPerMeter[i][j]) /
+              Math.sqrt(
+                line.externalInductanceHenriesPerMeter[i][i] *
+                  line.externalInductanceHenriesPerMeter[j][j],
+              ),
           ),
         }
       }),

@@ -1,6 +1,6 @@
 import React from "react"
 
-/** Different-layer strip edges share a projection: 0.1/2 equals 0.2 - 0.3/2 physically. */
+/** Different-layer conductor edges share a projection: 0.1/2 equals 0.2 - 0.3/2 physically. */
 export function AlignedEdges(): React.JSX.Element {
   return (
     <board
