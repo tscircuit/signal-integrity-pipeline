@@ -265,7 +265,7 @@ test("actual two-channel simulation TSX advances every flat stage and invokes tr
     root.stageOutput("CopperGeometryExtractionSolver").value.length,
     2,
   )
-  assert.equal(root.stageOutput("RouteFieldsSolver").value.length, 2)
+  assert.equal(root.stageOutput("TransmissionLineRlgcSolver").value.length, 2)
   await root.solveAsync()
   assert.equal(calls, 2)
   assert.equal(root.getOutput().channelSimulations.length, 2)
