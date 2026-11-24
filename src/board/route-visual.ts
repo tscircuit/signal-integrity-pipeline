@@ -1,3 +1,4 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import type { GraphicsObject, Point, Viewbox } from "graphics-debug"
 import type { Snapshot } from "../kernel"
 import { routeBoardBox as admissionBoardBox } from "./admission-view"
@@ -8,7 +9,6 @@ import {
   routeCanvas,
   routePointSpacing,
 } from "./admission-visual"
-import { circuitJsonDb } from "./circuit-json-db"
 import type { CopperScope } from "./geometry/scope"
 import type { PcbTraceId, SourcePortId } from "./ids"
 import {
@@ -17,7 +17,7 @@ import {
   routeTones,
   routeView,
 } from "./route-visual-view"
-import type { CircuitJsonSnapshot } from "./schema"
+import type { CircuitJson } from "./schema"
 
 export { routeBounds, routeHue } from "./admission-view"
 export {
@@ -62,13 +62,13 @@ export function routeNets({
   traceIds = view.traces,
   color,
 }: {
-  circuit: CircuitJsonSnapshot
+  circuit: CircuitJson
   view: RouteView
   traceIds?: Set<PcbTraceId>
   color?: RouteNetColor
 }): RouteDrawing["lines"] {
   return drawRouteNets({
-    db: circuitJsonDb(circuit),
+    db: cju([...circuit]),
     view: { traces: traceIds, sources: view.sources },
     color,
   })
@@ -102,10 +102,10 @@ export function routePortPoint({
   circuit,
   sourcePortId,
 }: {
-  circuit: CircuitJsonSnapshot
+  circuit: CircuitJson
   sourcePortId: SourcePortId
 }): Point | undefined {
-  const port = circuitJsonDb(circuit).pcb_port.getWhere({
+  const port = cju([...circuit]).pcb_port.getWhere({
     source_port_id: sourcePortId,
   })
   if (!port) return undefined
@@ -145,8 +145,8 @@ export function routePane({
 }
 
 /** Reuse the admission bounds for the debugger's board overlay. */
-export function routeBoardBox(circuit: CircuitJsonSnapshot): Viewbox {
-  return admissionBoardBox(circuitJsonDb(circuit))
+export function routeBoardBox(circuit: CircuitJson): Viewbox {
+  return admissionBoardBox(cju([...circuit]))
 }
 
 /**
@@ -158,7 +158,7 @@ export function routeBoardDrawing({
   scope,
   color,
 }: {
-  circuit: CircuitJsonSnapshot
+  circuit: CircuitJson
   scope: Snapshot<CopperScope> | undefined
   color?: RouteNetColor
 }): RouteDrawing {
@@ -173,11 +173,11 @@ export function routePinDirection({
   view,
   pin,
 }: {
-  circuit: CircuitJsonSnapshot
+  circuit: CircuitJson
   view: RouteView
   pin: Point
 }): Point {
-  for (const trace of circuitJsonDb(circuit).pcb_trace.list()) {
+  for (const trace of cju([...circuit]).pcb_trace.list()) {
     if (!view.traces.has(trace.pcb_trace_id)) continue
     const wires = trace.route.filter((point) => point.route_type === "wire")
     for (const [i, point] of wires.entries()) {

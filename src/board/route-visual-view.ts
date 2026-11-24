@@ -1,3 +1,4 @@
+import { type CircuitJsonUtilObjects, cju } from "@tscircuit/circuit-json-util"
 import type { Point, Viewbox } from "graphics-debug"
 import type { Snapshot } from "../kernel"
 import {
@@ -7,10 +8,9 @@ import {
   routeHue,
   routeSourceNets,
 } from "./admission-view"
-import { type CircuitJsonDb, circuitJsonDb } from "./circuit-json-db"
 import type { CopperScope } from "./geometry/scope"
 import type { PcbPortId, PcbTraceId, SourcePortId, SourceTraceId } from "./ids"
-import type { CircuitJsonSnapshot } from "./schema"
+import type { CircuitJson } from "./schema"
 import {
   endpointPorts,
   type SimulationPcbDriverReceiverChannel,
@@ -146,7 +146,7 @@ export function routeFrame(box: Viewbox): RouteFrame {
 
 const views = new WeakMap<
   Snapshot<CopperScope>,
-  WeakMap<CircuitJsonSnapshot, RouteView>
+  WeakMap<CircuitJson, RouteView>
 >()
 
 /**
@@ -157,12 +157,12 @@ export function routeView({
   circuit,
   scope,
 }: {
-  circuit: CircuitJsonSnapshot
+  circuit: CircuitJson
   scope: Snapshot<CopperScope>
 }): RouteView {
   const cached = views.get(scope)?.get(circuit)
   if (cached) return cached
-  const db = circuitJsonDb(circuit)
+  const db = cju([...circuit])
   const traces = new Set(scope.channelPcbTraceIds)
   const points: Point[] = []
   const ends = new Set<PcbPortId>()
@@ -230,8 +230,7 @@ export function routeView({
     traces,
     ...routeViewNets({ db, traces }),
   }
-  const byCircuit =
-    views.get(scope) ?? new WeakMap<CircuitJsonSnapshot, RouteView>()
+  const byCircuit = views.get(scope) ?? new WeakMap<CircuitJson, RouteView>()
   byCircuit.set(circuit, view)
   views.set(scope, byCircuit)
   return view
@@ -259,7 +258,7 @@ function routeViewNets({
   db,
   traces,
 }: {
-  db: CircuitJsonDb
+  db: CircuitJsonUtilObjects
   traces: ReadonlySet<PcbTraceId>
 }): RouteNetStyles {
   const nets = routeSourceNets({ db, traces })

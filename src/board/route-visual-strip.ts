@@ -1,6 +1,6 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import type { Viewbox } from "graphics-debug"
 import { type RouteDrawing, routeCanvas, routeText } from "./admission-visual"
-import { circuitJsonDb } from "./circuit-json-db"
 import type { RouteWire } from "./route-sections"
 import {
   type RouteBuffer,
@@ -11,7 +11,7 @@ import {
   routeTones,
   withRouteDrawing,
 } from "./route-visual"
-import type { CircuitJsonSnapshot } from "./schema"
+import type { CircuitJson } from "./schema"
 
 /** One unrolled net with its colored sections, node ticks and coupling bands. */
 export interface RouteStripRow {
@@ -194,11 +194,11 @@ export function routeLengths({
   circuit,
   view,
 }: {
-  circuit: CircuitJsonSnapshot
+  circuit: CircuitJson
   view: RouteView
 }): RouteStripRow[] {
   const lengths = new Map<RouteNet, number>()
-  for (const trace of circuitJsonDb(circuit).pcb_trace.list()) {
+  for (const trace of cju([...circuit]).pcb_trace.list()) {
     if (!view.traces.has(trace.pcb_trace_id)) continue
     const net = view.sources.get(trace.source_trace_id ?? "")
     if (!net) continue

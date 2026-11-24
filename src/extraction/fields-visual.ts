@@ -1,6 +1,6 @@
 import type { GraphicsObject, Point, Viewbox } from "graphics-debug"
 import {
-  type CircuitJsonSnapshot,
+  type CircuitJson,
   type CopperScope,
   type RouteFrame,
   type RouteSlice,
@@ -89,7 +89,7 @@ function drawCopper({
   view,
 }: {
   geometry: Snapshot<SectionGeometry>
-  circuitJson?: CircuitJsonSnapshot
+  circuitJson?: CircuitJson
   view?: RouteView
 }): NonNullable<GraphicsObject["lines"]> {
   const drawing = routeCanvas()
@@ -118,7 +118,7 @@ function drawCopper({
 
 export interface FieldsState {
   geometry: Snapshot<SectionGeometry>
-  circuitJson?: CircuitJsonSnapshot
+  circuitJson?: CircuitJson
   scope?: Snapshot<CopperScope>
   materials: RouteMaterials
   solved: ExtractedRouteSlice[]
