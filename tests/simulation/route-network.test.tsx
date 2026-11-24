@@ -5,12 +5,12 @@ import { createNativeSolver } from "../../src/adapters"
 import { RouteSectionsSolver } from "../../src/board"
 import { RouteFieldsSolver } from "../../src/extraction"
 import {
-  type RoutedAdmissionInput,
-  RoutedAdmissionSolver,
+  type TransientChannelSimulationPlanInput,
+  TransientChannelSimulationPlanSolver,
 } from "../../src/pipeline"
 import { RouteBindingsSolver, RouteNetworkSolver } from "../../src/simulation"
 import { routedRequest } from "../../src/simulation/route-transient"
-import { routedAdmissionInput } from "../fixtures/routed-fixture"
+import { channelPlanInput } from "../fixtures/routed-fixture"
 import { quietDriverIbis } from "../fixtures/routed-visual-fixture"
 import Single from "../fixtures/unit-single-ended"
 import { vendorAvailable } from "../fixtures/vendor-models"
@@ -19,10 +19,12 @@ import { renderCoreSignals } from "../support/core-render"
 let testNetwork: RouteNetworkSolver | undefined
 
 /** Compile the complete routed deck from a core-rendered board and its IBIS sources. */
-function compileNetwork(input: RoutedAdmissionInput): RouteNetworkSolver {
-  const admission = new RoutedAdmissionSolver(input)
-  admission.solve()
-  const plan = admission.getOutput().value[0]
+function compileNetwork(
+  input: TransientChannelSimulationPlanInput,
+): RouteNetworkSolver {
+  const planner = new TransientChannelSimulationPlanSolver(input)
+  planner.solve()
+  const plan = planner.getOutput().value[0]
   const sections = new RouteSectionsSolver(plan.sections)
   sections.solve()
   const { geometry, circuitJson, scope, maskThicknessMm } =
@@ -61,7 +63,7 @@ function compileNetwork(input: RoutedAdmissionInput): RouteNetworkSolver {
 /** Cache the network from the rendered fixture and the local vendor model. */
 async function routedNetwork(): Promise<RouteNetworkSolver> {
   if (testNetwork) return testNetwork
-  const input = await routedAdmissionInput()
+  const input = await channelPlanInput()
   testNetwork = compileNetwork(input)
   return testNetwork
 }
