@@ -4,7 +4,6 @@ import { readFile } from "node:fs/promises"
 import { BasePipelineSolver } from "@tscircuit/solver-utils"
 import React from "react"
 import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
-import type { CircuitJson } from "../../src/board"
 import { sha256 } from "../../src/kernel"
 import { formatSpiceVectors } from "../../src/observation"
 import {
@@ -149,7 +148,7 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
     assert.deepEqual(repeat.getOutput(), output)
     const renamed = {
       ...input,
-      circuitJson: JSON.parse(JSON.stringify(input.circuitJson)) as CircuitJson,
+      circuitJson: structuredClone(input.circuitJson),
     }
     for (const record of renamed.circuitJson) {
       if (

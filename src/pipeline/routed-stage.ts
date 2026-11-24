@@ -1,6 +1,6 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
-import { type Produced, type Snapshot, snapshot } from "../kernel"
+import type { Produced } from "../kernel"
 
 /** A solver that produces one channel simulation’s output and artifacts. */
 type ItemSolver<I, O> = BaseSolver & {
@@ -22,8 +22,8 @@ interface RoutedStageInput<I, O> {
 /** Ordered inputs used to reconstruct a stage whose solver class is bound. */
 type RoutedStageConstructorParams<I> = [I[]]
 
-/** A completed, deeply readonly array of domain outputs and their artifacts. */
-export type RoutedStageOutput<O> = Produced<readonly Snapshot<O>[]>
+/** The completed channel outputs and their artifacts. */
+export type RoutedStageOutput<O> = Produced<readonly O[]>
 
 /** One flat stage drains the domain algorithm one item at a time across all admitted channel simulations. */
 export class RoutedStageSolver<I, O> extends BaseSolver {
@@ -58,7 +58,7 @@ export class RoutedStageSolver<I, O> extends BaseSolver {
   private prepare(): ItemSolver<I, O> | undefined {
     if (this.outputs.length === this.inputs.length) {
       this.output = {
-        value: snapshot(this.outputs.map((output) => output.value)),
+        value: Object.freeze(this.outputs.map((output) => output.value)),
         artifacts: this.outputs.flatMap((output) => output.artifacts),
       }
       this.stats = {
