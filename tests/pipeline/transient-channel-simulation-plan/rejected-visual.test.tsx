@@ -15,12 +15,18 @@ test("rejected plan carries a visible red reason without inventing a planned cha
   })
   assert.throws(() => solver.solve(), /scope distance/)
   const drawing = solver.visualize()
-  const reason = drawing.texts?.find((text) =>
-    text.text.includes("scope distance"),
+  const reason = drawing.texts?.find(
+    (text) =>
+      text.text === "Choose a copper search distance greater than zero.",
   )
   assert.equal(reason?.color, planColors.failure)
   assert.ok(drawing.texts?.every((text) => text.anchorSide === "center"))
-  assert.match(drawing.title || "", /^PLAN FAILED$/)
+  assert.equal(drawing.title, "Simulation — can't simulate")
+  assert.ok(
+    drawing.rects?.some((rect) =>
+      rect.label?.includes("Copper scope distance must be finite and positive"),
+    ),
+  )
   assertRouteVisual({
     drawing,
     module: "pipeline",
