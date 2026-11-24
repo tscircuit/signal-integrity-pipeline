@@ -2,7 +2,7 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { Resvg } from "@resvg/resvg-js"
+import { Resvg, type ResvgRenderOptions } from "@resvg/resvg-js"
 import type { GraphicsObject } from "graphics-debug"
 import React from "react"
 import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
@@ -235,6 +235,13 @@ test("composed board pictures of every two-trace stage match their PNG snapshots
     let drawing = root.visualizeStage(number)
     if (number === 1)
       drawing = withPlanCaption({ drawing, caption: twoTracePlanCaption })
+    let font: ResvgRenderOptions["font"] = { defaultFontFamily: "Arial" }
+    // Set the sans-serif family explicitly on Linux for the text-heavy plan.
+    if (number === 1 && process.platform === "linux")
+      font = {
+        defaultFontFamily: "DejaVu Sans",
+        sansSerifFamily: "DejaVu Sans",
+      }
     const png = new Resvg(
       boardPictureSvg({
         circuit: root.inputProblem.circuitJson,
@@ -242,9 +249,7 @@ test("composed board pictures of every two-trace stage match their PNG snapshots
         width,
         height,
       }),
-      {
-        font: { defaultFontFamily: "Arial" },
-      },
+      { font },
     )
       .render()
       .asPng()
