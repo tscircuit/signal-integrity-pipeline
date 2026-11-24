@@ -1,7 +1,14 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
-import type { CopperGeometry, WireSection } from "../board"
+import type { GraphicsObject } from "graphics-debug"
+import {
+  type CopperGeometry,
+  cloneCircuitJson,
+  type PcbTrace,
+  type WireSection,
+} from "../board"
 import { type Produced, rootScope, type Snapshot, snapshot } from "../kernel"
 import {
+  type CrossSection,
   calculateRlgc,
   type RlgcMatrices,
   resolvePanelsPerEdge,
@@ -17,6 +24,7 @@ import type {
   SolvedWireSection,
   TransmissionLineRlgc,
 } from "./transmission-line-rlgc-types"
+import { drawTransmissionLineRlgc } from "./transmission-line-rlgc-visual"
 import {
   groupCoupledWires,
   type PairCoupling,
@@ -67,6 +75,20 @@ function* enumerateWirePairs(
   }
 }
 
+/** Prioritize channel wires and use section length to break ties. */
+function scoreWireSection({
+  wireSection,
+  channelPcbTraceIds,
+}: {
+  wireSection: Snapshot<WireSection>
+  channelPcbTraceIds: ReadonlySet<PcbTrace["pcb_trace_id"]>
+}): number {
+  const channelWireCount = wireSection.wires.filter((wire) =>
+    channelPcbTraceIds.has(wire.pcbTraceId),
+  ).length
+  return channelWireCount * 1e6 + wireSection.endMm - wireSection.startMm
+}
+
 /** One pair screen or coupled-group calculation per step. */
 export class TransmissionLineRlgcSolver extends BaseSolver {
   override MAX_ITERATIONS = Infinity
@@ -84,6 +106,8 @@ export class TransmissionLineRlgcSolver extends BaseSolver {
   private screenedPairCount = 0
   private cacheHitCount = 0
   private solveMilliseconds = 0
+  private currentWireSection?: Snapshot<WireSection>
+  private currentCrossSection?: CrossSection
 
   /** Snapshot the board and options and validate the effective settings before stepping. */
   constructor(input: TransmissionLineRlgcInput) {
@@ -110,6 +134,8 @@ export class TransmissionLineRlgcSolver extends BaseSolver {
       wireSection,
       materials: this.materials,
     })
+    this.currentWireSection = wireSection
+    this.currentCrossSection = crossSection
     const crossSectionKey = JSON.stringify(crossSection)
     const cachedMatrices = this.cache.get(crossSectionKey)
     if (cachedMatrices) {
@@ -254,5 +280,43 @@ export class TransmissionLineRlgcSolver extends BaseSolver {
     typeof TransmissionLineRlgcSolver
   > {
     return [this.input]
+  }
+
+  /** Draw the current section, or the completed section with the most channel wires. */
+  override visualize(): GraphicsObject {
+    const { geometry, circuitJson, copperScope } = this.input.copperGeometry
+    const channelPcbTraceIds = new Set(copperScope.channelPcbTraceIds)
+    let bestSection: SolvedWireSection | undefined
+    if (this.solved) {
+      bestSection = [...this.solvedWireSections].sort(
+        (firstSection, secondSection) =>
+          scoreWireSection({ wireSection: secondSection, channelPcbTraceIds }) -
+          scoreWireSection({ wireSection: firstSection, channelPcbTraceIds }),
+      )[0]
+    }
+    let wireSection = this.currentWireSection ?? geometry.sections[0]
+    if (bestSection) wireSection = bestSection
+    let crossSection = this.currentCrossSection
+    if (wireSection && (bestSection || !crossSection)) {
+      crossSection = buildCrossSection({
+        geometry,
+        wireSection,
+        materials: this.materials,
+      })
+    }
+    let rlgcMatrices = bestSection?.rlgcMatrices
+    if (!rlgcMatrices && crossSection)
+      rlgcMatrices = this.cache.get(JSON.stringify(crossSection))
+    return drawTransmissionLineRlgc({
+      geometry,
+      circuitJson: cloneCircuitJson(circuitJson),
+      scope: copperScope,
+      materials: this.materials,
+      solved: this.solvedWireSections,
+      slice: wireSection,
+      section: crossSection,
+      line: rlgcMatrices,
+      error: this.error || undefined,
+    })
   }
 }
