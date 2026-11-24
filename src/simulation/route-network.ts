@@ -1,6 +1,6 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import {
-  circuitJsonDb,
   getSourcePortConnectivityMapFromCircuitJson,
   type RouteWire,
   type RouteXY,
@@ -74,7 +74,7 @@ export class RouteNetworkSolver extends BaseSolver {
     const { geometry, extracted, bindings, options, materials } = this.input
     const { scope, models, mappings } = bindings
     const probes = [...bindings.plan.probes]
-    const db = circuitJsonDb(bindings.circuitJson)
+    const db = cju([...bindings.circuitJson])
     const stackup = db.pcb_stackup.list()[0]
     const maskLayers = stackup.layers.filter(
       (layer) => layer.layer_type === "soldermask",

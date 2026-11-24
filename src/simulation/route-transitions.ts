@@ -1,9 +1,9 @@
 import log from "@stdlib/math-base-special-ln"
+import { cju } from "@tscircuit/circuit-json-util"
 import type { LayerRef, PcbSmtPad, PcbVia, Point } from "circuit-json"
 import {
-  type CircuitJsonSnapshot,
+  type CircuitJson,
   type CopperScope,
-  circuitJsonDb,
   getSourcePortConnectivityMapFromCircuitJson,
   type RouteReference,
   type RouteWire,
@@ -263,7 +263,7 @@ export function routeTransitions({
   endpoint,
   groundPort,
 }: {
-  circuit: CircuitJsonSnapshot
+  circuit: CircuitJson
   scope: Snapshot<CopperScope>
   geometry: Snapshot<SectionGeometry>
   endpoint: RouteEndpoint
@@ -271,7 +271,7 @@ export function routeTransitions({
 }): RouteTransitions {
   const output: RouteTransitions = { lines: [], records: [], warnings: [] }
   const layers = geometry.stack.copperLayers
-  const db = circuitJsonDb(circuit)
+  const db = cju([...circuit])
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(db.toArray())
   const ground = sourceNetMembers({ connectivity, memberId: groundPort })
   const sources = db.source_trace.list()
