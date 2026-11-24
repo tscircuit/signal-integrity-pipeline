@@ -40,7 +40,9 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome check . && eslint .",
-    "lint:fix": "biome check --write . && eslint . --fix"
+    "lint:fix": "biome check --write . && eslint . --fix",
+    "kisi:setup": "bun scripts/setup-kisi.ts",
+    "test:kisi": "bun scripts/check-kisi.ts"
   },
   "dependencies": {
     "@flatten-js/core": "1.6.14",
