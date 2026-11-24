@@ -1,5 +1,6 @@
 import { beforeAll, describe, test } from "bun:test"
 import assert from "node:assert/strict"
+import { cju } from "@tscircuit/circuit-json-util"
 import React from "react"
 import {
   type CircuitJson,
@@ -47,16 +48,15 @@ interface RouteFixture {
 /** The ground and source-port identities of the original routed board. */
 async function routeFixture(): Promise<RouteFixture> {
   const circuit = await renderCoreSignals(<RoutedBoard />)
-  const component = circuit
-    .filter((record) => record.type === "source_component")
-    .find((record) => record.name === "A")!
-  const ports = circuit.filter((record) => record.type === "source_port")
-  const port = ports.find(
-    (record) => record.source_component_id === component.source_component_id,
-  )!
-  const groundNet = circuit
-    .filter((record) => record.type === "source_net")
-    .find((record) => record.name === "GND")!
+  const db = cju(circuit)
+  const component = db.source_component.getWhere({ name: "A" })
+  assert(component)
+  const port = db.source_port.getWhere({
+    source_component_id: component.source_component_id,
+  })
+  const groundNet = db.source_net.getWhere({ name: "GND" })
+  const powerNet = db.source_net.getWhere({ name: "VDDQ" })
+  assert(port && groundNet && powerNet)
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
   const ground = sourceNetMembers({
     connectivity,
@@ -70,7 +70,10 @@ async function routeFixture(): Promise<RouteFixture> {
       memberId: port.source_port_id,
     }),
     referenceSourceIds: ground,
-    railSourceIds: new Set(),
+    railSourceIds: sourceNetMembers({
+      connectivity,
+      memberId: powerNet.source_net_id,
+    }),
     distanceMm: 1,
   })
   const geometry = segmentRoutes({ circuit, scope })
