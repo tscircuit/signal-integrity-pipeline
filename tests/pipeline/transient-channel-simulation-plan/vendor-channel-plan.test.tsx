@@ -40,21 +40,29 @@ test.skipIf(!vendorAvailable(vendorModels.cmos.file))(
       2,
     )
     const drawing = solver.visualize()
-    const marks = drawing.polygons!.filter(
-      (polygon) =>
-        polygon.label &&
-        polygon.points.length > 4 &&
-        polygon.fill !== "#0b0f13",
+    const marks = drawing.polygons?.filter(
+      (polygon) => polygon.layer === "endpoints",
+    )
+    assert.ok(marks)
+    assert.equal(
+      marks.filter(
+        (mark) =>
+          mark.label?.includes("Driver") &&
+          mark.points.length === 3 &&
+          mark.fill !== "#fff",
+      ).length,
+      2,
+      "each driver has one filled triangle",
     )
     assert.equal(
-      marks.filter((mark) => mark.fill).length,
+      marks.filter(
+        (mark) =>
+          mark.label?.includes("Receiver") &&
+          mark.fill === "#fff" &&
+          mark.stroke !== "none",
+      ).length,
       2,
-      "each driver is a filled dot",
-    )
-    assert.equal(
-      marks.filter((mark) => !mark.fill).length,
-      2,
-      "each receiver is a ring",
+      "each receiver has one white-centered ring",
     )
     assert.throws(
       () => new RoutedAdmissionSolver({ ...input, scopeDistanceMm: 0 }).solve(),

@@ -97,7 +97,7 @@ test("the board and stage overlay place a via at the same pixel", async () => {
   const circuit = root.inputProblem.circuitJson
   const via = circuit.find((record) => record.type === "pcb_via")!
   if (via.type !== "pcb_via") throw new Error("fixture has a via")
-  const stage = root.visualizeStage(1)
+  const stage = root.visualizeStage(2)
   const drawing: GraphicsObject = {
     ...stage,
     circles: [
@@ -153,17 +153,31 @@ test("the camera uses the stage frame and omits silkscreen text", async () => {
     whole.minX < board.center.x - board.width! / 2 &&
       whole.maxX > board.center.x + board.width! / 2,
   )
-  const frame = root
-    .visualizeStage(1)
-    .rects!.find((rect) => rect.label === "camera")!
+  const sections = root.visualizeStage(2)
+  const frame = sections.rects?.find((rect) => rect.label === "camera")
+  assert.ok(frame)
   assert.deepEqual(
     boardPictureView({ circuit, drawing: root.visualizeStage(4) }),
-    boardPictureView({ circuit, drawing: root.visualizeStage(1) }),
-    "every stage shares one camera",
+    boardPictureView({ circuit, drawing: sections }),
+    "downstream stages share one camera",
   )
   assert.equal(
-    boardPictureView({ circuit, drawing: root.visualizeStage(1) }).maxX,
+    boardPictureView({ circuit, drawing: sections }).maxX,
     frame.center.x + frame.width / 2,
+  )
+  const admission = root.visualizeStage(1)
+  const admissionFrame = admission.rects?.find((rect) => rect.layer === "frame")
+  assert.ok(admissionFrame)
+  const admissionView = boardPictureView({ circuit, drawing: admission })
+  assert.equal(
+    admissionView.maxY,
+    admissionFrame.center.y + admissionFrame.height / 2,
+  )
+  assert.ok(admission.texts?.every((text) => text.y < admissionView.maxY))
+  assert.match(
+    boardPicture({ circuit, drawing: admission, width: 1100, height: 800 })
+      .board,
+    /fill="#ffffff"/,
   )
   const tree = TwoTraceBoard()
   const labelled = await renderCoreSignals(
