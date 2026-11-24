@@ -1,4 +1,4 @@
-import log from "@stdlib/math-base-special-ln"
+import log from "@stdlib/math/base/special/ln/lib/index.js"
 import { cju } from "@tscircuit/circuit-json-util"
 import type { LayerRef, PcbSmtPad, PcbVia, Point } from "circuit-json"
 import {
