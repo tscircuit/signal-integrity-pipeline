@@ -2,14 +2,18 @@ import { type CircuitJsonUtilObjects, cju } from "@tscircuit/circuit-json-util"
 import type { Point, Viewbox } from "graphics-debug"
 import type { Snapshot } from "../kernel"
 import {
-  type RouteSourceNet,
-  routeBoardBox,
-  routeBounds,
-  routeHue,
-  routeSourceNets,
-} from "./admission-view"
+  getSourcePortConnectivityMapFromCircuitJson,
+  sourceNetMembers,
+} from "./connectivity"
 import type { CopperScope } from "./geometry/scope"
-import type { PcbPortId, PcbTraceId, SourcePortId, SourceTraceId } from "./ids"
+import type {
+  PcbPortId,
+  PcbTraceId,
+  SourceNetId,
+  SourcePortId,
+  SourceTraceId,
+} from "./ids"
+import { routeBoardBox, routeBounds } from "./plan-view"
 import type { CircuitJson } from "./schema"
 import {
   endpointPorts,
@@ -66,7 +70,7 @@ export interface RouteView extends RouteFrame {
 /** Bound the default number of sampled items in dense route drawings. */
 const ROUTE_DISPLAY_LIMIT = 160
 
-/** Deterministic display-only sampling; never changes the admitted copper or solver input. */
+/** Deterministic display-only sampling; never changes the selected copper or solver input. */
 export function routeDisplayItems<T>({
   items,
   limit = ROUTE_DISPLAY_LIMIT,
@@ -350,4 +354,69 @@ export function routeOutline(component: {
         y * Math.cos(ccwRotationRadians),
     }
   })
+}
+
+/** A hue as a colour; `lightness` separates differential legs and section tones. */
+export function routeHue({
+  hue,
+  lightness = 62,
+  alpha = 1,
+}: {
+  hue: number
+  lightness?: number
+  alpha?: number
+}): string {
+  return `hsla(${Math.round(hue) % 360}, 90%, ${lightness}%, ${alpha})`
+}
+
+/** Selected source traces grouped with their electrically connected IDs. */
+export interface RouteSourceNet {
+  ids: Set<SourcePortId | SourceNetId | SourceTraceId>
+  sources: SourceTraceId[]
+  firstSourceTraceId: SourceTraceId
+}
+
+/** Group traces by their source connectivity in first PCB trace order. */
+/** @internal */
+export function routeSourceNets({
+  db,
+  traces,
+}: {
+  db: CircuitJsonUtilObjects
+  traces: ReadonlySet<PcbTraceId>
+}): RouteSourceNet[] {
+  const connectivity = getSourcePortConnectivityMapFromCircuitJson(db.toArray())
+  const nets = new Map<
+    SourcePortId | SourceNetId | SourceTraceId,
+    RouteSourceNet
+  >()
+  const sourceTraces = new Map(
+    db.source_trace.list().map((trace) => [trace.source_trace_id, trace]),
+  )
+  const visited = new Set<SourceTraceId>()
+  for (const pcbTrace of db.pcb_trace.list()) {
+    const id = pcbTrace.source_trace_id
+    if (
+      !traces.has(pcbTrace.pcb_trace_id) ||
+      id === undefined ||
+      visited.has(id)
+    )
+      continue
+    visited.add(id)
+    const source = sourceTraces.get(id)
+    const port = source?.connected_source_port_ids[0]
+    const sourceNet = source?.connected_source_net_ids?.[0]
+    let seed = id
+    if (port !== undefined) seed = port
+    else if (sourceNet !== undefined) seed = sourceNet
+    const existing = nets.get(seed)
+    if (existing !== undefined) {
+      existing.sources.push(id)
+      continue
+    }
+    const ids = sourceNetMembers({ connectivity, memberId: seed })
+    const net = { ids, sources: [id], firstSourceTraceId: id }
+    for (const memberId of ids) nets.set(memberId, net)
+  }
+  return [...new Set(nets.values())]
 }

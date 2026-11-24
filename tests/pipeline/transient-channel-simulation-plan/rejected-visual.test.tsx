@@ -1,15 +1,15 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
-import { admissionColors } from "../../../src/board"
-import { RoutedAdmissionSolver } from "../../../src/pipeline"
+import { planColors } from "../../../src/board"
+import { TransientChannelSimulationPlanSolver } from "../../../src/pipeline"
 import {
   assertRouteVisual,
   routedVisualFixture,
 } from "../../fixtures/routed-visual"
 
-test("rejected admission carries a visible red reason without inventing an admitted channel simulation", async () => {
+test("rejected plan carries a visible red reason without inventing a planned channel simulation", async () => {
   const { root } = await routedVisualFixture()
-  const solver = new RoutedAdmissionSolver({
+  const solver = new TransientChannelSimulationPlanSolver({
     ...root.inputProblem,
     scopeDistanceMm: 0,
   })
@@ -18,12 +18,12 @@ test("rejected admission carries a visible red reason without inventing an admit
   const reason = drawing.texts?.find((text) =>
     text.text.includes("scope distance"),
   )
-  assert.equal(reason?.color, admissionColors.failure)
+  assert.equal(reason?.color, planColors.failure)
   assert.ok(drawing.texts?.every((text) => text.anchorSide === "center"))
-  assert.match(drawing.title || "", /^ADMISSION FAILED$/)
+  assert.match(drawing.title || "", /^PLAN FAILED$/)
   assertRouteVisual({
     drawing,
     module: "pipeline",
-    name: "routed-admission-rejected",
+    name: "transient-channel-simulation-plan-rejected",
   })
 })

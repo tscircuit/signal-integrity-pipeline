@@ -42,8 +42,8 @@ export interface BoardPicture {
   overlay: string
 }
 
-/** Admission carries its own light board context and an explicit header frame. */
-function admissionPicture(drawing: GraphicsObject): boolean {
+/** The plan drawing carries its own light board context and an explicit header frame. */
+function planPicture(drawing: GraphicsObject): boolean {
   return drawing.rects?.some((rect) => rect.layer === "frame") === true
 }
 
@@ -302,7 +302,7 @@ export function boardPicture({
     svg: raw,
     tag: `<svg ${dimensions} viewBox="${overlayBox}">`,
   })
-  if (admissionPicture(drawing)) {
+  if (planPicture(drawing)) {
     const background = '<rect width="100%" height="100%" fill="#ffffff"/>'
     return { board: `<svg ${dimensions}>${background}</svg>`, overlay }
   }

@@ -201,7 +201,7 @@ layers hollow, bottom dimmed. Each stage draws what it produced:
 
 | Stage | Board | Pane |
 |---|---|---|
-| Admission | selected nets, drivers as dots, receivers as rings | each net's routed length, to scale |
+| Transient channel simulation plan | selected nets, drivers as dots, receivers as rings | each net's routed length, to scale |
 | Sections | sections in two tones of the net's hue, the route cut this step cased white, uncut copper grey | the same partition unrolled per net |
 | Fields | solved copper coloured by Z0, an amber cut at the slice on screen | that slice's stack at one mm scale, Z0 of selected conductors, coupling bands sized by k, the Z0 scale |
 | Bindings | bound parts outlined, ▶ at drivers and ◁ at receivers along the trace | each bound net with its buffer glyphs |

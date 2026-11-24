@@ -165,18 +165,14 @@ test("the camera uses the stage frame and omits silkscreen text", async () => {
     boardPictureView({ circuit, drawing: sections }).maxX,
     frame.center.x + frame.width / 2,
   )
-  const admission = root.visualizeStage(1)
-  const admissionFrame = admission.rects?.find((rect) => rect.layer === "frame")
-  assert.ok(admissionFrame)
-  const admissionView = boardPictureView({ circuit, drawing: admission })
-  assert.equal(
-    admissionView.maxY,
-    admissionFrame.center.y + admissionFrame.height / 2,
-  )
-  assert.ok(admission.texts?.every((text) => text.y < admissionView.maxY))
+  const planner = root.visualizeStage(1)
+  const planFrame = planner.rects?.find((rect) => rect.layer === "frame")
+  assert.ok(planFrame)
+  const admissionView = boardPictureView({ circuit, drawing: planner })
+  assert.equal(admissionView.maxY, planFrame.center.y + planFrame.height / 2)
+  assert.ok(planner.texts?.every((text) => text.y < admissionView.maxY))
   assert.match(
-    boardPicture({ circuit, drawing: admission, width: 1100, height: 800 })
-      .board,
+    boardPicture({ circuit, drawing: planner, width: 1100, height: 800 }).board,
     /fill="#ffffff"/,
   )
   const tree = TwoTraceBoard()
