@@ -241,7 +241,7 @@ export function* routeLadderSteps({
           routeContactKey({ layer: wire.layer, point: wire.startPoint }),
         ) ?? 0
       if (
-        wire.startTouchesPort ||
+        wire.startTouchesPad ||
         junction > THROUGH_CONTACT_COUNT ||
         wire.pcbTraceId !== seed.pcbTraceId
       )
