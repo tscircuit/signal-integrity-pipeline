@@ -11,7 +11,11 @@ import {
   boardPictureSvg,
   boardPictureView,
 } from "../../src/board/board-picture"
-import { routedVisualFixture } from "../fixtures/routed-visual"
+import { withPlanCaption } from "../fixtures/plan-caption"
+import {
+  routedVisualFixture,
+  twoTracePlanCaption,
+} from "../fixtures/routed-visual"
 import { renderCoreSignals } from "../support/core-render"
 
 /** The x and y coordinates of a pixel within a drawing. */
@@ -228,10 +232,13 @@ test("composed board pictures of every two-trace stage match their PNG snapshots
   const { root } = await routedVisualFixture()
   const [width, height] = [480, 300]
   for (const number of [0, 1, 2, 3, 4, 5, 6]) {
+    let drawing = root.visualizeStage(number)
+    if (number === 1)
+      drawing = withPlanCaption({ drawing, caption: twoTracePlanCaption })
     const png = new Resvg(
       boardPictureSvg({
         circuit: root.inputProblem.circuitJson,
-        drawing: root.visualizeStage(number),
+        drawing,
         width,
         height,
       }),

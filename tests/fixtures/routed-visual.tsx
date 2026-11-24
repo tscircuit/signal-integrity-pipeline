@@ -17,6 +17,10 @@ import {
 
 import { routedVisualIbis } from "./routed-visual-fixture"
 
+/** The simulation plan shown by the two-trace SVG and stage-one PNG. */
+export const twoTracePlanCaption =
+  "Two parallel traces carry signals from TX0 to RX0 and from TX1 to RX1. The plan checks that both paths are connected before simulating them together."
+
 /** A solved pipeline over the synthetic routed board. */
 interface RoutedVisualFixture {
   root: RoutedPipelineSolver

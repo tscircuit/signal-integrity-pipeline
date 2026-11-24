@@ -31,5 +31,7 @@ test("rejected plan carries a visible red reason without inventing a planned cha
     drawing,
     module: "pipeline",
     name: "transient-channel-simulation-plan-rejected",
+    caption:
+      "Two parallel traces each connect a driver to a receiver. The plan stops because the test sets the distance to look for nearby copper to zero.",
   })
 })
