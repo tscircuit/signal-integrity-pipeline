@@ -79,7 +79,9 @@ export interface PlanPort extends Point {
   label: string
 }
 
-/** Placed ports indexed by their source-port IDs. */
+/** Placed ports indexed by their source-port IDs.
+ * @internal
+ */
 export type PlanPorts = ReadonlyMap<SourcePortId, PlanPort>
 
 /** Index placed signal ports and prefer a stable human-readable pin name. */
