@@ -10,3 +10,13 @@ export {
   type RlgcMatrices,
 } from "./cross-section"
 export { calculateMatrixInverse } from "./cross-section-matrix"
+export type { DielectricMaterials } from "./dielectric-materials"
+export {
+  type TransmissionLineRlgcInput,
+  TransmissionLineRlgcSolver,
+} from "./transmission-line-rlgc"
+export type {
+  SolvedWireSection,
+  TransmissionLineRlgc,
+} from "./transmission-line-rlgc-types"
+export { buildCrossSection } from "./wire-cross-section"

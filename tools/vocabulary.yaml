@@ -150,6 +150,7 @@ domain:
   ledger: the single record of every artifact path the pipeline writes; a second write to a path fails
   local: running on the user's computer through its installed native solver
   loss: energy dissipated in conductors or dielectrics
+  laminate: board dielectric between copper layers
   mask: insulating soldermask on the outer copper layers
   mesh: the set of boundary panels used to approximate the field in a cross-section
   meter: SI unit of length used for per-unit-length electrical matrices
@@ -260,6 +261,9 @@ domain:
   wire: one straight planar conductor derived from a PCB trace
   word: a contiguous non-whitespace field in an ASCII raw file or diagnostic
   worker: an isolated browser thread that can be terminated to stop a solver
+  # Transmission line is the electrical model of a coupled wire group over one section.
+  # Cross-section is its two-dimensional copper and material geometry, and RLGC matrices are its electrical results.
+  # Pair screening compares normalized mutual capacitance and inductance before grouping wires.
 
 abbreviations:
   http: Hypertext Transfer Protocol used by the browser solver adapter

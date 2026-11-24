@@ -148,10 +148,10 @@ async function stages({
     for (const stage of root.pipelineDef) {
       const solver = root.getSolver<BaseSolver>(stage.solverName)
       if (
-        stage.solverName === "RouteFieldsSolver" &&
+        stage.solverName === "TransmissionLineRlgcSolver" &&
         solver &&
         !solver.solved &&
-        solver.stats.sections > 0 &&
+        solver.stats.solvedSectionCount > 0 &&
         !seen.has("fields-coupled")
       ) {
         const drawing = solver.visualize()
@@ -167,7 +167,7 @@ async function stages({
       if (!solver?.solved || seen.has(stage.solverName)) continue
       seen.add(stage.solverName)
       if (
-        stage.solverName === "RouteFieldsSolver" ||
+        stage.solverName === "TransmissionLineRlgcSolver" ||
         stage.solverName === "RouteBindingsSolver"
       )
         await writeFile(

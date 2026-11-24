@@ -1,23 +1,21 @@
 import { beforeAll, describe, setDefaultTimeout, test } from "bun:test"
 import assert from "node:assert/strict"
-import {
-  type CopperPoint,
-  extractCopperGeometry,
-  type TraceWire,
-} from "../../src/board"
-import { RouteFieldsSolver } from "../../src/extraction"
-import type {
-  ExtractedRoutes,
-  RouteCoefficients,
-} from "../../src/extraction/route-lines"
+import type { CopperPoint, TraceWire } from "../../src/board"
 import type { Snapshot } from "../../src/kernel"
-import { type CrossSection, calculateRlgc } from "../../src/rlgc"
+import {
+  type CrossSection,
+  calculateRlgc,
+  type RlgcMatrices,
+  type TransmissionLineRlgc,
+  TransmissionLineRlgcSolver,
+} from "../../src/rlgc"
 import {
   type RouteLadder,
   routeLadder,
 } from "../../src/simulation/route-ladder"
 import type { RouteEndpoint } from "../../src/simulation/route-network"
 import { renderRoutedCopper } from "../fixtures/routed-copper"
+import { solveBoardCopperGeometry } from "../fixtures/transmission-line-rlgc"
 import {
   conductorLossTolerance,
   crossingTime,
@@ -52,9 +50,9 @@ describe("large routed TSX ladder", () => {
 
   beforeAll(async () => {
     const { circuitJson, copperScope: scope } = await renderRoutedCopper()
-    const fields = new RouteFieldsSolver({
-      geometry: extractCopperGeometry({
-        circuit: circuitJson,
+    const fields = new TransmissionLineRlgcSolver({
+      copperGeometry: solveBoardCopperGeometry({
+        circuitJson,
         copperScope: scope,
       }),
       artifactPrefix: "test",
@@ -133,7 +131,7 @@ function createStraightEndpoint(): RouteEndpoint {
 
 /** Extracted electrical coefficients and emitted ladder for one straight section. */
 interface StraightLine {
-  line: RouteCoefficients
+  line: Snapshot<RlgcMatrices>
   ladder: RouteLadder
 }
 
@@ -146,26 +144,18 @@ function straightLine({
   lossScale: number
 }): StraightLine {
   const solved = calculateRlgc({ crossSection: section })
-  const line: RouteCoefficients = {
-    conductorIds: solved.conductorIds,
-    C: solved.capacitanceFaradsPerMeter,
-    C0: solved.vacuumCapacitanceFaradsPerMeter,
-    L: solved.externalInductanceHenriesPerMeter,
-    dielectricLoss: solved.dielectricLossFaradsPerMeter,
-    diagnostics: {
-      panels: solved.diagnostics.panelCount,
-      reciprocityResidual: solved.diagnostics.reciprocityResidual,
-      recessionMm: solved.diagnostics.recessionMm,
-    },
-    dcResistance: solved.dcResistanceOhmsPerMeter.map((row) =>
-      row.map((value) => value * lossScale),
+  const line: Snapshot<RlgcMatrices> = {
+    ...solved,
+    dcResistanceOhmsPerMeter: solved.dcResistanceOhmsPerMeter.map((row) =>
+      row.map((resistance) => resistance * lossScale),
     ),
-    skinResistance: solved.totalSkinResistanceOhmsPerMeterPerSqrtHz.map((row) =>
-      row.map((value) => value * lossScale),
-    ),
-    stripSkinResistance:
+    totalSkinResistanceOhmsPerMeterPerSqrtHz:
+      solved.totalSkinResistanceOhmsPerMeterPerSqrtHz.map((row) =>
+        row.map((resistance) => resistance * lossScale),
+      ),
+    conductorSkinResistanceOhmsPerMeterPerSqrtHz:
       solved.conductorSkinResistanceOhmsPerMeterPerSqrtHz.map((row) =>
-        row.map((value) => value * lossScale),
+        row.map((resistance) => resistance * lossScale),
       ),
   }
   const wires: TraceWire[] = section.conductors.map((conductor, wireIndex) => ({
@@ -181,26 +171,29 @@ function straightLine({
     longitudinalMaxMm: lengthMm,
     lateralOffsetMm: conductor.xMm,
   }))
-  const extracted: ExtractedRoutes = {
-    slices: [
+  const extracted: TransmissionLineRlgc = {
+    solvedWireSections: [
       {
         wires,
         startMm: 0,
         endMm: lengthMm,
         references: [],
-        key: "golden",
-        line,
+        wireSectionIndex: 0,
+        crossSectionKey: "golden",
+        rlgcMatrices: line,
       },
     ],
-    sections: [{ key: "golden", line }],
+    crossSectionSolutions: [{ crossSectionKey: "golden", rlgcMatrices: line }],
+    maskThicknessSource: "explicit",
+    panelsPerEdge: 12,
     materials: {
-      maskMm: 0,
-      maskEr: 1,
-      maskLoss: 0,
-      substrateLoss: 0,
+      maskThicknessMm: 0,
+      maskRelativePermittivity: 1,
+      maskLossTangent: 0,
+      laminateLossTangent: 0,
     },
     warnings: [],
-    coupling: [],
+    pairCouplings: [],
   }
   const endpoint = createStraightEndpoint()
   return { line, ladder: routeLadder({ extracted, endpoint, riseSeconds }) }
@@ -295,17 +288,18 @@ test("golden stage 5: ladder elements integrate to L l, C l, R l and K = L12/sqr
     ["microstrip pair", microstripPair],
   ] as const) {
     const { line, ladder } = straightLine({ section, lossScale: 1 })
-    const size = line.L.length
+    const size = line.externalInductanceHenriesPerMeter.length
     const inductance = Array.from(
       { length: size },
-      (_, i) => line.L[i][i] * metres,
+      (_, i) => line.externalInductanceHenriesPerMeter[i][i] * metres,
     ).reduce((a, b) => a + b, 0)
     const seriesResistances = Array.from(
       { length: size },
-      (_, i) => line.dcResistance[i][i] * metres,
+      (_, i) => line.dcResistanceOhmsPerMeter[i][i] * metres,
     )
     const resistance = seriesResistances.reduce((a, b) => a + b, 0)
-    const ground = line.C.flat().reduce((a, b) => a + b, 0) * metres
+    const ground =
+      line.capacitanceFaradsPerMeter.flat().reduce((a, b) => a + b, 0) * metres
     const shunts = ladder.lines
       .filter((entry) => hasNumberedElement({ line: entry, prefix: "CARCCS" }))
       .map((entry) => entry.split(" "))
@@ -329,7 +323,7 @@ test("golden stage 5: ladder elements integrate to L l, C l, R l and K = L12/sqr
       `${label}: C to ground`,
     )
     if (size > 1) {
-      const pair = Math.abs(line.C[0][1]) * metres
+      const pair = Math.abs(line.capacitanceFaradsPerMeter[0][1]) * metres
       const pairShunts = shunts.filter((entry) => entry[2] !== "0")
       const pairCapacitance = pairShunts.reduce(
         (sum, entry) => sum + Number(entry[3]),
@@ -339,7 +333,12 @@ test("golden stage 5: ladder elements integrate to L l, C l, R l and K = L12/sqr
         near({ actual: pairCapacitance, expected: pair }),
         `${label}: pair C`,
       )
-      const expected = line.L[0][1] / Math.sqrt(line.L[0][0] * line.L[1][1])
+      const expected =
+        line.externalInductanceHenriesPerMeter[0][1] /
+        Math.sqrt(
+          line.externalInductanceHenriesPerMeter[0][0] *
+            line.externalInductanceHenriesPerMeter[1][1],
+        )
       const couplingElements = ladder.lines.filter((entry) =>
         entry.startsWith("KARCL"),
       )
@@ -463,7 +462,10 @@ function matchedRun(): Promise<MatchedLine> {
 /** Build and run a matched stripline with resistive ends. */
 async function runMatchedLine(): Promise<MatchedLine> {
   const { line, ladder } = straightLine({ section: stripline, lossScale: 1e-3 })
-  const z = Math.sqrt(line.L[0][0] / line.C[0][0])
+  const z = Math.sqrt(
+    line.externalInductanceHenriesPerMeter[0][0] /
+      line.capacitanceFaradsPerMeter[0][0],
+  )
   const delay = ((lengthMm / 1000) * 2) / lightSpeed
   const rows = await runGoldenDeck(
     transientDeck({
@@ -570,7 +572,10 @@ test.skipIf(skipNativeTests)(openEndBounces, async () => {
   // summed reflections, first far plateau = 2 x incident. Tolerances: every plateau (k = 0..3, sampled mid-plateau)
   // within 2% of the 1 V source swing; every step's mid-level crossing within 1% of its ideal time after launch.
   const { line, ladder } = straightLine({ section: stripline, lossScale: 1e-3 })
-  const z = Math.sqrt(line.L[0][0] / line.C[0][0])
+  const z = Math.sqrt(
+    line.externalInductanceHenriesPerMeter[0][0] /
+      line.capacitanceFaradsPerMeter[0][0],
+  )
   const delay = ((lengthMm / 1000) * 2) / lightSpeed
   const incident = z / (z / 3 + z)
   const source = (z / 3 - z) / (z / 3 + z)
@@ -650,8 +655,12 @@ test.skipIf(skipNativeTests)(evenAndOddModes, async () => {
   const failures: string[] = []
   const records: Record<string, number>[] = []
   for (const sign of [1, -1]) {
-    const L = line.L[0][0] + sign * line.L[0][1]
-    const C = line.C[0][0] + sign * line.C[0][1]
+    const L =
+      line.externalInductanceHenriesPerMeter[0][0] +
+      sign * line.externalInductanceHenriesPerMeter[0][1]
+    const C =
+      line.capacitanceFaradsPerMeter[0][0] +
+      sign * line.capacitanceFaradsPerMeter[0][1]
     const z = Math.sqrt(L / C)
     const delay = (lengthMm / 1000) * Math.sqrt(L * C)
     let mode = "odd"
@@ -942,7 +951,7 @@ async function modalAttenuation({
     const impedance = reference[k].R.map((row, i) =>
       row.map((r, j) => [r, omega * reference[k].L[i][j]] as Complex),
     )
-    const admittance = line.C.map((row) =>
+    const admittance = line.capacitanceFaradsPerMeter.map((row) =>
       row.map((c) => [0, omega * c] as Complex),
     )
     const referenceModes = eigenvalues(product({ a: impedance, b: admittance }))

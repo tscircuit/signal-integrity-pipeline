@@ -4,16 +4,15 @@ import type {
   ExtractedCopper,
   TraceWire,
 } from "../board"
-import {
-  closestRoutePoints,
-  type ExtractedRoutes,
-  type RouteMaterials,
-  rlgcCrossSection,
-  routeCrossSection,
-} from "../extraction"
 import type { Snapshot } from "../kernel"
-import { calculateCapacitanceMatrix } from "../rlgc"
+import {
+  buildCrossSection,
+  calculateCapacitanceMatrix,
+  type DielectricMaterials,
+  type TransmissionLineRlgc,
+} from "../rlgc"
 import type { RouteLadder } from "./route-ladder"
+import { findClosestWirePoints } from "./wire-proximity"
 
 /** Serialized cross-section geometry used to reuse capacitance solves. */
 type CrossSectionKey = string
@@ -64,7 +63,7 @@ interface ObliqueEncounter {
   wires: [TraceWire["wireIndex"], TraceWire["wireIndex"]]
   policy: string
   distanceMm: number
-  references?: ExtractedRoutes["slices"][number]["references"]
+  references?: TransmissionLineRlgc["solvedWireSections"][number]["references"]
   angleSine?: number
   lengthMm?: number
   capacitanceF?: number
@@ -89,10 +88,10 @@ export function routeOblique({
   panels = DEFAULT_OBLIQUE_PANELS,
 }: {
   geometry: Snapshot<ExtractedCopper>
-  extracted: ExtractedRoutes
+  extracted: TransmissionLineRlgc
   ladder: RouteLadder
   scope: Snapshot<CopperScope>
-  materials: RouteMaterials
+  materials: DielectricMaterials
   panels?: number
 }): ObliqueRouteCorrection {
   const lines: string[] = []
@@ -114,16 +113,17 @@ export function routeOblique({
         a.direction[0] * b.direction[1] - a.direction[1] * b.direction[0],
       )
       if (sine < MIN_ANGLE_SINE) continue
-      const near = closestRoutePoints({ first: a, second: b })
-      if (near.distance - (a.widthMm + b.widthMm) / 2 > scope.nearbyGapMm)
+      const near = findClosestWirePoints({ firstWire: a, secondWire: b })
+      if (near.distanceMm - (a.widthMm + b.widthMm) / 2 > scope.nearbyGapMm)
         continue
       const layers = geometry.stackup.copperLayers
       const la = layers.findIndex((layer) => layer.name === a.layer)
       const lb = layers.findIndex((layer) => layer.name === b.layer)
       if (Math.abs(la - lb) > MAX_OBLIQUE_LAYER_DISTANCE) continue
       const position =
-        near.first[0] * a.direction[0] + near.first[1] * a.direction[1]
-      const slice = extracted.slices.find((slice) => {
+        near.firstPoint[0] * a.direction[0] +
+        near.firstPoint[1] * a.direction[1]
+      const slice = extracted.solvedWireSections.find((slice) => {
         const inSlice =
           position >= slice.startMm - CONTACT_TOLERANCE &&
           position <= slice.endMm + CONTACT_TOLERANCE
@@ -134,26 +134,23 @@ export function routeOblique({
       if (!slice) continue
       if (
         a.layer === b.layer &&
-        near.distance < (a.widthMm + b.widthMm) / 2 + CONTACT_TOLERANCE
+        near.distanceMm < (a.widthMm + b.widthMm) / 2 + CONTACT_TOLERANCE
       ) {
         records.push({
           wires: [a.wireIndex, b.wireIndex],
           policy:
             "touching endpoint/bend copper: no parallel-strip substitution",
-          distanceMm: near.distance,
+          distanceMm: near.distanceMm,
         })
         continue
       }
       const synthetic = {
         ...slice,
-        wires: [
-          { ...a, transverse: 0 },
-          { ...b, transverse: near.distance },
-        ],
+        wires: [a, b],
       }
-      const section = routeCrossSection({
+      const section = buildCrossSection({
         geometry,
-        slice: synthetic,
+        wireSection: synthetic,
         materials,
       })
       const shielded = section.conductors.some((conductor) => {
@@ -169,7 +166,7 @@ export function routeOblique({
           policy:
             "intervening local reference shields oblique surrogate; finite plane-edge/aperture fringing omitted",
           references: slice.references,
-          distanceMm: near.distance,
+          distanceMm: near.distanceMm,
         })
         continue
       }
@@ -185,7 +182,7 @@ export function routeOblique({
           capacitancePerM = Math.max(
             0,
             -calculateCapacitanceMatrix({
-              crossSection: rlgcCrossSection(section),
+              crossSection: section,
               options: { panelsPerEdge: panels },
             })[0][1],
           )
@@ -213,12 +210,12 @@ export function routeOblique({
       )
       const first = nearestRouteNode({
         wire: a,
-        point: near.first,
+        point: near.firstPoint,
         wireNodes: ladder.wireNodes,
       })
       const second = nearestRouteNode({
         wire: b,
-        point: near.second,
+        point: near.secondPoint,
         wireNodes: ladder.wireNodes,
       })
       const capacitanceF = (capacitancePerM * lengthMm) / MM_PER_METRE
@@ -234,7 +231,7 @@ export function routeOblique({
         wires: [a.wireIndex, b.wireIndex],
         policy: "local parallel electrostatic surrogate; magnetic term omitted",
         angleSine: sine,
-        distanceMm: near.distance,
+        distanceMm: near.distanceMm,
         lengthMm,
         capacitanceF,
         nodePlacementErrorMm: [first.errorMm, second.errorMm],
