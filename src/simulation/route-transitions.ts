@@ -3,18 +3,18 @@ import { cju } from "@tscircuit/circuit-json-util"
 import type { LayerRef, PcbSmtPad, PcbVia, Point } from "circuit-json"
 import {
   type CircuitJson,
+  type CopperPoint,
   type CopperScope,
+  type ExtractedCopper,
+  findPadContactWire,
+  findWireReferences,
   getSourcePortConnectivityMapFromCircuitJson,
-  type RouteReference,
-  type RouteWire,
-  type RouteXY,
+  type ReferenceSurface,
   resolveRouteVias,
-  routeContactFrame,
-  routeReferences,
-  type SectionGeometry,
   type SourceNetId,
   type SourcePortId,
   sourceNetMembers,
+  type TraceWire,
 } from "../board"
 import { type Matrix, validateMatrix } from "../extraction"
 import { hypotenuse, type Snapshot } from "../kernel"
@@ -82,7 +82,7 @@ export function terminalInductance({
   height: number
   width: number
   depth: number
-  positions: RouteXY[]
+  positions: CopperPoint[]
   perLength: Matrix
 }): Matrix {
   const validDimensions = [height, width, depth].every(
@@ -190,8 +190,8 @@ function layerHeight({
   layers,
   name,
 }: {
-  layers: Snapshot<SectionGeometry["stack"]["copperLayers"]>
-  name: RouteReference["layer"]
+  layers: Snapshot<ExtractedCopper["stackup"]["copperLayers"]>
+  name: ReferenceSurface["layer"]
 }): number {
   const layer = layers.find((layer) => layer.name === name)!
   return (layer.zMinMm + layer.zMaxMm) / 2
@@ -202,12 +202,12 @@ function referenceHeight({
   references,
   fallback,
 }: {
-  references: readonly RouteReference[]
+  references: readonly ReferenceSurface[]
   fallback: number
 }): number {
   if (!references.length) return fallback
   return (
-    references.reduce((sum, reference) => sum + reference.z, 0) /
+    references.reduce((sum, reference) => sum + reference.surfaceZMm, 0) /
     references.length
   )
 }
@@ -219,39 +219,42 @@ function adjacentReferences({
   via,
   geometry,
 }: {
-  wire: Snapshot<RouteWire>
+  wire: Snapshot<TraceWire>
   layer: LayerRef
   via: Point
-  geometry: Snapshot<SectionGeometry>
-}): readonly RouteReference[] {
-  const slices = geometry.slices.filter((slice) => {
+  geometry: Snapshot<ExtractedCopper>
+}): readonly ReferenceSurface[] {
+  const slices = geometry.sections.filter((slice) => {
     return slice.wires.some(
       (candidate) =>
-        candidate.trace === wire.trace && candidate.layer === layer,
+        candidate.pcbTraceId === wire.pcbTraceId && candidate.layer === layer,
     )
   })
   const candidates = slices.map((slice) => {
     const local = slice.wires.find(
       (candidate) =>
-        candidate.trace === wire.trace && candidate.layer === layer,
+        candidate.pcbTraceId === wire.pcbTraceId && candidate.layer === layer,
     )!
-    const position = via.x * local.u[0] + via.y * local.u[1]
-    const lateral = -via.x * local.u[1] + via.y * local.u[0] - local.transverse
+    const position = via.x * local.direction[0] + via.y * local.direction[1]
+    const lateral =
+      -via.x * local.direction[1] +
+      via.y * local.direction[0] -
+      local.lateralOffsetMm
     const longitudinal = Math.max(
-      slice.start - position,
-      position - slice.end,
+      slice.startMm - position,
+      position - slice.endMm,
       0,
     )
     return { slice, distance: hypotenuse(lateral, longitudinal) }
   })
   const closest = candidates.sort((a, b) => a.distance - b.distance)[0]
   if (closest?.slice.references != null) return closest.slice.references
-  const transverse = -via.x * wire.u[1] + via.y * wire.u[0]
-  const position = via.x * wire.u[0] + via.y * wire.u[1]
-  return routeReferences({
+  const transverse = -via.x * wire.direction[1] + via.y * wire.direction[0]
+  const position = via.x * wire.direction[0] + via.y * wire.direction[1]
+  return findWireReferences({
     geometry,
-    wire: { ...wire, layer, transverse },
-    position,
+    wire: { ...wire, layer, lateralOffsetMm: transverse },
+    positionMm: position,
   })
 }
 
@@ -265,12 +268,12 @@ export function routeTransitions({
 }: {
   circuit: CircuitJson
   scope: Snapshot<CopperScope>
-  geometry: Snapshot<SectionGeometry>
+  geometry: Snapshot<ExtractedCopper>
   endpoint: RouteEndpoint
   groundPort: SourcePortId | SourceNetId
 }): RouteTransitions {
   const output: RouteTransitions = { lines: [], records: [], warnings: [] }
-  const layers = geometry.stack.copperLayers
+  const layers = geometry.stackup.copperLayers
   const db = cju([...circuit])
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(db.toArray())
   const ground = sourceNetMembers({ connectivity, memberId: groundPort })
@@ -296,7 +299,7 @@ export function routeTransitions({
     )
       continue
     const wire = geometry.wires.find(
-      (wire) => wire.trace === trace.pcb_trace_id,
+      (wire) => wire.pcbTraceId === trace.pcb_trace_id,
     )
     if (!wire) continue
     const route = resolveRouteVias({ circuit, trace })
@@ -325,9 +328,10 @@ export function routeTransitions({
       const fromLayerHeight = layerHeight({ layers, name: via.from_layer })
       const toLayerHeight = layerHeight({ layers, name: via.to_layer })
       const h = Math.abs(fromLayerHeight - toLayerHeight)
-      const diameter = physical.hole_diameter + 2 * geometry.stack.viaPlatingMm!
+      const diameter =
+        physical.hole_diameter + 2 * geometry.stackup.viaPlatingMm!
       const antipad = physical.outer_diameter + ANTIPAD_ALLOWANCE_MM
-      const er = geometry.stack.relativePermittivity!
+      const er = geometry.stackup.relativePermittivity!
       const inductanceH = barrelInductance({ height: h, diameter })
       const capacitanceF = barrelCapacitance({
         height: h,
@@ -368,8 +372,8 @@ export function routeTransitions({
         const layer = layers.find((layer) => layer.name === name)!
         return refs.reduce((sum, ref) => {
           const gap = Math.min(
-            Math.abs(ref.z - layer.zMinMm),
-            Math.abs(ref.z - layer.zMaxMm),
+            Math.abs(ref.surfaceZMm - layer.zMinMm),
+            Math.abs(ref.surfaceZMm - layer.zMaxMm),
           )
           if (!(gap > LAYER_HEIGHT_TOLERANCE)) return sum
           return (
@@ -462,7 +466,7 @@ export function routeTransitions({
           `${physical.pcb_via_id}: no spanning ground stitch found; ${estimate}`,
         )
       }
-      if (references.some((ref) => !ground.has(ref.net))) {
+      if (references.some((ref) => !ground.has(ref.sourceNetId))) {
         const assumption =
           "ideal AC rail/reference assumption omits PDN impedance"
         output.warnings.push(
@@ -474,25 +478,30 @@ export function routeTransitions({
   for (const port of db.pcb_port.list()) {
     const pad = db.pcb_smtpad.getWhere({ pcb_port_id: port.pcb_port_id })
     if (!pad) continue
-    const wire = routeContactFrame({
+    const wire = findPadContactWire({
       geometry,
-      scope,
+      pcbPortId: port.pcb_port_id,
       layer: pad.layer,
       point: [port.x, port.y],
     })
     if (!wire) continue
-    const position = port.x * wire.u[0] + port.y * wire.u[1]
-    const references = routeReferences({
+    const position = port.x * wire.direction[0] + port.y * wire.direction[1]
+    const padWire = {
+      ...wire,
+      layer: pad.layer,
+      lateralOffsetMm: -port.x * wire.direction[1] + port.y * wire.direction[0],
+    }
+    const references = findWireReferences({
       geometry,
-      wire: { ...wire, transverse: -port.x * wire.u[1] + port.y * wire.u[0] },
-      position,
+      wire: padWire,
+      positionMm: position,
     })
-    const layer = layers.find((layer) => layer.name === wire.layer)!
+    const layer = layers.find((layer) => layer.name === pad.layer)!
     const area = padArea(pad)
     const gaps = references.map((plane) =>
       Math.min(
-        Math.abs(plane.z - layer.zMinMm),
-        Math.abs(plane.z - layer.zMaxMm),
+        Math.abs(plane.surfaceZMm - layer.zMinMm),
+        Math.abs(plane.surfaceZMm - layer.zMaxMm),
       ),
     )
     const gap = Math.min(...gaps)
@@ -500,11 +509,11 @@ export function routeTransitions({
       throw new Error(`${pad.pcb_smtpad_id}: invalid pad/reference geometry`)
     }
     const capacitanceF =
-      (VACUUM_PERMITTIVITY * geometry.stack.relativePermittivity! * area) /
+      (VACUUM_PERMITTIVITY * geometry.stackup.relativePermittivity! * area) /
       gap /
       MM_PER_METRE
     output.lines.push(
-      `CPAD${output.records.length} ${endpoint({ wire, point: [port.x, port.y] })} 0 ${capacitanceF}`,
+      `CPAD${output.records.length} ${endpoint({ wire: padWire, point: [port.x, port.y] })} 0 ${capacitanceF}`,
     )
     output.records.push({
       kind: "pad",

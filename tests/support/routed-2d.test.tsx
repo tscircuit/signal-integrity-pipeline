@@ -6,13 +6,13 @@ import {
   type CircuitJson,
   type CopperScope,
   channelCopperScope,
+  type ExtractedCopper,
+  extractCopperGeometry,
+  findPadContactWire,
+  findWireReferences,
   getSourcePortConnectivityMapFromCircuitJson,
-  routeContactFrame,
-  routeReferences,
-  type SectionGeometry,
   type SourceNetId,
   type SourcePortId,
-  segmentRoutes,
   sourceNetMembers,
 } from "../../src/board"
 import {
@@ -38,7 +38,7 @@ function endpointName(name: string): string {
 
 /** The source IDs and geometry shared by the routed board variants. */
 interface RouteFixture {
-  geometry: SectionGeometry
+  geometry: ExtractedCopper
   scope: CopperScope
   ground: ReturnType<typeof sourceNetMembers>
   groundId: SourceNetId
@@ -76,7 +76,7 @@ async function routeFixture(): Promise<RouteFixture> {
     }),
     distanceMm: 1,
   })
-  const geometry = segmentRoutes({ circuit, scope })
+  const geometry = extractCopperGeometry({ circuit, copperScope: scope })
   return {
     geometry,
     scope,
@@ -99,7 +99,7 @@ const RISE_SECONDS = 230e-12
 
 /** Use physical wire and position to name simulated endpoints. */
 function wireEndpoint({ wire, point }: Parameters<RouteEndpoint>[0]): string {
-  return endpointName(`n${wire.id}_${point[0]}_${point[1]}`)
+  return endpointName(`n${wire.wireIndex}_${point[0]}_${point[1]}`)
 }
 
 /** Solve fields with the fixture's shared material assumptions. */
@@ -107,7 +107,7 @@ function solveFields({
   geometry,
   panels,
 }: {
-  geometry: SectionGeometry
+  geometry: ExtractedCopper
   panels?: number
 }): ExtractedRoutes {
   const solver = new RouteFieldsSolver({
@@ -136,11 +136,13 @@ describe("routed 2D board", () => {
 
   test("keeps nearby copper in scope", () => {
     assert.equal(fixture.scope.extractedPcbTraceIds.length, 3)
-    assert.ok(fixture.geometry.slices.some((slice) => slice.wires.length === 2))
+    assert.ok(
+      fixture.geometry.sections.some((slice) => slice.wires.length === 2),
+    )
   })
 
   test("changes the reference along the route", () => {
-    const referenceLayers = fixture.geometry.slices.flatMap((slice) =>
+    const referenceLayers = fixture.geometry.sections.flatMap((slice) =>
       slice.references.map((ref) => ref.layer),
     )
     assert.deepEqual(new Set(referenceLayers), new Set(["inner1", "inner3"]))
@@ -150,7 +152,7 @@ describe("routed 2D board", () => {
     const { geometry } = fixture
     const inner4 = { ...geometry.wires[0], layer: "inner4" as const }
     assert.deepEqual(
-      routeReferences({ geometry, wire: inner4, position: -2 }).map(
+      findWireReferences({ geometry, wire: inner4, positionMm: -2 }).map(
         (plane) => plane.layer,
       ),
       ["inner5", "inner3"],
@@ -159,7 +161,7 @@ describe("routed 2D board", () => {
   })
 
   test("reuses cross sections", () => {
-    assert.ok(extracted.sections.length <= fixture.geometry.slices.length)
+    assert.ok(extracted.sections.length <= fixture.geometry.sections.length)
   })
 
   test("reduces inductance with a shorted AC return", () => {
@@ -250,7 +252,10 @@ test("solves overlapping copper as equipotential patches", async () => {
     railSourceIds: new Set(),
     distanceMm: 1,
   })
-  const merged = segmentRoutes({ circuit: mergedCircuit, scope: mergedScope })
+  const merged = extractCopperGeometry({
+    circuit: mergedCircuit,
+    copperScope: mergedScope,
+  })
   const hasJoins = merged.wires.some((wire) => wire.joins?.length)
   assert.ok(
     hasJoins,
@@ -262,7 +267,7 @@ test("solves overlapping copper as equipotential patches", async () => {
 describe("oblique route", () => {
   let circuit: CircuitJson
   let scope: CopperScope
-  let geometry: SectionGeometry
+  let geometry: ExtractedCopper
   let groundId: SourceNetId
 
   beforeAll(async () => {
@@ -281,7 +286,7 @@ describe("oblique route", () => {
       railSourceIds: new Set(),
       distanceMm: 1,
     })
-    geometry = segmentRoutes({ circuit, scope })
+    geometry = extractCopperGeometry({ circuit, copperScope: scope })
   })
 
   test("records shielding at the local plane", () => {
@@ -313,7 +318,7 @@ describe("oblique route", () => {
       scope,
       geometry,
       endpoint: ({ wire, point }) =>
-        endpointName(`n${wire.id}_${point.join("_")}`),
+        endpointName(`n${wire.wireIndex}_${point.join("_")}`),
       groundPort: groundId,
     })
     const viaPads = transitions.records.filter(
@@ -332,7 +337,7 @@ describe("oblique route", () => {
 describe("via-in-pad route", () => {
   let viaCircuit: CircuitJson
   let viaScope: CopperScope
-  let viaGeometry: SectionGeometry
+  let viaGeometry: ExtractedCopper
 
   beforeAll(async () => {
     const { ground } = await routeFixture()
@@ -364,7 +369,10 @@ describe("via-in-pad route", () => {
       railSourceIds: new Set(),
       distanceMm: 1,
     })
-    viaGeometry = segmentRoutes({ circuit: viaCircuit, scope: viaScope })
+    viaGeometry = extractCopperGeometry({
+      circuit: viaCircuit,
+      copperScope: viaScope,
+    })
   })
 
   test("keeps every planar wire on the routing layer", () => {
@@ -373,16 +381,14 @@ describe("via-in-pad route", () => {
 
   test("keeps contacts at zero-length top wires", () => {
     assert.ok(
-      routeContactFrame({
+      findPadContactWire({
         geometry: viaGeometry,
-        scope: viaScope,
         layer: "top",
         point: [-3, 0],
       }),
     )
     assert.equal(
-      viaGeometry.viaContacts.filter((contact) => contact.layer === "top")
-        .length,
+      viaGeometry.vias.filter((via) => via.layers.includes("top")).length,
       2,
       "via-in-pad contacts survive zero-length top wires",
     )

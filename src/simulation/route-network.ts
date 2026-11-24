@@ -1,13 +1,14 @@
 import { cju } from "@tscircuit/circuit-json-util"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import {
+  type CopperPoint,
+  cloneCircuitJson,
+  findPadContactWire,
   getSourcePortConnectivityMapFromCircuitJson,
-  type RouteWire,
-  type RouteXY,
-  routeContactFrame,
-  routePosition,
+  getWirePoint,
   type SourcePortId,
   sourceNetMembers,
+  type TraceWire,
 } from "../board"
 import {
   type Produced,
@@ -18,6 +19,7 @@ import {
 } from "../kernel"
 import { branchSaves } from "./branch-saves"
 import { namespaceSpice } from "./netlist"
+import type { RoutedDeck, RouteNetworkInput } from "./route-inputs"
 import {
   type RouteContactKey,
   type RouteLadder,
@@ -28,7 +30,6 @@ import { routeOblique } from "./route-oblique"
 import { routedRequest } from "./route-transient"
 import { routeTransitions } from "./route-transitions"
 import { routedControl } from "./routed-control"
-import type { RoutedDeck, RouteNetworkInput } from "./routed-types"
 import { spiceSubcircuitHeader, spiceWords } from "./spice-header"
 
 /** Small series resistance joins aliases without creating an ideal-voltage loop (ohms). */
@@ -72,9 +73,9 @@ export class RouteNetworkSolver extends BaseSolver {
   /** Preserve the original compiler's exact node and SPICE ordering. */
   private *build(): Generator<void, Produced<RoutedDeck>> {
     const { geometry, extracted, bindings, options, materials } = this.input
-    const { scope, models, mappings } = bindings
+    const { scope, models, receiverPaths } = bindings
     const probes = [...bindings.plan.probes]
-    const db = cju([...bindings.circuitJson])
+    const db = cju(cloneCircuitJson(bindings.circuitJson))
     const stackup = db.pcb_stackup.list()[0]
     const maskLayers = stackup.layers.filter(
       (layer) => layer.layer_type === "soldermask",
@@ -84,11 +85,11 @@ export class RouteNetworkSolver extends BaseSolver {
     const known = new Map<RouteContactKey, string>()
     for (const port of ports) {
       for (const layer of port.layers) {
-        const point: RouteXY = [port.x, port.y]
+        const point: CopperPoint = [port.x, port.y]
         if (
-          !routeContactFrame({
+          !findPadContactWire({
             geometry,
-            scope,
+            pcbPortId: port.pcb_port_id,
             layer,
             point,
           })
@@ -112,8 +113,8 @@ export class RouteNetworkSolver extends BaseSolver {
     const endpoint = createRouteEndpoint({ scope, known })
     for (const wire of geometry.wires) {
       for (const join of wire.joins ?? []) {
-        const from = endpoint({ wire, point: join.from })
-        const to = endpoint({ wire, point: join.to })
+        const from = endpoint({ wire, point: join.fromPoint })
+        const to = endpoint({ wire, point: join.toPoint })
         if (from !== to)
           aliases.push(
             `RJOIN${aliases.length} ${from} ${to} ${JOIN_RESISTANCE}`,
@@ -123,7 +124,7 @@ export class RouteNetworkSolver extends BaseSolver {
     const steps = routeLadderSteps({
       extracted,
       endpoint,
-      riseSeconds: options.riseSeconds,
+      riseSeconds: options.fastestEdgeSeconds,
       refinement: options.refinement,
       cellsPerRise: options.cellsPerRise,
     })
@@ -245,14 +246,14 @@ export class RouteNetworkSolver extends BaseSolver {
       connectivity,
       memberId: bindings.groundSourcePortId,
     })
-    const powerReferences = geometry.slices.flatMap((slice) => {
+    const powerReferences = geometry.sections.flatMap((slice) => {
       return slice.references
-        .filter((plane) => !ground.has(plane.net))
+        .filter((plane) => !ground.has(plane.sourceNetId))
         .map((plane) => ({
           plane,
-          traces: slice.wires.map((wire) => wire.trace),
-          start: slice.start,
-          end: slice.end,
+          traces: slice.wires.map((wire) => wire.pcbTraceId),
+          start: slice.startMm,
+          end: slice.endMm,
         }))
     })
     const mapped = new Set(
@@ -260,11 +261,11 @@ export class RouteNetworkSolver extends BaseSolver {
     )
     const external = ports.filter((port) => {
       if (mapped.has(port.source_port_id)) return false
-      const point: RouteXY = [port.x, port.y]
+      const point: CopperPoint = [port.x, port.y]
       return port.layers.some((layer) =>
-        routeContactFrame({
+        findPadContactWire({
           geometry,
-          scope,
+          pcbPortId: port.pcb_port_id,
           layer,
           point,
         }),
@@ -322,18 +323,25 @@ export class RouteNetworkSolver extends BaseSolver {
       ].join(" "),
     ]
     const endpointNodes = Object.fromEntries(
-      mappings.flatMap(({ from, to }) => [
-        [from, routedNode({ nodeMap: bindings.nodeMap, id: from })],
-        [to, routedNode({ nodeMap: bindings.nodeMap, id: to })],
+      receiverPaths.flatMap(({ fromSourcePortId, toSourcePortId }) => [
+        [
+          fromSourcePortId,
+          routedNode({ nodeMap: bindings.nodeMap, id: fromSourcePortId }),
+        ],
+        [
+          toSourcePortId,
+          routedNode({ nodeMap: bindings.nodeMap, id: toSourcePortId }),
+        ],
       ]),
     )
+    const { fastestEdgeSeconds, ...networkOptions } = options
     const evidence = {
       endpoint_nodes: endpointNodes,
       probes,
       label: "JLC standard stackup (assumed)",
       materials,
       mask_thickness_source: maskThicknessSource,
-      options,
+      options: { riseSeconds: fastestEdgeSeconds, ...networkOptions },
       scope,
       warnings,
       cells: ladder.cells,
@@ -346,7 +354,7 @@ export class RouteNetworkSolver extends BaseSolver {
       sections: extracted.slices.length,
       geometry_wires: geometry.wires.length,
       wires: geometry.wires,
-      via_contacts: geometry.viaContacts,
+      vias: geometry.vias,
       power_references: powerReferences,
       copper_overlap_patches: geometry.wires.filter(
         (wire) => wire.joins?.length,
@@ -359,14 +367,29 @@ export class RouteNetworkSolver extends BaseSolver {
         warnings: model.warnings,
         sourceEvidence: model.sourceEvidence,
       })),
-      routes: mappings.map((mapping) => {
+      routes: receiverPaths.map((receiverPath) => {
         const wires = geometry.wires.filter(
-          (wire) => wire.source === mapping.sourceTraceId,
+          (wire) => wire.sourceTraceId === receiverPath.sourceTraceId,
         )
+        const {
+          channelName,
+          fromSourcePortId,
+          toSourcePortId,
+          sourceTraceId,
+          sourceTraceIds,
+        } = receiverPath
+        const route = {
+          port: channelName,
+          from: fromSourcePortId,
+          to: toSourcePortId,
+          sourceTraceId,
+          sourceTraceIds,
+        }
         return {
-          ...mapping,
+          ...route,
           length_mm: wires.reduce(
-            (sum, wire) => sum + wire.end - wire.start,
+            (sum, wire) =>
+              sum + wire.longitudinalMaxMm - wire.longitudinalMinMm,
             0,
           ),
         }
@@ -381,13 +404,13 @@ export class RouteNetworkSolver extends BaseSolver {
         diagnostics: line.diagnostics,
       })),
       slices: extracted.slices.map((slice) => ({
-        start: slice.start,
-        end: slice.end,
-        point: routePosition({
+        start: slice.startMm,
+        end: slice.endMm,
+        point: getWirePoint({
           wire: slice.wires[0],
-          position: (slice.start + slice.end) / 2,
+          positionMm: (slice.startMm + slice.endMm) / 2,
         }),
-        wires: slice.wires.map((wire) => wire.id),
+        wires: slice.wires.map((wire) => wire.wireIndex),
         references: slice.references,
         key: slice.key,
       })),
@@ -444,8 +467,8 @@ function routedNode({
 
 /** Resolves a physical point on a routed wire to its electrical node. */
 export type RouteEndpoint = (input: {
-  wire: Snapshot<RouteWire>
-  point: Snapshot<RouteXY>
+  wire: Snapshot<TraceWire>
+  point: Snapshot<CopperPoint>
 }) => string
 
 /** Rail wires are explicit ideal AC electrodes; all other route junctions share physical coordinates. */
@@ -458,7 +481,7 @@ function createRouteEndpoint({
 }): RouteEndpoint {
   const nodes = new Map(known)
   return ({ wire, point }) => {
-    if (scope.nearbyRailPcbTraceIds.includes(wire.trace)) return "0"
+    if (scope.nearbyRailPcbTraceIds.includes(wire.pcbTraceId)) return "0"
     const id = routeContactKey({ layer: wire.layer, point })
     const existing = nodes.get(id)
     if (existing) return existing

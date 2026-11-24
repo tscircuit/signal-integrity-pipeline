@@ -1,4 +1,9 @@
-import type { CopperScope, RouteWire, RouteXY, SectionGeometry } from "../board"
+import type {
+  CopperPoint,
+  CopperScope,
+  ExtractedCopper,
+  TraceWire,
+} from "../board"
 import {
   closestRoutePoints,
   type ExtractedRoutes,
@@ -41,12 +46,12 @@ function nearestRouteNode({
   point,
   wireNodes,
 }: {
-  wire: Snapshot<RouteWire>
-  point: Snapshot<RouteXY>
+  wire: Snapshot<TraceWire>
+  point: Snapshot<CopperPoint>
   wireNodes: RouteLadder["wireNodes"]
 }): NearestRouteNode {
-  const position = point[0] * wire.u[0] + point[1] * wire.u[1]
-  const nodes = [...wireNodes.get(wire.id)!]
+  const position = point[0] * wire.direction[0] + point[1] * wire.direction[1]
+  const nodes = [...wireNodes.get(wire.wireIndex)!]
   const node = nodes.sort(
     (a, b) => Math.abs(a.position - position) - Math.abs(b.position - position),
   )[0]
@@ -55,7 +60,7 @@ function nearestRouteNode({
 
 /** Report one pair of wires considered by the oblique approximation. */
 interface ObliqueEncounter {
-  wires: [RouteWire["id"], RouteWire["id"]]
+  wires: [TraceWire["wireIndex"], TraceWire["wireIndex"]]
   policy: string
   distanceMm: number
   references?: ExtractedRoutes["slices"][number]["references"]
@@ -82,7 +87,7 @@ export function routeOblique({
   materials,
   panels = DEFAULT_OBLIQUE_PANELS,
 }: {
-  geometry: Snapshot<SectionGeometry>
+  geometry: Snapshot<ExtractedCopper>
   extracted: ExtractedRoutes
   ladder: RouteLadder
   scope: Snapshot<CopperScope>
@@ -93,36 +98,45 @@ export function routeOblique({
   const records: ObliqueEncounter[] = []
   const cache = new Map<CrossSectionKey, number>()
   let solveMilliseconds = 0
-  const active = geometry.wires.filter((wire) => ladder.wireNodes.has(wire.id))
+  const active = geometry.wires.filter((wire) =>
+    ladder.wireNodes.has(wire.wireIndex),
+  )
   for (let i = 0; i < active.length; i++) {
     for (let j = i + 1; j < active.length; j++) {
       const a = active[i]
       const b = active[j]
-      if (a.source === b.source) continue
+      if (a.sourceTraceId === b.sourceTraceId) continue
       const selected = scope.channelPcbTraceIds
-      if (!selected.includes(a.trace) && !selected.includes(b.trace)) continue
-      const sine = Math.abs(a.u[0] * b.u[1] - a.u[1] * b.u[0])
+      if (!selected.includes(a.pcbTraceId) && !selected.includes(b.pcbTraceId))
+        continue
+      const sine = Math.abs(
+        a.direction[0] * b.direction[1] - a.direction[1] * b.direction[0],
+      )
       if (sine < MIN_ANGLE_SINE) continue
       const near = closestRoutePoints({ first: a, second: b })
-      if (near.distance - (a.width + b.width) / 2 > scope.nearbyGapMm) continue
-      const layers = geometry.stack.copperLayers
+      if (near.distance - (a.widthMm + b.widthMm) / 2 > scope.nearbyGapMm)
+        continue
+      const layers = geometry.stackup.copperLayers
       const la = layers.findIndex((layer) => layer.name === a.layer)
       const lb = layers.findIndex((layer) => layer.name === b.layer)
       if (Math.abs(la - lb) > MAX_OBLIQUE_LAYER_DISTANCE) continue
-      const position = near.first[0] * a.u[0] + near.first[1] * a.u[1]
+      const position =
+        near.first[0] * a.direction[0] + near.first[1] * a.direction[1]
       const slice = extracted.slices.find((slice) => {
         const inSlice =
-          position >= slice.start - CONTACT_TOLERANCE &&
-          position <= slice.end + CONTACT_TOLERANCE
-        return inSlice && slice.wires.some((wire) => wire.id === a.id)
+          position >= slice.startMm - CONTACT_TOLERANCE &&
+          position <= slice.endMm + CONTACT_TOLERANCE
+        return (
+          inSlice && slice.wires.some((wire) => wire.wireIndex === a.wireIndex)
+        )
       })
       if (!slice) continue
       if (
         a.layer === b.layer &&
-        near.distance < (a.width + b.width) / 2 + CONTACT_TOLERANCE
+        near.distance < (a.widthMm + b.widthMm) / 2 + CONTACT_TOLERANCE
       ) {
         records.push({
-          wires: [a.id, b.id],
+          wires: [a.wireIndex, b.wireIndex],
           policy:
             "touching endpoint/bend copper: no parallel-strip substitution",
           distanceMm: near.distance,
@@ -150,7 +164,7 @@ export function routeOblique({
       })
       if (shielded) {
         records.push({
-          wires: [a.id, b.id],
+          wires: [a.wireIndex, b.wireIndex],
           policy:
             "intervening local reference shields oblique surrogate; finite plane-edge/aperture fringing omitted",
           references: slice.references,
@@ -187,11 +201,13 @@ export function routeOblique({
       }
       const layerHeight = (layers[la].zMaxMm + layers[la].zMinMm) / 2
       const referenceGap = Math.min(
-        ...slice.references.map((ref) => Math.abs(ref.z - layerHeight)),
+        ...slice.references.map((ref) =>
+          Math.abs(ref.surfaceZMm - layerHeight),
+        ),
       )
       const lengthMm = Math.min(
-        a.end - a.start,
-        b.end - b.start,
+        a.longitudinalMaxMm - a.longitudinalMinMm,
+        b.longitudinalMaxMm - b.longitudinalMinMm,
         (2 * referenceGap) / sine,
       )
       const first = nearestRouteNode({
@@ -214,7 +230,7 @@ export function routeOblique({
         )
       }
       records.push({
-        wires: [a.id, b.id],
+        wires: [a.wireIndex, b.wireIndex],
         policy: "local parallel electrostatic surrogate; magnetic term omitted",
         angleSine: sine,
         distanceMm: near.distance,

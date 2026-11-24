@@ -1,4 +1,4 @@
-import type { RouteWire, RouteXY } from "../board"
+import type { CopperPoint, TraceWire } from "../board"
 import {
   causalLossPoles,
   causalLossResponse,
@@ -106,8 +106,8 @@ function maxCellDelay({
 
 /** A wire and the board coordinates of a point on its route arc. */
 type ArcPoint = {
-  wire: Snapshot<RouteWire>
-  position: Snapshot<RouteXY>
+  wire: Snapshot<TraceWire>
+  position: Snapshot<CopperPoint>
 }
 
 /** Locate a physical point along the original (simplified) polyline, including its bends. */
@@ -117,21 +117,23 @@ function arcPoint({
   arc,
 }: {
   distance: number
-  run: Snapshot<RouteWire>[]
+  run: Snapshot<TraceWire>[]
   arc: ReadonlyMap<number, ArcWire>
 }): ArcPoint {
   const wire =
     run.find((wire) => {
-      const { offset, length } = arc.get(wire.id)!
+      const { offset, length } = arc.get(wire.wireIndex)!
       return distance <= offset + length + CELL_POSITION_TOLERANCE
     }) ?? run.at(-1)!
-  const entry = arc.get(wire.id)!
+  const entry = arc.get(wire.wireIndex)!
   const fraction = Math.max(
     0,
     Math.min(1, (distance - entry.offset) / entry.length),
   )
-  const x = wire.a[0] + fraction * (wire.b[0] - wire.a[0])
-  const y = wire.a[1] + fraction * (wire.b[1] - wire.a[1])
+  const x =
+    wire.startPoint[0] + fraction * (wire.endPoint[0] - wire.startPoint[0])
+  const y =
+    wire.startPoint[1] + fraction * (wire.endPoint[1] - wire.startPoint[1])
   return { wire, position: [x, y] }
 }
 
@@ -141,12 +143,12 @@ function wirePosition({
   entry,
   distance,
 }: {
-  wire: Snapshot<RouteWire>
+  wire: Snapshot<TraceWire>
   entry: ArcWire
   distance: number
 }): number {
-  if (entry.sign > 0) return wire.start + distance - entry.offset
-  return wire.end - distance + entry.offset
+  if (entry.sign > 0) return wire.longitudinalMinMm + distance - entry.offset
+  return wire.longitudinalMaxMm - distance + entry.offset
 }
 
 /** A copper layer and its rounded board coordinates. */
@@ -160,8 +162,8 @@ export function routeContactKey({
   layer,
   point,
 }: {
-  layer: RouteWire["layer"]
-  point: Snapshot<RouteXY>
+  layer: TraceWire["layer"]
+  point: Snapshot<CopperPoint>
 }): RouteContactKey {
   const coordinates = point
     .map((value) => value.toFixed(CONTACT_PRECISION))
@@ -199,9 +201,11 @@ export function* routeLadderSteps({
   const lines: string[] = []
   const wireNodes: RouteLadder["wireNodes"] = new Map()
   const wireEntries = extracted.slices.flatMap((slice) =>
-    slice.wires.map((wire) => [wire.id, wire] as const),
+    slice.wires.map((wire) => [wire.wireIndex, wire] as const),
   )
-  const wires = [...new Map(wireEntries).values()].sort((a, b) => a.id - b.id)
+  const wires = [...new Map(wireEntries).values()].sort(
+    (a, b) => a.wireIndex - b.wireIndex,
+  )
   const maximumDelaySecondsPerMetre = Math.max(
     ...extracted.slices.map(delaySecondsPerMetre),
   )
@@ -215,7 +219,7 @@ export function* routeLadderSteps({
   const arc = new Map<number, ArcWire>()
   const contacts = new Map<RouteContactKey, number>()
   for (const wire of wires) {
-    for (const point of [wire.a, wire.b]) {
+    for (const point of [wire.startPoint, wire.endPoint]) {
       const key = routeContactKey({ layer: wire.layer, point })
       contacts.set(key, (contacts.get(key) ?? 0) + 1)
     }
@@ -224,8 +228,8 @@ export function* routeLadderSteps({
   while (cursor < wires.length) {
     const seed = wires[cursor++]
     if (
-      endpoint({ wire: seed, point: seed.a }) ===
-      endpoint({ wire: seed, point: seed.b })
+      endpoint({ wire: seed, point: seed.startPoint }) ===
+      endpoint({ wire: seed, point: seed.endPoint })
     )
       continue
     const run = [seed]
@@ -233,17 +237,19 @@ export function* routeLadderSteps({
       const wire = wires[cursor]
       const previous = run.at(-1)!
       const junction =
-        contacts.get(routeContactKey({ layer: wire.layer, point: wire.a })) ?? 0
+        contacts.get(
+          routeContactKey({ layer: wire.layer, point: wire.startPoint }),
+        ) ?? 0
       if (
-        wire.aPort ||
+        wire.startTouchesPort ||
         junction > THROUGH_CONTACT_COUNT ||
-        wire.trace !== seed.trace
+        wire.pcbTraceId !== seed.pcbTraceId
       )
         break
-      if (wire.layer !== seed.layer || wire.width !== seed.width) break
+      if (wire.layer !== seed.layer || wire.widthMm !== seed.widthMm) break
       const separation = hypotenuse(
-        wire.a[0] - previous.b[0],
-        wire.a[1] - previous.b[1],
+        wire.startPoint[0] - previous.endPoint[0],
+        wire.startPoint[1] - previous.endPoint[1],
       )
       if (separation > WIRE_JOIN_TOLERANCE) break
       run.push(wire)
@@ -253,18 +259,18 @@ export function* routeLadderSteps({
     for (const wire of run) {
       let sign = -1
       if (
-        (wire.b[0] - wire.a[0]) * wire.u[0] +
-          (wire.b[1] - wire.a[1]) * wire.u[1] >
+        (wire.endPoint[0] - wire.startPoint[0]) * wire.direction[0] +
+          (wire.endPoint[1] - wire.startPoint[1]) * wire.direction[1] >
         0
       )
         sign = 1
-      arc.set(wire.id, {
+      arc.set(wire.wireIndex, {
         offset: length,
-        length: wire.end - wire.start,
+        length: wire.longitudinalMaxMm - wire.longitudinalMinMm,
         cells: [],
         sign,
       })
-      length += wire.end - wire.start
+      length += wire.longitudinalMaxMm - wire.longitudinalMinMm
     }
     // Ladder dispersion accumulates along a run: phase error ~ delay x cell delay^2. Runs longer than two rise times
     // shrink their cells by sqrt(two rise times / run delay), which keeps the edge ripple independent of length.
@@ -288,7 +294,7 @@ export function* routeLadderSteps({
       })
     }
     for (const wire of run) {
-      const entry = arc.get(wire.id)!
+      const entry = arc.get(wire.wireIndex)!
       entry.cells = indices
       const records = indices.flatMap((index) => {
         const cell = cells[index]
@@ -305,11 +311,11 @@ export function* routeLadderSteps({
         const middle = entry.offset + entry.length / 2
         const cell = cells[indices.find((index) => cells[index].end >= middle)!]
         records.push(
-          { position: wire.start, node: cell.before },
-          { position: wire.end, node: cell.after },
+          { position: wire.longitudinalMinMm, node: cell.before },
+          { position: wire.longitudinalMaxMm, node: cell.after },
         )
       }
-      wireNodes.set(wire.id, records)
+      wireNodes.set(wire.wireIndex, records)
     }
     yield {
       lines,
@@ -336,20 +342,20 @@ export function* routeLadderSteps({
   const strip = cells.map(() => 0)
   for (const slice of extracted.slices) {
     const grounded = slice.wires.flatMap((wire, i) => {
-      if (arc.has(wire.id)) return []
+      if (arc.has(wire.wireIndex)) return []
       return [i]
     })
     const series = referenceSeries({ line: slice.line, grounded })
-    const cuts = [slice.start, slice.end]
+    const cuts = [slice.startMm, slice.endMm]
     for (const wire of slice.wires) {
-      const entry = arc.get(wire.id)
+      const entry = arc.get(wire.wireIndex)
       if (!entry) continue
       for (const index of entry.cells) {
         for (const distance of [cells[index].start, cells[index].end]) {
           const position = wirePosition({ wire, entry, distance })
           const interior =
-            position > slice.start + CUT_EDGE_TOLERANCE &&
-            position < slice.end - CUT_EDGE_TOLERANCE
+            position > slice.startMm + CUT_EDGE_TOLERANCE &&
+            position < slice.endMm - CUT_EDGE_TOLERANCE
           if (interior) cuts.push(position)
         }
       }
@@ -360,10 +366,10 @@ export function* routeLadderSteps({
       if (metres < MIN_INTEGRATION_LENGTH) continue
       const middle = (cuts[part] + cuts[part - 1]) / 2
       const entries = slice.wires.map((wire) => {
-        const entry = arc.get(wire.id)
+        const entry = arc.get(wire.wireIndex)
         if (!entry) return undefined
-        let local = wire.end - middle
-        if (entry.sign > 0) local = middle - wire.start
+        let local = wire.longitudinalMaxMm - middle
+        if (entry.sign > 0) local = middle - wire.longitudinalMinMm
         const distance = entry.offset + local
         const index = entry.cells.find((index) => {
           const { start, end } = cells[index]

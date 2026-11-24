@@ -2,7 +2,10 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import React from "react"
 import { createNativeSolver } from "../../src/adapters"
-import { RouteSectionsSolver } from "../../src/board"
+import {
+  CopperGeometryExtractionSolver,
+  cloneCircuitJson,
+} from "../../src/board"
 import { RouteFieldsSolver } from "../../src/extraction"
 import {
   type TransientChannelSimulationPlanInput,
@@ -10,8 +13,8 @@ import {
 } from "../../src/pipeline"
 import { RouteBindingsSolver, RouteNetworkSolver } from "../../src/simulation"
 import { routedRequest } from "../../src/simulation/route-transient"
-import { channelPlanInput } from "../fixtures/routed-fixture"
 import { quietDriverIbis } from "../fixtures/routed-visual-fixture"
+import { renderTwoTracePlanInput } from "../fixtures/two-trace-plan-input"
 import Single from "../fixtures/unit-single-ended"
 import { vendorAvailable } from "../fixtures/vendor-models"
 import { renderCoreSignals } from "../support/core-render"
@@ -25,13 +28,17 @@ function compileNetwork(
   const planner = new TransientChannelSimulationPlanSolver(input)
   planner.solve()
   const plan = planner.getOutput().value[0]
-  const sections = new RouteSectionsSolver(plan.sections)
+  const sections = new CopperGeometryExtractionSolver(plan.sections)
   sections.solve()
-  const { geometry, circuitJson, scope, maskThicknessMm } =
-    sections.getOutput().value
-  const fields = new RouteFieldsSolver({
+  const {
     geometry,
     circuitJson,
+    copperScope: scope,
+    maskThicknessMm,
+  } = sections.getOutput().value
+  const fields = new RouteFieldsSolver({
+    geometry,
+    circuitJson: cloneCircuitJson(circuitJson),
     scope,
     maskThicknessMm,
     materials: plan.bindings.options.materials,
@@ -63,7 +70,7 @@ function compileNetwork(
 /** Cache the network from the rendered fixture and the local vendor model. */
 async function routedNetwork(): Promise<RouteNetworkSolver> {
   if (testNetwork) return testNetwork
-  const input = await channelPlanInput()
+  const input = await renderTwoTracePlanInput()
   testNetwork = compileNetwork(input)
   return testNetwork
 }
@@ -160,7 +167,7 @@ async function assertConstantHighCapture({
   )
   const ibisSources = { "models/sn74lvc1g04.ibs": quietDriverIbis }
   const { value: compiled } = compileNetwork({
-    circuitJson,
+    circuitJson: cloneCircuitJson(circuitJson),
     ibisSources,
   }).getOutput()
   const driver = circuitJson.find(
