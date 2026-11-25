@@ -113,8 +113,7 @@ export function WorkbenchDialogs({
       <Modal title="DDR3 board unavailable" close={close} icon="warning">
         <div className="wb-local-board-message">
           <p>{dialog.message}</p>
-          <p>Start Cosmos with the path to your DDR3 Circuit JSON.</p>
-          <code>SI_DDR3_BOARD=/path/to/board.circuit.json bun run dev</code>
+          <p>Check that the sample board exists in your checkout.</p>
         </div>
       </Modal>
     )

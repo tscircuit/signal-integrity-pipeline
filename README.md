@@ -65,7 +65,7 @@ emits the aggressor fields.
 ngspice must already be installed; `createNativeSolver({ tools: { ngspice } })`
 accepts an executable path. No package install or solver download happens during
 a solve. Native processes are serialized and run with `OMP_NUM_THREADS=1`.
-Vendor IBIS files and board JSON remain local and ignored by git.
+Vendor IBIS files and user-supplied board JSON stay in local, gitignored paths.
 
 ### Local fixture site
 
@@ -82,28 +82,29 @@ runs the full 8 ns transient in about 25 minutes of local ngspice (1,503 s measu
 after about 4 minutes of extraction. Times grow on a busy machine.
 
 Set `IBIS_MODEL_DIR` to the examples' local vendor directory (default `models`).
-Copy the real physical DDR3 board JSON to `models/ddr3-board.json` (gitignored),
-or set `SI_DDR3_BOARD` to its absolute path for the addr/cmd page. The supplied
-board is `../ddr3-route/source-pkg/am3352-ddr-track-a-local-dfm-wip-20261007/dist/index/circuit.json`.
-This is a local setup step:
-never add board JSON or vendor IBIS files to git.
-Missing files show `missing local asset: <path>`. Each fixture loads models from
-local paths. Vendor assets and board JSON are never bundled or committed.
-The site requires its local backend. With built sibling RFC dependencies and the supplied source package available:
+The DDR3 fixtures and offline examples use `examples/am3352-ddr3/board.circuit.json`
+by default. Set `SI_DDR3_BOARD` to an absolute path to use a different export.
+The sample is the only full-board Circuit JSON approved for this repository.
+Keep vendor IBIS files and other board exports in local, gitignored paths.
 
-```sh
-mkdir -p models
-cp ../ddr3-route/source-pkg/am3352-ddr-track-a-local-dfm-wip-20261007/dist/index/circuit.json models/ddr3-board.json
-# Place sprm552c.ibs and W631GG6MB-12.ibs in models/ locally.
-IBIS_MODEL_DIR=models bun run dev
-```
+The sample came from rendering the Nov 9 source package's `index.tsx` with
+`RootCircuit` from `@tscircuit/core@0.0.2468` and `@tscircuit/props@0.0.746`,
+using `circuit-json@0.0.561`. Routing was disabled during the render to use the
+saved copper. Bun resolved CAD asset imports to package-relative URLs.
+The [AM3352 board source](https://github.com/0hmX/am3352-ddr-track-a-local-dfm-wip-20261007)
+contains the TSX and the saved routes.
+
+To run the address and command simulation, place `sprm552c.ibs` and
+`W631GG6MB-12.ibs` in `models/` or in the directory selected by `IBIS_MODEL_DIR`.
 
 ```mermaid
 flowchart LR
   fixture["Cosmos TSX / uploaded Circuit JSON"] --> debugger["GenericSolverDebugger · routed stages 1–6"]
-  assets["Fixed local model paths / SI_DDR3_BOARD"] --> debugger
+  assets["Local vendor IBIS files"] --> debugger
   start["SI Workbench · Home / Default / DDR"] --> workbench
-  boardFile["SI_DDR3_BOARD · local Circuit JSON"] -->|"GET /api/local-boards/ddr3"| start
+  boardFile["AM3352 DDR3 sample board"] -->|"GET /api/local-boards/ddr3"| start
+  boardFile -->|"GET /api/local-assets/ddr3-board.json"| debugger
+  assets --> workbench
   workbench["SI Workbench · routed stages 1–6"] --> transient
   debugger --> transient["RouteTransientSolver · stepAsync"]
   transient <-->|"POST /api/run-solver · HTTP RunSolver"| queue["Vite middleware · single slot"]
@@ -124,18 +125,12 @@ the Cosmos sidebar.
 - **Home** has a Start Page with **Open Circuit JSON…**, recent files, both
   samples, and the local ngspice status.
 - **Default** opens the built-in parallel bus sample.
-- **DDR** opens a local DDR3 Circuit JSON file with declared transient channel
-  simulations and embedded IBIS models for local runs.
+- **DDR** opens the included AM3352 DDR3 board with address and command
+  simulations declared by the fixture.
 
-Set the board path when starting Cosmos to use the DDR page or Home's DDR3
-sample card.
-
-```sh
-SI_DDR3_BOARD=/path/to/board.circuit.json bun run dev
-```
-
-The Vite dev server streams the configured file over loopback. The file and
-its IBIS models stay local. With **ngspice on PATH**, press **F5** to run a local
+The Vite server streams the sample board over loopback. The Workbench loads
+available vendor IBIS files from the local model directory. With those files
+and **ngspice on PATH**, press **F5** to run a local
 transient and inspect waveforms and eye diagrams in the Oscilloscope. The
 Workbench also supports 2D and 3D copper inspection and edits to stackup,
 embedded IBIS models, and stimulus.

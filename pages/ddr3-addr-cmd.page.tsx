@@ -3,7 +3,7 @@ import { withDdr3Signals } from "../examples/routed/ddr3-signals"
 import { BoardPage, localAsset } from "../site/debugger"
 import type { CircuitJson } from "../src/board"
 
-/** Keep the physical board local; preserve its copper while appending TSX addr/cmd declarations. */
+/** Preserve the sample board copper while appending TSX address and command declarations. */
 async function loadBoard(): Promise<CircuitJson> {
   return withDdr3Signals({
     physicalRecords: JSON.parse(await localAsset("ddr3-board.json")),

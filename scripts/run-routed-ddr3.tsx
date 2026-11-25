@@ -3,7 +3,7 @@ import { join, resolve } from "node:path"
 import { Resvg } from "@resvg/resvg-js"
 import { Circuit } from "@tscircuit/core"
 import type { GraphicsObject } from "graphics-debug"
-import React from "react"
+import { ddr3BoardFile } from "../examples/am3352-ddr3/board-file"
 import Board from "../examples/level4-ddr3-write/level4-ddr3-write"
 import { withDdr3Signals } from "../examples/routed/ddr3-signals"
 import { createNativeSolver } from "../src/adapters"
@@ -75,11 +75,9 @@ async function render({
 /** Render the lower-byte example or attach address/command declarations to the supplied board. */
 async function loadBoard(addressCommand: boolean): Promise<CircuitJson> {
   if (addressCommand) {
-    const boardFile =
-      process.env.SI_DDR3_BOARD ?? join(directory, "ddr3-board.json")
-    const physical = JSON.parse(
-      await readFile(boardFile, "utf8"),
-    ) as CircuitJson
+    const physical: CircuitJson = JSON.parse(
+      await readFile(ddr3BoardFile, "utf8"),
+    )
     return withDdr3Signals({
       physicalRecords: physical,
       options: { channelSimulation: "DDR3_ADDR_CMD" },

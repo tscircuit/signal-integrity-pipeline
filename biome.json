@@ -15,7 +15,8 @@
       "!**/models",
       "!**/.cache",
       "!**/runs",
-      "!src/modules.generated.ts"
+      "!src/modules.generated.ts",
+      "!examples/am3352-ddr3/board.circuit.json"
     ]
   },
   "javascript": {

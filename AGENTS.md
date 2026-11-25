@@ -118,8 +118,8 @@ Clarity beats brevity. More lines are fine when they are easier to read.
 ## Private data (never commit)
 
 - Vendor IBIS files (`*.ibs`) stay local in the gitignored `models/`. Only `examples/vendor-models.lock.json` (names and hashes) is committed.
-- Real board Circuit JSON, board-derived decks, captures and extracted geometry stay local (`models/ddr3-board.json`, `.cache/`).
-- `examples/level4-ddr3-write/` and `examples/ddr3-parts.tsx` are the only approved board-derived files.
+- Board exports, board-derived decks, captures and extracted geometry stay local.
+- The approved board-derived files are `examples/am3352-ddr3/board.circuit.json`, `examples/level4-ddr3-write/` and `examples/ddr3-parts.tsx`.
 - Check `git status` and the diff before every commit.
 
 ## Lint

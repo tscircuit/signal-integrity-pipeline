@@ -111,7 +111,12 @@ export async function loadInput({
     name = source.name
   } else if (source === "ddr") {
     onStatus("Loading DDR3 board…")
-    circuit = parseCircuit(await readDdrBoard({ signal, onStatus }))
+    const physicalRecords = parseCircuit(
+      await readDdrBoard({ signal, onStatus }),
+    )
+    onStatus("Preparing DDR3 address and command signals…")
+    const { prepareDdrSample } = await import("./ddr-sample")
+    circuit = await prepareDdrSample({ physicalRecords, signal })
     name = sampleNames.ddr
   } else {
     const sample = await import("./sample")

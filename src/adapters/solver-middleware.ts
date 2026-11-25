@@ -365,7 +365,7 @@ async function routeHttpRequest({
       response,
       status: 404,
       message:
-        "SI_DDR3_BOARD is unset or its Circuit JSON file is unavailable.",
+        "The DDR3 sample Circuit JSON is unavailable. Check SI_DDR3_BOARD if set.",
     })
   }
   if (path.startsWith("/api/local-assets/") && request.method === "GET")

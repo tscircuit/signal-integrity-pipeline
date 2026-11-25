@@ -334,6 +334,6 @@ stateDiagram-v2
 
 Version probes share the queue, and the existing native adapter enforces
 OMP_NUM_THREADS=1. The request cannot override tools or cwd. Local asset reads
-are limited to the four known example IBIS filenames under IBIS_MODEL_DIR and
-the board file selected by SI_DDR3_BOARD; URLs cannot select filesystem paths.
-These assets are loaded at runtime and never part of a published static bundle.
+are limited to the four known example IBIS filenames under `IBIS_MODEL_DIR`
+and the AM3352 DDR3 sample board. `SI_DDR3_BOARD` selects an override at startup.
+The backend resolves asset paths and reads the files at runtime.
