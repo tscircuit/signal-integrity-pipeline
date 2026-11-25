@@ -2,25 +2,31 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { TransmissionLineRlgcSolver } from "../../../src/rlgc"
 import { renderRoutedCopper } from "../../fixtures/routed-copper"
-import {
-  solveBoardCopperGeometry,
-  withStackupLayers,
-} from "../../fixtures/transmission-line-rlgc"
+import { solveBoardCopperGeometry } from "../../fixtures/transmission-line-rlgc"
 
 test("conductivity changes conductor and plane resistance and cross-section identity", async () => {
-  const board = await renderRoutedCopper()
+  const baselineCopper = solveBoardCopperGeometry(await renderRoutedCopper())
+  const { geometry } = baselineCopper
   const defaultCopper = 5.8e7
+  assert(
+    geometry.stackup.copperLayers.every(
+      ({ conductivitySm }) => conductivitySm === defaultCopper,
+    ),
+  )
   const results = [defaultCopper, defaultCopper / 4].map((conductivitySm) => {
-    const circuitJson = withStackupLayers({
-      circuitJson: board.circuitJson,
-      transform: (layers) =>
-        layers.map((layer) =>
-          layer.layer_type === "copper"
-            ? { ...layer, electrical_conductivity_s_per_m: conductivitySm }
-            : layer,
-        ),
-    })
-    const copper = solveBoardCopperGeometry({ ...board, circuitJson })
+    const copper = {
+      ...baselineCopper,
+      geometry: {
+        ...geometry,
+        stackup: {
+          ...geometry.stackup,
+          copperLayers: geometry.stackup.copperLayers.map((layer) => ({
+            ...layer,
+            conductivitySm,
+          })),
+        },
+      },
+    }
     const solver = new TransmissionLineRlgcSolver({
       copperGeometry: copper,
       artifactPrefix: "test",
