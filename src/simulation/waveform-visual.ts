@@ -18,7 +18,7 @@ import {
   type SourcePortId,
   withRouteDrawing,
 } from "../board"
-import type { IbisSources, TextRange } from "../buffers"
+import type { IbisSources, StringOffsets } from "../buffers"
 import type { Snapshot } from "../kernel"
 import { sha256 } from "../kernel"
 import type { RouteBuffer, RoutedCapture } from "./route-inputs"
@@ -119,7 +119,7 @@ function ibisLinePrefix({
   text: string
   prefix: string
   from: number
-}): TextRange | undefined {
+}): StringOffsets | undefined {
   for (let start = from; start < text.length; start++) {
     if (start > 0 && !LINE_ENDINGS.includes(text[start - 1])) continue
     const keyword = skipWhitespace({ text, start })
