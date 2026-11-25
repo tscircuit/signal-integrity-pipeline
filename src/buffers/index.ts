@@ -23,7 +23,6 @@ export {
   referenceVoltages,
 } from "./inspect"
 export { failInvalidIbisSource, loadModelSource, relativeFile } from "./source"
-export type { StringOffsets } from "./source-tokens"
 export type {
   AssemblyEntry,
   BufferModeling,
