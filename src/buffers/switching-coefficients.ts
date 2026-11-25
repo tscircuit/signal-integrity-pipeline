@@ -1,8 +1,7 @@
 import {
-  type IbisBuffer,
-  type IbisCorner,
+  bitWeights,
+  type ConvertedBuffer,
   IbisError,
-  interpolate,
   type LogicalSchedule,
   switchingWeights,
 } from "@tscircuit/ibis-to-spice"
@@ -18,9 +17,6 @@ import {
 const HOLD_STEP_SECONDS = 1e-15
 const HOLD_STEP_GAP_FRACTION = 1e-6
 
-/** Time in seconds and a single measured switching coefficient. */
-type CoefficientSample = [seconds: number, coefficient: number]
-
 /** Measured switching samples and settled tails proven for one schedule. */
 interface ScheduledSwitchingCoefficients {
   samples: SwitchingCoefficientSamples
@@ -29,24 +25,19 @@ interface ScheduledSwitchingCoefficients {
 
 /** Stitch full measured coefficient edges, discarding only proven settled tails when necessary. */
 export function scheduleSwitchingCoefficients({
-  buffer,
-  corner,
+  convertedBuffer,
   schedule,
   physicalPin,
 }: {
-  buffer: IbisBuffer
-  corner: IbisCorner
+  convertedBuffer: ConvertedBuffer
   schedule: LogicalSchedule
   physicalPin: string
 }): ScheduledSwitchingCoefficients {
+  const { buffer, corner } = convertedBuffer
   const pullup = Number(Boolean(schedule.initialState))
   const pulldown = 1 - pullup
   const samples: SwitchingCoefficientSamples = [[0, pullup, pulldown]]
   const tails: WaveformTailTruncation[] = []
-  if (!schedule.transitions.length) {
-    samples.push([schedule.duration, pullup, pulldown])
-    return { samples, tails }
-  }
   const edgeSamples = new Map<WaveformEdge, SwitchingCoefficientSamples>()
   for (const [i, transition] of schedule.transitions.entries()) {
     let edge: WaveformEdge = "falling"
@@ -116,39 +107,28 @@ export function scheduleSwitchingCoefficients({
         )
       samples.push([holdTimeSeconds, last[1], last[2]])
     }
-    for (const [
-      seconds,
-      pullupCoefficient,
-      pulldownCoefficient,
-    ] of coefficientSamples) {
-      const absoluteSeconds = transition.time + seconds
-      if (absoluteSeconds > schedule.duration) break
-      if (absoluteSeconds === samples[samples.length - 1][0]) samples.pop()
-      samples.push([absoluteSeconds, pullupCoefficient, pulldownCoefficient])
-    }
-    if (
-      samples[samples.length - 1][0] < schedule.duration &&
-      transition.time + coefficientSamples[coefficientSamples.length - 1][0] >
-        schedule.duration
-    ) {
-      const timeSeconds = schedule.duration - transition.time
-      const pullup = coefficientSamples.map(
-        ([seconds, pullupCoefficient]): CoefficientSample => [
-          seconds,
-          pullupCoefficient,
-        ],
-      )
-      const pulldown = coefficientSamples.map(
-        ([seconds, , pulldownCoefficient]): CoefficientSample => [
-          seconds,
-          pulldownCoefficient,
-        ],
-      )
-      samples.push([
-        schedule.duration,
-        interpolate(pullup, timeSeconds),
-        interpolate(pulldown, timeSeconds),
-      ])
+    const endSeconds = Math.min(
+      schedule.duration,
+      transition.time + coefficientSamples[coefficientSamples.length - 1][0],
+    )
+    // Give upstream one edge at a time. It cannot share a knot between edges,
+    // and its one measured waveform per direction cannot trim individual instances.
+    const points = bitWeights(
+      {
+        ...convertedBuffer,
+        weights: { rising: coefficientSamples, falling: coefficientSamples },
+      },
+      { ...schedule, transitions: [transition], duration: endSeconds },
+    )
+    // The hold sample above uses the actual preceding coefficient, not upstream's
+    // logical idle value. An exact boundary sample can also be returned twice upstream.
+    let previousEdgeTime = -Infinity
+    for (const point of points) {
+      const seconds = point[0]
+      if (seconds < transition.time || seconds === previousEdgeTime) continue
+      previousEdgeTime = seconds
+      if (seconds === samples[samples.length - 1][0]) samples.pop()
+      samples.push(point)
     }
   }
   const last = samples[samples.length - 1]
