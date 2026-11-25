@@ -268,7 +268,6 @@ export function prepareChannelSimulation(
     signalPins,
     scopedPins,
     traceContacts,
-    sources,
   })
   return withPreparedChannelControls({
     ...selection,
