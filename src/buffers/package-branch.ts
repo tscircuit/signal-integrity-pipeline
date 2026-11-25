@@ -1,17 +1,10 @@
-import {
-  cornerValue,
-  type IbisComponent,
-  type IbisCorner,
-} from "@tscircuit/ibis-to-spice"
 import type { CoupledPackageModel } from "./coupled-package"
 import type { SpiceNode } from "./spice-netlist"
+import type { PackageConversionMetadata } from "./types"
 
-/** R/L/C parasitics at one package pin. */
-interface PinPackageTerms {
-  resistanceOhms: number
-  inductanceHenries: number
-  capacitanceFarads: number
-}
+/** Upstream has already applied the selected corner and per-pin overrides. */
+export type PinPackageTerms =
+  PackageConversionMetadata["packageData"]["mappedPins"][number]
 
 /** Board-to-die series branch endpoints and the die buffer's electrical node. */
 export interface PackageBranch {
@@ -20,42 +13,6 @@ export interface PackageBranch {
   dieSpiceNode: SpiceNode
   elements: string[]
   capacitanceFarads: number
-}
-
-/** Minimum/maximum values follow the pinned converter's corner validation. */
-function readPackageTerm({
-  component,
-  packagePinName,
-  corner,
-  field,
-}: {
-  component: IbisComponent
-  packagePinName: string
-  corner: IbisCorner
-  field: "resistance" | "inductance" | "capacitance"
-}): number {
-  const byPin = component.pins[packagePinName][field]
-  const byCorner = component.package[field]
-  const label = `${packagePinName}: vendor package ${field}`
-  let term = byPin
-  if (term === undefined && byCorner !== undefined)
-    term = cornerValue(byCorner, corner, label)
-  if (term == null || !Number.isFinite(term) || term < 0)
-    throw new Error(`${label} requires a finite nonnegative term`)
-  return term
-}
-
-/** Read scalar parasitics only when this pin lacks matrix entries. */
-function readPinPackageTerms(input: {
-  component: IbisComponent
-  packagePinName: string
-  corner: IbisCorner
-}): PinPackageTerms {
-  return {
-    resistanceOhms: readPackageTerm({ ...input, field: "resistance" }),
-    inductanceHenries: readPackageTerm({ ...input, field: "inductance" }),
-    capacitanceFarads: readPackageTerm({ ...input, field: "capacitance" }),
-  }
 }
 
 /** Add a die voltage source only when its series path has nonzero DC resistance. */
@@ -88,8 +45,7 @@ export function buildPackageBranch({
   packagePinName,
   matrixPinName,
   index,
-  component,
-  corner,
+  terms,
   coupled,
   railVoltageVolts,
 }: {
@@ -97,8 +53,7 @@ export function buildPackageBranch({
   packagePinName: string
   matrixPinName: string
   index: number
-  component: IbisComponent
-  corner: IbisCorner
+  terms: PinPackageTerms | undefined
   coupled?: CoupledPackageModel
   railVoltageVolts?: number
 }): PackageBranch {
@@ -116,7 +71,21 @@ export function buildPackageBranch({
     seriesEndSpiceNode = `PKGD${matrixIndex}`
     resistanceOhms = coupled.R[matrixIndex][matrixIndex]
   } else {
-    const terms = readPinPackageTerms({ component, packagePinName, corner })
+    if (
+      !terms ||
+      terms.resistanceOhms === null ||
+      terms.inductanceHenries === null ||
+      terms.capacitanceFarads === null ||
+      ![
+        terms.resistanceOhms,
+        terms.inductanceHenries,
+        terms.capacitanceFarads,
+      ].every((value) => Number.isFinite(value) && value >= 0)
+    )
+      throw new Error(
+        `${packagePinName}: complete nonnegative vendor package R/L/C required`,
+      )
+    const { inductanceHenries } = terms
     resistanceOhms = terms.resistanceOhms
     capacitanceFarads = terms.capacitanceFarads
     let prefix = `PKG`
@@ -127,10 +96,10 @@ export function buildPackageBranch({
         `R${prefix}${index} ${terminal} ${seriesEndSpiceNode} ${resistanceOhms}`,
       )
     }
-    if (terms.inductanceHenries > 0) {
+    if (inductanceHenries > 0) {
       const nextSpiceNode = `${prefix}L${index}`
       elements.push(
-        `L${prefix}${index} ${seriesEndSpiceNode} ${nextSpiceNode} ${terms.inductanceHenries}`,
+        `L${prefix}${index} ${seriesEndSpiceNode} ${nextSpiceNode} ${inductanceHenries}`,
       )
       seriesEndSpiceNode = nextSpiceNode
     }
