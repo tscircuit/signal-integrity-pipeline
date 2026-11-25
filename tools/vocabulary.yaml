@@ -327,9 +327,9 @@ general:
 
 avoid:
   admit: validate
-  centre: center
   weight: coefficient
   transverse: lateral
+  centre: center
   slice: section
   col: column
   ctx: context
