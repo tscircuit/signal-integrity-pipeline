@@ -87,12 +87,67 @@ test.skipIf(Boolean(vendorModelSkip))(
     assert.equal(result.evidence.sections, 1)
     assert.equal(Buffer.byteLength(result.deck), 22146)
     assert.equal(
-      sha256(result.deck),
+      sha256(withPinnedPackageText(result.deck)),
       "e0aed2dc77587fe5e8864ee3c2a1de449951ca096338a81f4541688688ee32b4",
       "pins vendor compilation and coupling",
     )
   },
 )
+
+/** Express the two-trace package stamps in the original deck oracle's order and spelling. */
+function withPinnedPackageText(deck: string): string {
+  const seriesNames = [
+    "RPKG1",
+    "LPKG1",
+    "VDIE1",
+    "VPKG1",
+    "RPKG2",
+    "LPKG2",
+    "VDIE2",
+    "VPKG2",
+  ]
+  const capacitanceNames = ["CPKG0a", "CPKG0b", "CPKG1a", "CPKG1b"]
+  const packageNames = [...seriesNames, ...capacitanceNames]
+  const lines = deck.split("\n")
+  let packageCount = 0
+  const pinned: string[] = []
+  for (let index = 0; index < lines.length; index++) {
+    if (!lines[index].startsWith("RPKG1 ")) {
+      pinned.push(lines[index])
+      continue
+    }
+    const elements = lines.slice(index, index + packageNames.length)
+    assert.deepEqual(
+      elements.map((element) => element.split(" ", 1)[0]),
+      packageNames,
+    )
+    const [r1, l1, die1, probe1, r2, l2, die2, probe2, c0a, c0b, c1a, c1b] =
+      elements
+    packageCount++
+    pinned.push(
+      c0a,
+      c0b,
+      r1,
+      l1,
+      die1.replace("VDIE1 ", "VPDN1 "),
+      probe1,
+      c1a,
+      c1b,
+      r2,
+      l2,
+      die2.replace("VDIE2 ", "VPDN2 "),
+      probe2,
+    )
+    index += packageNames.length - 1
+  }
+  assert.equal(packageCount, 4)
+  assert.equal(deck.split(".vdie1)").length, packageCount + 1)
+  assert.equal(deck.split(".vdie2)").length, packageCount + 1)
+  return pinned
+    .join("\n")
+    .replaceAll(".vdie1)", ".vpdn1)")
+    .replaceAll(".vdie2)", ".vpdn2)")
+}
 
 /** Synthetic engine protocol only; native evidence lives in route-transient.test.tsx. */
 const synthetic: SolverContext = {
@@ -200,7 +255,7 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
     )
     const deck = solver.stageOutput("RouteNetworkSolver").value[0]
     assert.equal(
-      sha256(deck.deck),
+      sha256(withPinnedPackageText(deck.deck)),
       "3d8b305c6177e528a127df9503413da57804780e89dbc4ff75544dfe0b56c5fb",
       "default two-trace deck pins the single skin multiport realization",
     )
