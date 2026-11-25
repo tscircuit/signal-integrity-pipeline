@@ -1,4 +1,5 @@
 import {
+  convertIbisBuffer,
   convertIbisModelToSpice,
   type IbisDocument,
   ibisTimeSeconds,
@@ -24,10 +25,12 @@ export function convertIbisComponentWithSwitchingSchedule({
   bytes,
   input,
   document,
+  canUseVendorPackage,
 }: {
   bytes: Uint8Array
   input: ModelRunDefinition
   document: IbisDocument
+  canUseVendorPackage: (metadata: ConvertedIbisComponent["metadata"]) => boolean
 }): ConvertedIbisComponent {
   // Validate the ORIGINAL pattern before building the steady electrical skeleton.
   for (const stimulus of Object.values(input.run.stimuli))
@@ -42,12 +45,18 @@ export function convertIbisComponentWithSwitchingSchedule({
       return [port, { ...stimulus, pattern }]
     }),
   )
-  const definition = { ...input.definition, packagePolicy: "omit" } as const
-  const converted: ConvertedIbisComponent = convertIbisModelToSpice(
+  const run = { ...input.run, stimuli }
+  const omitted = convertIbisModelToSpice(
     bytes,
-    definition,
-    { ...input.run, stimuli },
+    { ...input.definition, packagePolicy: "omit" },
+    run,
   )
+  let converted: ConvertedIbisComponent = omitted
+  if (
+    input.definition.packagePolicy === "vendor" &&
+    canUseVendorPackage(omitted.metadata)
+  )
+    converted = convertIbisModelToSpice(bytes, input.definition, run)
   const tails: WaveformTailTruncation[] = []
   let source = converted.source
   const schedules = converted.metadata.pins.map((pin, index) => {
@@ -59,9 +68,16 @@ export function convertIbisComponentWithSwitchingSchedule({
       input.run.duration,
       buffer.polarity,
     )
-    const { samples, tails: pinTails } = scheduleSwitchingCoefficients({
-      buffer,
+    if (!schedule.transitions.length) return schedule
+    const convertedBuffer = convertIbisBuffer(document, pin.model, {
       corner: input.definition.corner,
+      mode: "output",
+      separateReferences: true,
+      externalReference: pin.references.external !== undefined,
+      skipSwitchingWeights: true,
+    })
+    const { samples, tails: pinTails } = scheduleSwitchingCoefficients({
+      convertedBuffer,
       schedule,
       physicalPin: pin.physicalPin,
     })
