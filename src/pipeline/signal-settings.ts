@@ -1,9 +1,8 @@
 import { type CircuitJson, stackupFromCircuitJson } from "../board"
-import type { IbisSources } from "../buffers"
+import { validateIbisPackageBindings } from "./ibis-package-bindings"
 import type { NumericalSettings } from "./modeling"
 import { retainedPassiveComponents } from "./signal-loads"
 import type { PrunedIbisModels } from "./signal-models"
-import { channelSimulationPackageWarnings } from "./signal-package-warnings"
 import type { ScopedSignalPins, SignalPins } from "./signal-pins"
 import { withChannelSimulationSupplies } from "./supplies"
 
@@ -20,17 +19,18 @@ export function prepareSignalSettings({
   signalPins,
   scopedPins,
   traceContacts,
-  sources,
 }: {
   pruned: PrunedIbisModels
   signalPins: Pick<SignalPins, "connectivity" | "rails" | "reference">
   scopedPins: Pick<ScopedSignalPins, "copperScope" | "retained">
   traceContacts: NumericalSettings["traceContacts"]
-  sources: IbisSources
 }): SuppliedSignalSettings {
   const { connectivity, rails, reference } = signalPins
   const { copperScope, retained } = scopedPins
-  const warnings = channelSimulationPackageWarnings({ ...pruned, sources })
+  const warnings = validateIbisPackageBindings({
+    pins: pruned.pins,
+    connectivity,
+  })
   const stack = stackupFromCircuitJson(pruned.circuit)
   if (!stack.relativePermittivity) {
     throw new Error(
