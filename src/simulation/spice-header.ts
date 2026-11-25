@@ -1,4 +1,4 @@
-import type { TextRange } from "../buffers"
+import type { StringOffsets } from "../buffers"
 
 const SUBCIRCUIT_DIRECTIVE = ".subckt"
 
@@ -61,7 +61,7 @@ function subcircuitNameRange({
 }: {
   text: string
   start: number
-}): TextRange | undefined {
+}): StringOffsets | undefined {
   const directiveEnd = start + SUBCIRCUIT_DIRECTIVE.length
   if (text[directiveEnd]?.trim() !== "") return
   for (let i = 0; i < SUBCIRCUIT_DIRECTIVE.length; i++) {
