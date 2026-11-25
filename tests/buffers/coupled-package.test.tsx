@@ -46,8 +46,8 @@ test("TSX coupled package replaces scalar values, preserves ideal die rails and 
   assert.match(converted.source, /KPKG\d+_\d+ LPKG\d+ LPKG\d+ -0\.353553/)
   assert.match(converted.source, /HPKG/)
   assert.match(converted.source, /CPKG0_1a PAD0 PAD1 2\.5e-13/)
-  assert.match(converted.source, /VPDN\d+ DIE\d+ 0 1\.5/)
-  assert.match(converted.source, /VPDN\d+ DIE\d+ 0 0/)
+  assert.match(converted.source, /VDIE\d+ DIE\d+ 0 1\.5/)
+  assert.match(converted.source, /VDIE\d+ DIE\d+ 0 0/)
   assert.doesNotMatch(converted.source, / 99(?:\s|$)| 9e-9(?:\s|$)/)
   assert.deepEqual(converted.metadata.omissions, [])
   assert.deepEqual(converted.metadata.packageData.matrices?.pins, [
@@ -127,8 +127,8 @@ A1
   assert.match(unlisted.source, /LPKGU3 \S+ \S+ 9\.9e-8\n/)
   assert.match(unlisted.source, /CPKGU2a REF0 DIE3 3\.5e-12/)
   assert.match(unlisted.source, /CPKGU3a REF1 DIE3 4\.95e-11/)
-  assert.match(unlisted.source, /VPDN2 DIE2 0 1\.5/)
-  assert.match(unlisted.source, /VPDN3 DIE3 0 0/)
+  assert.match(unlisted.source, /VDIE2 DIE2 0 1\.5/)
+  assert.match(unlisted.source, /VDIE3 DIE3 0 0/)
   const packageElements = unlisted.source
     .split("\n")
     .filter((line) =>

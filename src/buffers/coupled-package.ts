@@ -1,5 +1,9 @@
 import type { IbisComponent } from "@tscircuit/ibis-to-spice"
-import { type SelectedPackageModel, selectPackageModel } from "./package-matrix"
+import {
+  type SelectedPackageModel,
+  selectPackageModel,
+  sumReferenceCapacitance,
+} from "./package-matrix"
 import { parsePackageModel } from "./package-model"
 
 /** A lumped pi section splits shunt capacitance between its two ends. */
@@ -144,10 +148,7 @@ export function coupledPackageElements({
       node = next
     }
     elements.push(`LPKG${i} ${node} ${die[i]} ${matrices.L[i][i]}`)
-    const reference = matrices.C[i].reduce(
-      (sum, capacitance) => sum + capacitance,
-      0,
-    )
+    const reference = sumReferenceCapacitance(matrices.C[i])
     if (reference > 0) {
       const half = reference / PACKAGE_SHUNT_COUNT
       elements.push(

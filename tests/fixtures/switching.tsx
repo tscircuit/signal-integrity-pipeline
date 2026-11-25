@@ -1,9 +1,9 @@
-import { Circuit } from "@tscircuit/core"
 import { cju } from "@tscircuit/circuit-json-util"
-import React from "react"
+import { simulation } from "@tscircuit/core"
 import type { ModelRunDefinition } from "../../src/buffers"
 import { convertPackaged } from "../../src/buffers/package"
 import { lineRanges, splitWords } from "../../src/buffers/text"
+import { renderCoreSignals } from "../support/core-render"
 
 // Original two-fixture CMOS model: the edge finishes at 0.8 ns, but the
 // acquisition includes a flat tail to 4 ns. No vendor data is copied here.
@@ -124,8 +124,7 @@ export function convert({
 
 /** Render the pin mapping through core before creating the switching run. */
 export async function switchingInput(): Promise<ModelRunDefinition> {
-  const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
-  circuit.add(
+  const circuit = await renderCoreSignals(
     <board width={10} height={5} routingDisabled schematicDisabled>
       <chip
         name="U1"
@@ -149,8 +148,7 @@ export async function switchingInput(): Promise<ModelRunDefinition> {
       />
     </board>,
   )
-  await circuit.renderUntilSettled()
-  const [model] = cju(circuit.getCircuitJson()).simulation_ibis_model.list()
+  const [model] = cju(circuit).simulation_ibis_model.list()
   if (!model) throw new Error("Missing TSX IBIS model")
   const pinMap = model.ibis_pin_name_to_source_port_id
   return {

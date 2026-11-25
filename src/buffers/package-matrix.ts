@@ -1,4 +1,4 @@
-import type { Matrix } from "../extraction"
+import type { Matrix } from "../kernel"
 import type { PackageModel } from "./package-model"
 
 /** Threshold for near-zero pivots in the scale-normalized LDL factorization. */
@@ -48,7 +48,24 @@ function checkPositive({
       `${label}: negative diagonal; matrix is not positive ${requirement}`,
     )
   }
-  const scale = Math.max(...matrix.map((row, i) => Math.abs(row[i])))
+  const scale = matrix.reduce(
+    (maximum, row) =>
+      row.reduce(
+        (current, entry) => Math.max(current, Math.abs(entry)),
+        maximum,
+      ),
+    0,
+  )
+  if (
+    matrix.some((row, rowIndex) =>
+      row.some(
+        (entry, columnIndex) =>
+          Math.abs(entry - matrix[columnIndex][rowIndex]) >
+          scale * PIVOT_TOLERANCE,
+      ),
+    )
+  )
+    throw new Error(`${label}: symmetric matrix required`)
   const work = matrix.map((row) =>
     row.map((coefficient) => coefficient / (scale || 1)),
   )
@@ -74,6 +91,18 @@ function checkPositive({
   }
 }
 
+/** Bound accumulated floating point roundoff in a Maxwell row. */
+function capacitanceRowTolerance(row: Matrix[number]): number {
+  return PIVOT_TOLERANCE * row.reduce((sum, entry) => sum + Math.abs(entry), 0)
+}
+
+/** Return a passive reference capacitance, clamping only roundoff-size residuals. */
+export function sumReferenceCapacitance(row: Matrix[number]): number {
+  const capacitanceFarads = row.reduce((sum, entry) => sum + entry, 0)
+  if (Math.abs(capacitanceFarads) <= capacitanceRowTolerance(row)) return 0
+  return capacitanceFarads
+}
+
 /** Reject sign conventions that cannot be realized with passive pair/reference capacitors. */
 function checkCapacitance({
   matrix,
@@ -91,7 +120,7 @@ function checkCapacitance({
         `${label}: Maxwell capacitance has positive off-diagonal entries; ${requirement}`,
       )
     }
-    const reference = row.reduce((sum, capacitance) => sum + capacitance, 0)
+    const reference = sumReferenceCapacitance(row)
     if (reference < 0)
       throw new Error(
         `${label}: negative reference capacitance (Maxwell row sum)`,
@@ -100,8 +129,8 @@ function checkCapacitance({
 }
 
 /**
- * Open unused series leads (zero current) select principal R/L. Float unused
- * electrostatic conductors (zero incremental charge) by Schur reduction of C.
+ * Use principal R/L matrices for zero series current at unused pins.
+ * Use a Schur complement for zero incremental charge at unused pins.
  * External loads, switching and resonant circulating currents on unused pins are neglected.
  */
 export function selectPackageModel({
@@ -144,7 +173,7 @@ export function selectPackageModel({
         if (i === j) return sum
         return sum + Math.abs(capacitance)
       }, 0)
-      return row[i] >= coupling
+      return row[i] - coupling >= -capacitanceRowTolerance(row)
     })
   const C = model.C.map((row, i) =>
     row.map((capacitance, j) => {
@@ -152,16 +181,27 @@ export function selectPackageModel({
       return capacitance
     }),
   )
-  checkPositive({ matrix: C, label: `${model.name} capacitance`, strict: true })
   checkCapacitance({ matrix: C, label: model.name })
   const unused = model.pins.map((_, i) => i).filter((i) => !indices.includes(i))
   const work = C.map((row) => [...row])
   let active = model.pins.map((_, i) => i)
   for (const k of unused) {
     active = active.filter((i) => i !== k)
+    const pivot = work[k][k]
+    if (pivot <= 0) {
+      if (
+        active.some(
+          (i) => Math.abs(work[k][i]) > capacitanceRowTolerance(work[k]),
+        )
+      )
+        throw new Error(
+          `${model.name}: singular capacitance at unused package pin ${model.pins[k]}`,
+        )
+      continue
+    }
     for (const i of active) {
       for (const j of active) {
-        work[i][j] -= (work[i][k] * work[k][j]) / work[k][k]
+        work[i][j] -= (work[i][k] / pivot) * work[k][j]
       }
     }
   }
@@ -179,15 +219,10 @@ export function selectPackageModel({
   }
   checkPositive({
     matrix: selected.L,
-    label: `${model.name} extracted inductance`,
+    label: `${model.name} reduced inductance`,
     strict: true,
   })
-  checkPositive({
-    matrix: selected.C,
-    label: `${model.name} extracted capacitance`,
-    strict: true,
-  })
-  checkCapacitance({ matrix: selected.C, label: `${model.name} extracted` })
+  checkCapacitance({ matrix: selected.C, label: `${model.name} reduced` })
   if (correct)
     selected.capacitanceSignCorrection = {
       packageModel: model.name,

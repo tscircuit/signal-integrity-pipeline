@@ -10,7 +10,12 @@
  * Imports: kernel, board (types). (Was: model-source.ts, IBIS parts of general-pipeline.ts.)
  */
 
-export { admitBuffers, compileBuffers, ibisAssembly } from "./buffers"
+export {
+  admitBuffers,
+  assertConverter,
+  compileBuffers,
+  ibisAssembly,
+} from "./buffers"
 export { coupledPackage, packageCapacitanceWarnings } from "./coupled-package"
 export { edgeDurationSeconds } from "./edge-duration"
 export type {
@@ -29,6 +34,7 @@ export { failInvalidIbisSource, loadModelSource, relativeFile } from "./source"
 export type {
   AdmittedBuffers,
   AssemblyEntry,
+  BufferModeling,
   CompiledBuffer,
   IbisSources,
   LoadedModelSource,

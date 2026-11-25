@@ -3,7 +3,6 @@ import type { SimulationIbisModel } from "../../src/board"
 import type { ModelRunDefinition } from "../../src/buffers"
 import { Board } from "./coupled-package"
 import { renderSignals } from "./signal-render"
-import React from "react"
 
 /** Render the board and read its declared IBIS pin bindings. */
 export async function renderPackageModel(

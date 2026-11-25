@@ -2,7 +2,7 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { convert, source, switchingInput } from "../../fixtures/switching"
 
-test.failing("leaves an off-package VREF on the board terminal", async () => {
+test("leaves an off-package VREF on the board terminal", async () => {
   const input = await switchingInput()
   const next = {
     ...input,

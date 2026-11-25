@@ -20,6 +20,10 @@ export type PackagedComponent = ConvertedGeneralIbisComponent & {
   metadata: PackageConversionMetadata
 }
 
+export interface BufferModeling {
+  ibisModelAssetSha256?: Record<string, string>
+}
+
 export type IbisSources = Record<string, Uint8Array | string>
 /** What loading needs from a declared model (today's `Pick<SimulationIbisModel,'ibis_model_asset'> & {pipelineId}`). */
 export type ModelSourceRequest = Pick<

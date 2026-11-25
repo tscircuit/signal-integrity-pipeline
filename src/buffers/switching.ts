@@ -5,7 +5,6 @@ import type {
   LogicalSchedule,
 } from "@tscircuit/ibis-to-spice"
 import {
-  convertIbisBuffer,
   convertIbisModelToSpice,
   cornerValue,
   IbisError,
@@ -14,6 +13,7 @@ import {
   logicalBitSchedule,
   sourceHash,
   spiceNumber,
+  switchingWeights,
 } from "@tscircuit/ibis-to-spice"
 import { lineRanges, subcircuitHeader, tokenEnd } from "./text"
 import type { ModelRunDefinition, PackagedComponent } from "./types"
@@ -85,12 +85,62 @@ function fixtureDeviation({
   table: FixtureVoltageTable
   timeSeconds: number
 }): number {
-  const final = table.at(-1)![1]
+  const final = table[table.length - 1][1]
   const remaining = table
     .filter(([sampleTime]) => sampleTime >= timeSeconds)
     .map(([, voltage]) => voltage)
   const voltages = [interpolate(table, timeSeconds), ...remaining]
   return Math.max(...voltages.map((voltage) => Math.abs(voltage - final)))
+}
+
+/** Find the earliest cutoff whose held coefficients approximate the entire omitted suffix. */
+function findHoldIndex({
+  weights,
+  timeSeconds,
+}: {
+  weights: Weights
+  timeSeconds: number
+}): number {
+  let minPullup = Infinity
+  let maxPullup = -Infinity
+  let minPulldown = Infinity
+  let maxPulldown = -Infinity
+  let cut = -1
+  for (let index = weights.length - 1; index >= 0; index--) {
+    const [seconds, pullup, pulldown] = weights[index]
+    if (seconds < timeSeconds) break
+    minPullup = Math.min(minPullup, pullup)
+    maxPullup = Math.max(maxPullup, pullup)
+    minPulldown = Math.min(minPulldown, pulldown)
+    maxPulldown = Math.max(maxPulldown, pulldown)
+    const holdError = Math.max(
+      pullup - minPullup,
+      maxPullup - pullup,
+      pulldown - minPulldown,
+      maxPulldown - pulldown,
+    )
+    if (holdError <= SETTLED_TOLERANCE) cut = index
+  }
+  return cut
+}
+
+/** Measure the maximum coefficient error introduced by holding a tail. */
+function getHoldError({
+  weights,
+  index,
+}: {
+  weights: Weights
+  index: number
+}): number {
+  const [, heldPullup, heldPulldown] = weights[index]
+  let maxError = 0
+  for (const [, pullup, pulldown] of weights.slice(index))
+    maxError = Math.max(
+      maxError,
+      Math.abs(pullup - heldPullup),
+      Math.abs(pulldown - heldPulldown),
+    )
+  return maxError
 }
 
 /** Check original two-fixture voltages AND the extracted coefficients, including the complete tail. */
@@ -125,7 +175,7 @@ function settledTail({
     ]),
   )
   for (const table of tables) {
-    const final = table.at(-1)![1]
+    const final = table[table.length - 1][1]
     const limit = SETTLED_TOLERANCE * Math.abs(final - table[0][1])
     const start = settledIndex({
       deviations: table.map((row) => Math.abs(row[1] - final)),
@@ -133,29 +183,24 @@ function settledTail({
     })
     timeSeconds = Math.max(timeSeconds, table[start][0])
   }
-  const cut = weights.findIndex((row) => row[0] >= timeSeconds)
+  const cut = findHoldIndex({ weights, timeSeconds })
   if (cut < 0) return undefined
-  const [retainedDurationSeconds, heldPullup, heldPulldown] = weights[cut]
-  const holdErrors = weights
-    .slice(cut)
-    .flatMap(([, pullup, pulldown]) => [
-      Math.abs(pullup - heldPullup),
-      Math.abs(pulldown - heldPulldown),
-    ])
+  const [retainedDurationSeconds] = weights[cut]
+  const maxCoefficientHoldError = getHoldError({ weights, index: cut })
   return {
     physicalPin,
     model: buffer.name,
     edge,
-    originalDurationSeconds: weights.at(-1)![0],
+    originalDurationSeconds: weights[weights.length - 1][0],
     retainedDurationSeconds,
     coefficientTolerance: SETTLED_TOLERANCE,
     maxCoefficientDeviation: Math.max(...deviations.slice(cut)),
-    maxCoefficientHoldError: Math.max(...holdErrors),
+    maxCoefficientHoldError,
     fixtures: tables.map((table, i) => ({
       resistanceOhms: waves[i].resistance,
       voltage: cornerValue(waves[i].fixtureVoltage, corner, "V_fixture"),
       toleranceVolts:
-        SETTLED_TOLERANCE * Math.abs(table.at(-1)![1] - table[0][1]),
+        SETTLED_TOLERANCE * Math.abs(table[table.length - 1][1] - table[0][1]),
       maxDeviationVolts: fixtureDeviation({
         table,
         timeSeconds: retainedDurationSeconds,
@@ -176,13 +221,11 @@ function scheduleWeights({
   corner,
   schedule,
   physicalPin,
-  document,
 }: {
   buffer: IbisBuffer
   corner: IbisCorner
   schedule: LogicalSchedule
   physicalPin: string
-  document: IbisDocument
 }): ScheduledWeights {
   const pullup = Number(Boolean(schedule.initialState))
   const pulldown = 1 - pullup
@@ -192,14 +235,15 @@ function scheduleWeights({
     samples.push([schedule.duration, pullup, pulldown])
     return { samples, tails }
   }
-  const converted = convertIbisBuffer(document, buffer.name, {
-    corner,
-    mode: "output",
-  })
+  const edgeSamples = new Map<Edge, Weights>()
   for (const [i, transition] of schedule.transitions.entries()) {
     let edge: Edge = "falling"
     if (transition.state) edge = "rising"
-    let weights = converted.weights![edge]
+    let weights = edgeSamples.get(edge)
+    if (!weights) {
+      weights = switchingWeights(buffer, corner, edge)
+      edgeSamples.set(edge, weights)
+    }
     if (weights[0][0] !== 0) {
       throw new IbisError(
         "unsupported_waveforms",
@@ -209,7 +253,7 @@ function scheduleWeights({
     const nextSeconds = schedule.transitions[i + 1]?.time
     if (
       nextSeconds !== undefined &&
-      transition.time + weights.at(-1)![0] >= nextSeconds
+      transition.time + weights[weights.length - 1][0] > nextSeconds
     ) {
       const tail = settledTail({
         buffer,
@@ -238,17 +282,28 @@ function scheduleWeights({
       )
         tails.push(tail)
     }
-    // Each edge starts from the held coefficients. A femtosecond jump to the table's
-    // first row (extraction residue up to the settled tolerance) forces sub-fs steps.
-    const last = samples.at(-1)!
-    weights = [[0, last[1], last[2]], ...weights.slice(1)]
+    const last = samples[samples.length - 1]
+    const stitchError = Math.max(
+      Math.abs(weights[0][1] - last[1]),
+      Math.abs(weights[0][2] - last[2]),
+    )
+    if (stitchError <= SETTLED_TOLERANCE)
+      weights = [[0, last[1], last[2]], ...weights.slice(1)]
+    if (stitchError > SETTLED_TOLERANCE)
+      throw new IbisError(
+        "unsupported_waveforms",
+        `${buffer.name}: ${edge} waveform starts more than ${SETTLED_TOLERANCE} from held switching coefficients`,
+      )
     for (const [seconds, ku, kd] of weights) {
       const absoluteSeconds = transition.time + seconds
       if (absoluteSeconds > schedule.duration) break
-      if (absoluteSeconds === samples.at(-1)![0]) samples.pop()
+      if (absoluteSeconds === samples[samples.length - 1][0]) samples.pop()
       samples.push([absoluteSeconds, ku, kd])
     }
-    if (transition.time + weights.at(-1)![0] > schedule.duration) {
+    if (
+      samples[samples.length - 1][0] < schedule.duration &&
+      transition.time + weights[weights.length - 1][0] > schedule.duration
+    ) {
       const timeSeconds = schedule.duration - transition.time
       const pullup = weights.map(
         ([seconds, ku]): CoefficientSample => [seconds, ku],
@@ -263,7 +318,7 @@ function scheduleWeights({
       ])
     }
   }
-  const last = samples.at(-1)!
+  const last = samples[samples.length - 1]
   if (last[0] < schedule.duration)
     samples.push([schedule.duration, last[1], last[2]])
   return { samples, tails }
@@ -308,7 +363,7 @@ function replacePwl({
       .join(" ")
     return `${source.slice(0, start)}${voltage} ${nodes} PWL(${points})${source.slice(end)}`
   }
-  return source
+  throw new Error(`Missing generated IBIS switching source ${voltage}`)
 }
 
 /** Use upstream pin/reference and die-buffer conversion; the pipeline owns explicit edge scheduling. */
@@ -356,7 +411,6 @@ export function convertSwitching({
       corner: input.definition.corner,
       schedule,
       physicalPin: pin.physicalPin,
-      document,
     })
     for (const tail of pinTails) {
       if (
@@ -381,7 +435,8 @@ export function convertSwitching({
     return schedule
   })
   // Match upstream identity for untouched schedules, including source and true stimulus hashes.
-  const original = subcircuitHeader(converted.source)![1]
+  const original = subcircuitHeader(converted.source)?.[1]
+  if (!original) throw new Error("Missing generated IBIS subcircuit header")
   const identity = JSON.stringify([
     converted.metadata,
     schedules,

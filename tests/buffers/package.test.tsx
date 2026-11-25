@@ -154,7 +154,7 @@ test.skipIf(!modelDir)(
               voltage = range[0]
             }
             assert.ok(
-              converted.source.includes(`VPDN${i} DIE${i} 0 ${voltage}`),
+              converted.source.includes(`VDIE${i} DIE${i} 0 ${voltage}`),
             )
           }
         }
