@@ -1,12 +1,24 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
-import { TransmissionLineRlgcSolver } from "../../../src/rlgc"
+import {
+  type SolvedWireSection,
+  type TransmissionLineRlgc,
+  TransmissionLineRlgcSolver,
+} from "../../../src/rlgc"
 import {
   CopperTrace,
   getCopperGeometryExtractionInput,
   renderCopperGeometryBoard,
 } from "../../fixtures/copper-geometry-board"
 import { solveBoardCopperGeometry } from "../../fixtures/transmission-line-rlgc"
+
+/** The fields used to relate the published artifact to the input sections. */
+type PublishedCoupling = Pick<TransmissionLineRlgc, "pairCouplings"> & {
+  solvedWireSections: Pick<
+    SolvedWireSection,
+    "wireSectionIndex" | "startMm" | "endMm" | "references"
+  >[]
+}
 
 test("identifies the input section of each pair across a reference handoff", async () => {
   const circuit = await renderCopperGeometryBoard({
@@ -55,7 +67,8 @@ test("identifies the input section of each pair across a reference handoff", asy
     output.pairCouplings.map((pair) => pair.wireSectionIndex),
     [0, 1],
   )
-  const published = JSON.parse(artifact.body) as typeof output
+  const published = JSON.parse(artifact.body) as PublishedCoupling
+  assert.deepEqual(published.pairCouplings, output.pairCouplings)
   for (const pair of published.pairCouplings) {
     const wireSection = sections[pair.wireSectionIndex]
     const solvedGroups = published.solvedWireSections.filter(
