@@ -1,19 +1,6 @@
 /** ECMAScript line terminators: line feed, carriage return, line separator and paragraph separator. */
 const LINE_TERMINATORS = ["\n", "\r", "\u2028", "\u2029"]
 
-/** Lowercase ASCII keywords without folding non-ASCII characters into them. */
-export function asciiLowerCase(text: string): string {
-  let lower = ""
-  for (const char of text) {
-    if (char >= "A" && char <= "Z") {
-      lower += char.toLowerCase()
-      continue
-    }
-    lower += char
-  }
-  return lower
-}
-
 /** Test for one ECMAScript whitespace character. */
 export function isSpace(char: string | undefined): boolean {
   return char !== undefined && char.length === 1 && char.trim() === ""
@@ -43,13 +30,13 @@ export function lineEnd({
 }
 
 /** Start and end offsets in the source text. */
-export type TextRange = {
+export type StringOffsets = {
   start: number
   end: number
 }
 
 /** Iterate lines with their offsets so callers can replace text without changing separators. */
-export function* lineRanges(text: string): IterableIterator<TextRange> {
+export function* lineRanges(text: string): IterableIterator<StringOffsets> {
   for (let start = 0; start < text.length; ) {
     const end = lineEnd({ text, start })
     yield { start, end }
@@ -70,8 +57,10 @@ export function tokenEnd({
   return end
 }
 
-/** Split on runs of whitespace, retaining empty fields at the ends. */
+/** Split input into its nonempty whitespace-delimited tokens. */
 export function splitWords(text: string): string[] {
+  text = text.trim()
+  if (!text) return []
   const words: string[] = []
   let start = 0
   while (true) {
@@ -83,21 +72,9 @@ export function splitWords(text: string): string[] {
   }
 }
 
-/** The directive and name from a generated SPICE subcircuit header. */
-type GeneratedSubcircuitHeader = [directive: ".subckt", name: string]
-
-/** Find the first generated subcircuit header with a name immediately after the directive. */
-export function subcircuitHeader(
-  source: string,
-): GeneratedSubcircuitHeader | null {
-  const directive = ".subckt"
-  for (const { start, end } of lineRanges(source)) {
-    if (!source.startsWith(`${directive} `, start)) continue
-    const nameStart = start + directive.length + 1
-    if (nameStart >= end) continue
-    const nameEnd = tokenEnd({ text: source, start: nameStart })
-    if (nameEnd > nameStart)
-      return [directive, source.slice(nameStart, nameEnd)]
-  }
-  return null
+/** Check that a count is spelled with one or more ASCII digits. */
+export function isUnsignedInteger(text: string): boolean {
+  if (!text.length) return false
+  for (const char of text) if (!isDigit(char)) return false
+  return true
 }

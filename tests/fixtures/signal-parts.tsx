@@ -2,6 +2,8 @@ import { simulation } from "@tscircuit/core"
 import type { ChipProps, SimulationIbisModelProps } from "@tscircuit/props"
 import type React from "react"
 
+export { simulation }
+
 /** Common physical ground pad offset and matching through-board via. */
 const GROUND_PAD_Y_MM = -3.5
 
