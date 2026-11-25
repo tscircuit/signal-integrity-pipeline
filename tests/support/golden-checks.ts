@@ -90,13 +90,13 @@ export function energyFacts(matrix: Matrix): EnergyFacts {
       }
     }
   }
-  const values = symmetricEigenvalues(
+  const eigenvalues = symmetricEigenvalues(
     matrix.map((row, i) => row.map((value, j) => (value + matrix[j][i]) / 2)),
   )
   return {
     asymmetry,
-    minimumEigenvalue: values[0],
-    maximumEigenvalue: values.at(-1)!,
+    minimumEigenvalue: eigenvalues[0],
+    maximumEigenvalue: eigenvalues[eigenvalues.length - 1],
     coupling,
     pair,
   }

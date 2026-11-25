@@ -1,7 +1,6 @@
 import { beforeAll, describe, test } from "bun:test"
 import assert from "node:assert/strict"
 import { cju } from "@tscircuit/circuit-json-util"
-import React from "react"
 import {
   type CircuitJson,
   type CopperScope,
@@ -16,17 +15,17 @@ import {
   sourceNetMembers,
 } from "../../src/board"
 import {
-  type ExtractedRoutes,
-  RouteFieldsSolver,
-  type RouteMaterials,
-  referenceSeries,
-} from "../../src/extraction"
+  type DielectricMaterials,
+  type TransmissionLineRlgc,
+  TransmissionLineRlgcSolver,
+} from "../../src/rlgc"
 import {
   type RouteLadder,
   routeLadder,
   routeOblique,
   routeTransitions,
 } from "../../src/simulation"
+import { projectAcGroundedSeries } from "../../src/simulation/ac-grounded-series"
 import type { RouteEndpoint } from "../../src/simulation/route-network"
 import { RoutedBoard, ViaPadBoard } from "../fixtures/routed-2d"
 import { renderCoreSignals } from "./core-render"
@@ -39,6 +38,7 @@ function endpointName(name: string): string {
 /** The source IDs and geometry shared by the routed board variants. */
 interface RouteFixture {
   geometry: ExtractedCopper
+  circuitJson: CircuitJson
   scope: CopperScope
   ground: ReturnType<typeof sourceNetMembers>
   groundId: SourceNetId
@@ -79,6 +79,7 @@ async function routeFixture(): Promise<RouteFixture> {
   const geometry = extractCopperGeometry({ circuit, copperScope: scope })
   return {
     geometry,
+    circuitJson: circuit,
     scope,
     ground,
     groundId: groundNet.source_net_id,
@@ -87,11 +88,11 @@ async function routeFixture(): Promise<RouteFixture> {
 }
 
 /** Assumed materials for the routed 2D fixture. */
-const materials: RouteMaterials = {
-  maskMm: 0.02,
-  maskEr: 3.3,
-  maskLoss: 0.025,
-  substrateLoss: 0.02,
+const materials: DielectricMaterials = {
+  maskThicknessMm: 0.02,
+  maskRelativePermittivity: 3.3,
+  maskLossTangent: 0.025,
+  laminateLossTangent: 0.02,
 }
 
 /** The fixture's rising edge sets the baseline ladder cell size. */
@@ -104,17 +105,22 @@ function wireEndpoint({ wire, point }: Parameters<RouteEndpoint>[0]): string {
 
 /** Solve fields with the fixture's shared material assumptions. */
 function solveFields({
-  geometry,
+  fixture,
   panels,
 }: {
-  geometry: ExtractedCopper
+  fixture: Pick<RouteFixture, "geometry" | "circuitJson" | "scope">
   panels?: number
-}): ExtractedRoutes {
-  const solver = new RouteFieldsSolver({
-    geometry,
+}): TransmissionLineRlgc {
+  const solver = new TransmissionLineRlgcSolver({
+    copperGeometry: {
+      geometry: fixture.geometry,
+      circuitJson: fixture.circuitJson,
+      copperScope: fixture.scope,
+      maskThicknessMm: null,
+    },
     materials,
     artifactPrefix: "test",
-    panels,
+    panelsPerEdge: panels,
   })
   solver.solve()
   return solver.getOutput().value
@@ -122,11 +128,11 @@ function solveFields({
 
 describe("routed 2D board", () => {
   let fixture: RouteFixture
-  let extracted: ExtractedRoutes
+  let extracted: TransmissionLineRlgc
   let ladder: RouteLadder
   beforeAll(async () => {
     fixture = await routeFixture()
-    extracted = solveFields({ geometry: fixture.geometry, panels: 12 })
+    extracted = solveFields({ fixture, panels: 12 })
     ladder = routeLadder({
       extracted,
       endpoint: wireEndpoint,
@@ -161,23 +167,30 @@ describe("routed 2D board", () => {
   })
 
   test("reuses cross sections", () => {
-    assert.ok(extracted.sections.length <= fixture.geometry.sections.length)
+    assert.ok(
+      extracted.crossSectionSolutions.length <=
+        fixture.geometry.sections.length,
+    )
   })
 
   test("reduces inductance with a shorted AC return", () => {
-    const pair = extracted.slices.find(
+    const pair = extracted.solvedWireSections.find(
       (slice) => slice.wires.length === 2,
-    )!.line
-    const referenced = referenceSeries({ line: pair, grounded: [1] })
-    const inductance = referenced.L[0][0]
+    )!.rlgcMatrices
+    const referenced = projectAcGroundedSeries({
+      rlgcMatrices: pair,
+      groundedConductorIndices: [1],
+    })
+    const inductance = referenced.externalInductanceHenriesPerMeter[0][0]
     assert.ok(
-      inductance < pair.L[0][0],
+      inductance < pair.externalInductanceHenriesPerMeter[0][0],
       "shorted AC reference induces a return current instead of an open conductor",
     )
     const vacuumPermeability = 1.25663706212e-6
     const vacuumPermittivity = 8.8541878128e-12
     const ratio =
-      (inductance * pair.C0[0][0]) / (vacuumPermeability * vacuumPermittivity)
+      (inductance * pair.vacuumCapacitanceFaradsPerMeter[0][0]) /
+      (vacuumPermeability * vacuumPermittivity)
     assert.ok(
       Math.abs(ratio - 1) < 1e-6,
       "shorted series inductance matches the independent fixed-potential C0 relationship",
@@ -261,7 +274,15 @@ test("solves overlapping copper as equipotential patches", async () => {
     hasJoins,
     "same-net overlapping bend bodies become equipotential breakout patches",
   )
-  assert.doesNotThrow(() => solveFields({ geometry: merged }))
+  assert.doesNotThrow(() =>
+    solveFields({
+      fixture: {
+        geometry: merged,
+        circuitJson: mergedCircuit,
+        scope: mergedScope,
+      },
+    }),
+  )
 })
 
 describe("oblique route", () => {
@@ -290,7 +311,9 @@ describe("oblique route", () => {
   })
 
   test("records shielding at the local plane", () => {
-    const extracted = solveFields({ geometry })
+    const extracted = solveFields({
+      fixture: { geometry, circuitJson: circuit, scope },
+    })
     const ladder = routeLadder({
       extracted,
       endpoint: wireEndpoint,
