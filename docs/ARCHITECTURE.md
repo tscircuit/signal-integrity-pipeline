@@ -18,7 +18,9 @@ Removing an extracted trace or series passive from the receiver graph must disco
 An alternate path reports the physical contacts and distinguishes an entirely routed loop from a bypass through ideal wiring.
 `CopperGeometryExtractionSolver` models scoped traces, vias, reference pours, and pad contacts. It groups wires into sections with consistent nearby copper and reference surfaces.
 `TransmissionLineRlgcSolver` screens nearby wire pairs for coupling and calculates per-unit-length RLGC matrices for each coupled group.
-IBIS conversion resolves scalar or coupled package elements and validates selected package matrices during planning.
+Planning validates the package matrices for the mapped pins and records any capacitance sign conversion and the source SHA-256. Binding converts the buffers and package to SPICE. The package converter accepts scalar `[Pin]` and `[Package]` values and local lumped `[Define Package Model]` matrices with pipe comments. External `.pkg` lookup and distributed package sections are unsupported.
+
+The package uses one branch for each merged rail pin group. Multiple board pins in a group must already share a board node. Rail branches with zero DC resistance use the board bias. The die clamp biases a rail behind nonzero series resistance. Scalar shunt capacitance uses the buffer’s pulldown reference, and a coupled package with separate ground banks uses circuit ground for its shared matrix reference.
 RouteBindingsSolver associates compiled buffers, sources and probes with the allocated circuit node map.
 RouteNetworkSolver integrates route energies into a coupled ladder with via and oblique corrections and emits a deck.
 RouteTransientSolver invokes ngspice through the injected solver port and publishes complete raw-vector captures.
@@ -230,13 +232,15 @@ through an integrity-locked pkg.pr.new URL. Switch to a release after #62 ships.
 ```mermaid
 flowchart LR
   board["Circuit JSON and channel declarations"] --> prepare["Prepare channel and aggressor states"]
-  ibis["IBIS sources"] --> prepare
+  ibis["IBIS sources"] --> packages["Validate IBIS package matrices"]
+  packages --> prepare
   prepare --> traces["Identify extracted trace contacts"]
   traces --> groups["Group ideal source contacts"]
   groups --> paths["Map ordered driver-to-receiver paths"]
   traces --> geometry["CopperGeometryExtractionSolver"]
   geometry --> transmissionLineRlgc["TransmissionLineRlgcSolver"]
   paths --> bindings["Binding inputs"]
+  bindings --> spice["Convert packages and switching coefficients to SPICE"]
   bindings --> checks["Check contacts and alternate paths around each segment"]
   paths --> manifest["Transient channel simulation plan manifest"]
 ```
@@ -249,7 +253,7 @@ stateDiagram-v2
   GeometryReady --> Complete: TransmissionLineRlgcSolver
   GeometryReady --> Failed: invalid cross-section geometry or material options
   Planned --> Failed: missing required contact or reference, unsupported route or soldermask
-  Ready --> Failed: invalid input, conflicting IBIS model selections or undeclared aggressors
+  Ready --> Failed: invalid input, conflicting IBIS model selections, invalid package matrices or undeclared aggressors
   Complete --> [*]
   Failed --> [*]
 ```

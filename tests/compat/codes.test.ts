@@ -19,6 +19,7 @@ const RAISED = [
   "channel_receiver_terminal_missing",
   "channel_short",
   "circuit_schema",
+  "converter_version",
   "electrical_input",
   "file_path",
   "floating_source",
@@ -74,6 +75,7 @@ const RAISED = [
   "supply_missing",
   "supply_reference",
   "supply_short",
+  "vendor_hash",
   "via_geometry",
   "waveform",
 ].sort()
