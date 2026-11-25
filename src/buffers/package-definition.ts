@@ -1,9 +1,4 @@
-import {
-  isLineBreak,
-  isSpace,
-  lineEnd,
-  type StringOffsets,
-} from "./source-tokens"
+import { isSpace, lineEnd, type StringOffsets } from "./source-tokens"
 
 /** Horizontal space permitted before and within a package marker. */
 const HEADER_SPACING = [" ", "\t"]
@@ -12,11 +7,8 @@ const CARRIAGE_RETURN = "\r"
 /** Line feed separating IBIS package data lines. */
 const LINE_FEED = "\n"
 /** Default IBIS line-comment marker. */
-const DEFAULT_COMMENT = "|"
-/** Suffix immediately following the marker in a [Comment Char] declaration. */
-const COMMENT_CHAR_SUFFIX = "_char"
-/** End offset of a one-character marker and its suffix. */
-const COMMENT_CHAR_END = 1 + COMMENT_CHAR_SUFFIX.length
+const IBIS_COMMENT = "|"
+const PIPE_COMMENT_DECLARATION = "|_char"
 /** A package marker and data lines up to the next marker. */
 export interface PackageSection {
   key: string
@@ -63,14 +55,6 @@ function* packageHeaders(text: string): IterableIterator<PackageHeader> {
   }
 }
 
-/** Read a comment marker followed by the IBIS "_char" suffix. */
-function commentCharacter(argument: string): string | undefined {
-  const suffix = argument.slice(1, COMMENT_CHAR_END).toLowerCase()
-  if (isLineBreak(argument[0]) || suffix !== COMMENT_CHAR_SUFFIX)
-    return undefined
-  return argument[0]
-}
-
 /** Read a selected definition's section header and optional argument. */
 function sectionHeader(line: string): SectionHeader | undefined {
   if (!line.startsWith("[")) return undefined
@@ -83,12 +67,6 @@ function sectionHeader(line: string): SectionHeader | undefined {
   return { key, argument }
 }
 
-/** Source of one local package definition and its inherited comment marker. */
-interface DefinitionRange {
-  body: string
-  initialCommentChar: string
-}
-
 /** Read the named local definition without splitting a large vendor file into lines. */
 function locatePackageDefinition({
   text,
@@ -96,40 +74,34 @@ function locatePackageDefinition({
 }: {
   text: string
   name: string
-}): DefinitionRange {
+}): string {
   let body: string | undefined
   let active: string | undefined
   let start = 0
-  let currentCommentChar = DEFAULT_COMMENT
-  let initialCommentChar = DEFAULT_COMMENT
-  // Comment changes outside the selected definition still affect its contents.
   let ibisSource = text
   if (ibisSource.startsWith("\uFEFF")) ibisSource = ibisSource.slice(1)
   for (const header of packageHeaders(ibisSource)) {
     const { key, argument } = header
     if (key === "comment char") {
-      const next = commentCharacter(argument)
-      const nextCharacter = argument[COMMENT_CHAR_END]
+      const declaration = argument.toLowerCase()
+      const nextCharacter = declaration[PIPE_COMMENT_DECLARATION.length]
       if (
-        next === undefined ||
+        !declaration.startsWith(PIPE_COMMENT_DECLARATION) ||
         (nextCharacter !== undefined && !isSpace(nextCharacter))
-      ) {
-        throw new Error(`${name}: invalid [Comment Char]`)
-      }
-      currentCommentChar = next
+      )
+        throw new Error(`${name}: only pipe IBIS comments are supported`)
       continue
     }
     if (key === "define package model") {
       if (active) throw new Error(`${active}: missing [End Package Model]`)
-      active = argument.split(currentCommentChar)[0].trim()
+      active = argument.split(IBIS_COMMENT)[0].trim()
       if (active === name && body !== undefined)
         throw new Error(`${name}: duplicate package definition`)
-      if (active === name) initialCommentChar = currentCommentChar
       start = header.end
       continue
     }
     if (key === "end package model") {
-      if (active === name && argument.split(currentCommentChar)[0].trim()) {
+      if (active === name && argument.split(IBIS_COMMENT)[0].trim()) {
         throw new Error(`${name}: unexpected data after [End Package Model]`)
       }
       if (active === name) body = ibisSource.slice(start, header.start)
@@ -144,42 +116,26 @@ function locatePackageDefinition({
       `${name}: [Define Package Model] missing in IBIS source; ${reason}`,
     )
   }
-  return { body, initialCommentChar }
+  return body
 }
 
-/** Tokenize a local package definition using its active IBIS comment marker. */
+/** Tokenize a local lumped package definition using the converter’s pipe comments. */
 export function readPackageDefinition(input: {
   text: string
   name: string
 }): PackageSection[] {
-  const { body, initialCommentChar } = locatePackageDefinition(input)
+  const body = locatePackageDefinition(input)
   const { name } = input
   const sections: PackageSection[] = []
-  let currentCommentChar = initialCommentChar
   const lines = body.split(LINE_FEED)
   for (const [i, raw] of lines.entries()) {
     let lineText = raw
     if (i < lines.length - 1 && raw.endsWith(CARRIAGE_RETURN))
       lineText = raw.slice(0, -1)
-    const trimmed = lineText.trimStart()
-    const commentHeader = "[comment char]"
-    if (
-      trimmed
-        .slice(0, commentHeader.length)
-        .toLowerCase()
-        .replaceAll("_", " ") === commentHeader
-    ) {
-      const argument = trimmed.slice(commentHeader.length)
-      const marker = argument.trimStart()
-      const change = commentCharacter(marker)
-      if (change !== undefined) {
-        currentCommentChar = change
-        continue
-      }
-    }
-    const line = lineText.split(currentCommentChar)[0].trim()
+    const line = lineText.split(IBIS_COMMENT)[0].trim()
     if (!line) continue
     const header = sectionHeader(line)
+    if (header?.key === "comment char") continue
     if (header?.key === "number of sections") {
       throw new Error(
         `${name}: package sections are unsupported ([Number Of Sections]); scalar fallback is forbidden`,
