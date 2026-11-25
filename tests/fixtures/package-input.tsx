@@ -6,7 +6,7 @@ import { renderSignals } from "./signal-render"
 
 /** Render the board and read its declared IBIS pin bindings. */
 export async function renderPackageModel(
-  isPowerBusMerged = false,
+  isPowerBusMerged?: boolean,
 ): Promise<SimulationIbisModel> {
   const circuit = await renderSignals({
     tree: <Board isPowerBusMerged={isPowerBusMerged} />,
