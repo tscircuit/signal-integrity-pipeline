@@ -6,7 +6,7 @@ import type {
 } from "@tscircuit/ibis-to-spice"
 import type { SimulationIbisModel } from "../board"
 import type { CoupledPackageModel } from "./coupled-package"
-import type { SwitchingTail } from "./switching"
+import type { WaveformTailTruncation } from "./switching-tail"
 
 /** Package and switching-tail evidence augment the upstream die-buffer metadata. */
 export type PackageConversionMetadata = IbisConversionMetadata & {
@@ -14,10 +14,14 @@ export type PackageConversionMetadata = IbisConversionMetadata & {
     matrices?: CoupledPackageModel
     unusedPinPolicy?: string
   }
-  switchingTails?: SwitchingTail[]
+  switchingTails?: WaveformTailTruncation[]
 }
-export type PackagedComponent = ConvertedGeneralIbisComponent & {
+export type ConvertedIbisComponent = ConvertedGeneralIbisComponent & {
   metadata: PackageConversionMetadata
+}
+
+export interface BufferModeling {
+  ibisModelAssetSha256?: Record<string, string>
 }
 
 export type IbisSources = Record<string, Uint8Array | string>
@@ -49,19 +53,21 @@ export interface LoadedModelSource {
   evidence: SourceEvidence
 }
 
-declare const admittedBrand: unique symbol
-/** Every used model loaded and decoded, in declaration order. Only admitBuffers builds one. */
-export interface AdmittedBuffers {
-  readonly [admittedBrand]: true
+export const validatedSourcesBrand: unique symbol = Symbol(
+  "validated IBIS sources",
+)
+/** Every used model loaded and decoded, in declaration order. Only validateIbisSources builds one. */
+export interface ValidatedIbisSources {
+  readonly [validatedSourcesBrand]: true
   readonly models: readonly { readonly pipelineId: string }[]
   readonly sources: readonly LoadedModelSource[]
 }
 
 /** Compiled buffers grouped by experiment, in plan and model order. */
-export type CompiledBuffersByPlan = CompiledBuffer[][]
+export type CompiledIbisComponentsByPlan = CompiledIbisComponent[][]
 
 /** Today's per-plan compiled model: the converter result plus pipeline identity and inputs. */
-export type CompiledBuffer = PackagedComponent & {
+export type CompiledIbisComponent = ConvertedIbisComponent & {
   name: string
   pipelineId: string
   input: ModelRunDefinition

@@ -17,11 +17,11 @@ import {
   withRouteDrawing,
 } from "../board"
 import {
-  type AdmittedBuffers,
   type AssemblyEntry,
-  admitBuffers,
   compileBuffers,
   ibisAssembly,
+  type ValidatedIbisSources,
+  validateIbisSources,
 } from "../buffers"
 import {
   type Artifact,
@@ -45,7 +45,7 @@ import type { Declarations, SimulationPlan } from "./types"
 export class RouteBindingsSolver extends BaseSolver {
   override MAX_ITERATIONS = Infinity
   private declarations?: Declarations
-  private admitted?: AdmittedBuffers
+  private validatedSources?: ValidatedIbisSources
   private plan?: SimulationPlan
   private electricalLines: string[] = []
   private readonly models: RouteBuffer[] = []
@@ -95,13 +95,13 @@ export class RouteBindingsSolver extends BaseSolver {
       modeling,
       nodes: declarations.nodes,
     }).lines
-    const admitted = admitBuffers({
+    const validatedSources = validateIbisSources({
       models: declarations.models,
       ibisSources,
       scope,
     })
-    this.admitted = admitted.value
-    this.artifacts.push(...admitted.artifacts)
+    this.validatedSources = validatedSources.value
+    this.artifacts.push(...validatedSources.artifacts)
     return declarations
   }
 
@@ -111,8 +111,10 @@ export class RouteBindingsSolver extends BaseSolver {
     const declarations = this.initialize(scope)
     const model = declarations.models[this.models.length]
     if (model) {
+      if (!this.validatedSources)
+        throw new Error("IBIS model sources were not validated")
       const [compiled] = compileBuffers({
-        admitted: this.admitted!,
+        validated: this.validatedSources,
         plans: [{ ...this.plan!, models: [model] }],
         define: modelRunDefinition,
       })[0]

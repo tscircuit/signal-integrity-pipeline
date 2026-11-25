@@ -118,7 +118,7 @@ availability and version. A missing binary shows `ngspice not found on PATH`.
 ```mermaid
 flowchart TD
   board[/"Your board<br/>(Circuit JSON with transient channel simulations)"/] --> s1["1. Admit each channel simulation: drivers, receivers, the copper scope and declared aggressor states<br/><small>pipeline</small>"]
-  chips[/"Chip models<br/>(IBIS files; coupled package admission)"/] --> s1
+  chips[/"Chip models<br/>(IBIS files; coupled package validation)"/] --> s1
   s1 --> manifest["Transient channel simulation plan manifest"]
   s1 --> s2["2. Cut the scoped copper into straight sections over their reference planes<br/><small>board</small>"]
   s2 --> s3["3. Calculate each unique cross-section's coupled RLGC matrices<br/><small>rlgc</small>"]
@@ -225,6 +225,8 @@ stateDiagram-v2
 
 Install dependencies with `bun install --frozen-lockfile`, then run `bun test`.
 Optional checks use `test.skipIf` and known failures still execute through `test.failing`.
+Run `bun run fetch:vendor-models` and put `ngspice` on PATH before running the IBIS tests locally.
+
 Run `bun run test:package` to verify the packed package in Node and Bun.
 
 SVG visual baselines in `tests/**/__snapshots__/` use the `.snap.svg` suffix so GitHub displays image previews.
