@@ -30,7 +30,9 @@ export function convertIbisComponentWithSwitchingSchedule({
   bytes: Uint8Array
   input: ModelRunDefinition
   document: IbisDocument
-  canUseVendorPackage: (metadata: ConvertedIbisComponent["metadata"]) => boolean
+  canUseVendorPackage?: (
+    metadata: ConvertedIbisComponent["metadata"],
+  ) => boolean
 }): ConvertedIbisComponent {
   // Validate the ORIGINAL pattern before building the steady electrical skeleton.
   for (const stimulus of Object.values(input.run.stimuli))
@@ -54,7 +56,7 @@ export function convertIbisComponentWithSwitchingSchedule({
   let converted: ConvertedIbisComponent = omitted
   if (
     input.definition.packagePolicy === "vendor" &&
-    canUseVendorPackage(omitted.metadata)
+    canUseVendorPackage?.(omitted.metadata) === true
   )
     converted = convertIbisModelToSpice(bytes, input.definition, run)
   const tails: WaveformTailTruncation[] = []
