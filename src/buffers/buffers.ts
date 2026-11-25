@@ -6,7 +6,6 @@ import {
   sha256,
 } from "../kernel"
 import { fail } from "./diagnostics"
-import { convertIbisComponentWithPackage } from "./package-conversion"
 import { loadModelSource } from "./source"
 
 /** SHA-256 hashes are written as 64 hexadecimal digits. */
@@ -150,12 +149,12 @@ export function compileBuffers<
           },
         },
       }
-      const sourceFile = source.evidence.ibisModelAsset.project_relative_path
-      const result = convertIbisComponentWithPackage({
-        bytes: source.bytes,
-        input,
-        sourceFile,
-      })
+      const result = converter.convertIbisModelToSpice(
+        source.bytes,
+        input.definition,
+        input.run,
+        { sourceLabel: source.evidence.ibisModelAsset.project_relative_path },
+      )
       return {
         ...result,
         name: model.ibis_component_name,
