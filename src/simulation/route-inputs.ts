@@ -5,7 +5,7 @@ import type {
   SourcePortId,
   SourceTraceId,
 } from "../board"
-import type { CompiledBuffer, IbisSources } from "../buffers"
+import type { CompiledIbisComponent, IbisSources } from "../buffers"
 import type { Snapshot } from "../kernel"
 import type {
   CircuitNodes,
@@ -46,7 +46,7 @@ export interface ScopedRouteBindingsInput extends RouteBindingsInput {
 
 /** Compiled IBIS buffer data needed to wire a routed deck. */
 export type RouteBuffer = Pick<
-  CompiledBuffer,
+  CompiledIbisComponent,
   | "name"
   | "source"
   | "spicePinMapping"
