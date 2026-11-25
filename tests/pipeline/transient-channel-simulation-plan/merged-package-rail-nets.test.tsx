@@ -132,33 +132,30 @@ ${matrixPinName}
     )
 }
 
-test.failing(
-  "requires one board net per merged package rail, even when the matrix pin is unmapped",
-  async () => {
-    const sameNetBoard = await renderCoreSignals(
-      <MergedRailBoard clampNet="net.VCC" />,
-    )
-    const splitNetBoard = await renderCoreSignals(
-      <MergedRailBoard clampNet="net.CLAMP" />,
-    )
-    for (const matrixPinName of ["5", "7"] as const) {
-      const ibisSources = { [inverterModelPath]: mergedRailIbis(matrixPinName) }
-      const sameNet = new TransientChannelSimulationPlanSolver({
-        circuitJson: sameNetBoard,
-        ibisSources,
-      })
-      sameNet.solve()
-      assert.equal(sameNet.getOutput().value.length, 1)
+test("requires one board net per merged package rail, even when the matrix pin is unmapped", async () => {
+  const sameNetBoard = await renderCoreSignals(
+    <MergedRailBoard clampNet="net.VCC" />,
+  )
+  const splitNetBoard = await renderCoreSignals(
+    <MergedRailBoard clampNet="net.CLAMP" />,
+  )
+  for (const matrixPinName of ["5", "7"] as const) {
+    const ibisSources = { [inverterModelPath]: mergedRailIbis(matrixPinName) }
+    const sameNet = new TransientChannelSimulationPlanSolver({
+      circuitJson: sameNetBoard,
+      ibisSources,
+    })
+    sameNet.solve()
+    assert.equal(sameNet.getOutput().value.length, 1)
 
-      const splitNet = new TransientChannelSimulationPlanSolver({
-        circuitJson: splitNetBoard,
-        ibisSources,
-      })
-      assert.throws(
-        () => splitNet.solve(),
-        /merged package pins (5 and 6|6 and 5) require the same board net/,
-        `matrix pin ${matrixPinName}`,
-      )
-    }
-  },
-)
+    const splitNet = new TransientChannelSimulationPlanSolver({
+      circuitJson: splitNetBoard,
+      ibisSources,
+    })
+    assert.throws(
+      () => splitNet.solve(),
+      /merged package pins (5 and 6|6 and 5) require the same board net/,
+      `matrix pin ${matrixPinName}`,
+    )
+  }
+})
