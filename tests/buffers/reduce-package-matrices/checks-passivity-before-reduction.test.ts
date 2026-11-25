@@ -29,12 +29,11 @@ test("checks passivity before reduction", () => {
         [0, 0, 1],
       ],
     }
-    const reduceSemidefinite = () =>
-      reducePackageMatrices({ model: semidefiniteModel, pins: model.pins })
+    const request = { model: semidefiniteModel, pins: model.pins }
     if (field === "L") {
-      assert.throws(reduceSemidefinite, /positive definite/)
+      assert.throws(() => reducePackageMatrices(request), /positive definite/)
     } else {
-      assert.deepEqual(reduceSemidefinite().C, semidefiniteModel.C)
+      assert.deepEqual(reducePackageMatrices(request).C, semidefiniteModel.C)
     }
     assert.throws(
       () =>
