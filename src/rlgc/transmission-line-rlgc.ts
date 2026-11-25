@@ -49,17 +49,17 @@ function* enumerateWirePairs(
   wireSections: readonly Snapshot<WireSection>[],
 ): IterableIterator<IndexedWireSection> {
   for (const [wireSectionIndex, wireSection] of wireSections.entries()) {
-    for (const [firstWireIndex, firstWire] of wireSection.wires.entries()) {
+    for (const [firstPosition, firstWire] of wireSection.wires.entries()) {
       for (
-        let secondWireIndex = firstWireIndex + 1;
-        secondWireIndex < wireSection.wires.length;
-        secondWireIndex++
+        let secondPosition = firstPosition + 1;
+        secondPosition < wireSection.wires.length;
+        secondPosition++
       ) {
         yield {
           wireSectionIndex,
           wireSection: {
             ...wireSection,
-            wires: [firstWire, wireSection.wires[secondWireIndex]],
+            wires: [firstWire, wireSection.wires[secondPosition]],
           },
         }
       }

@@ -148,6 +148,7 @@ domain:
   modal: describing an electrical mode or the factor that represents its stored energy
   model: a chip model (IBIS) or the electrical model of the channel built from extraction
   modeling: private numerical settings derived from Circuit JSON
+  mutual: a capacitance or inductance term relating two different conductors
   nearby: inside the explicitly defined spatial coupling horizon
   net: a set of pins and copper that are connected together
   network: the connected electrical cells and correction elements of routed copper
@@ -196,6 +197,7 @@ domain:
   ring: one closed loop of points that outlines a polygon or a hole in it
   route: the path a trace follows across the board, as points and vias
   schedule: the actual logical transitions and their times in one stimulus
+  screen: decide whether a pair is coupled using its normalized mutual coefficients
   scope: a module's named artifact folder, or the board copper selected for a channel's extraction
   seal: sort and freeze a ledger's files into the published file map
   second: the SI time unit or the second member of an ordered pair
@@ -211,6 +213,7 @@ domain:
   sweep: partition geometry by visiting consecutive boundaries in order
   section: a longitudinal interval with the same wires and reference surfaces
   snapshot: a copied and frozen domain value published by a completed stage
+  solution: the electrical matrices calculated for one cross-section
   solver: an external program that does the physics (ngspice), or one stepped pipeline stage
   span: the range of layers a via crosses
   sparse: a matrix or realization with mostly zero couplings
@@ -241,7 +244,6 @@ domain:
   wire: one straight planar conductor derived from a PCB trace
   # Transmission line is the electrical model of a coupled wire group over one section.
   # Cross-section is its two-dimensional copper and material geometry, and RLGC matrices are its electrical results.
-  # Pair screening compares normalized mutual capacitance and inductance before grouping wires.
 
 abbreviations:
   ac: alternating current; in DDR thresholds, the level a signal must reach
