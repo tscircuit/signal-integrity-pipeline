@@ -1,5 +1,5 @@
-import { simulation } from "@tscircuit/core"
 import React from "react"
+import { simulation } from "./signal-parts"
 
 // Original synthetic IBIS exercises the package boundary, never substitutes native board evidence.
 export const source = `[IBIS Ver] 4.2
@@ -62,20 +62,26 @@ V1
 [End]`
 
 /** TSX reproduction has real serialized IBIS pin bindings, with no native board solve. */
-export function Board(): React.JSX.Element {
+export function Board({
+  isPowerBusMerged = false,
+}: {
+  isPowerBusMerged?: boolean
+}): React.JSX.Element {
+  const pinLabels: Record<string, string> = {
+    A1: "A",
+    B1: "B",
+    V1: "VDD",
+    G1: "VSS",
+  }
+  if (isPowerBusMerged) pinLabels.V2 = "VDD2"
   return (
     <board width={10} height={10} routingDisabled schematicDisabled>
       <chip
         name="U1"
-        pinLabels={{
-          A1: "A",
-          B1: "B",
-          V1: "VDD",
-          G1: "VSS",
-        }}
+        pinLabels={pinLabels}
         footprint={
           <footprint>
-            {["A1", "B1", "V1", "G1"].map((pin, i) => (
+            {Object.keys(pinLabels).map((pin, i) => (
               <React.Fragment key={pin}>
                 <smtpad
                   portHints={[pin]}
@@ -98,12 +104,7 @@ export function Board(): React.JSX.Element {
           mimetype: "text/plain",
         }}
         ibisComponentName="fixture"
-        ibisPinNameToPortLabel={{
-          A1: "A",
-          B1: "B",
-          V1: "VDD",
-          G1: "VSS",
-        }}
+        ibisPinNameToPortLabel={pinLabels}
       />
     </board>
   )

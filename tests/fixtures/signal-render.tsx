@@ -1,13 +1,13 @@
 import type React from "react"
 import type { CircuitJson } from "../../src/board"
 import type { IbisSources } from "../../src/buffers"
+import type { TransientChannelSimulationPlan } from "../../src/pipeline"
 import { TransientChannelSimulationPlanSolver } from "../../src/pipeline"
 import {
   listChannelSimulations,
   type PreparedChannelSimulation,
   prepareChannelSimulationById,
 } from "../../src/pipeline/signals"
-import type { RouteBindingsInput } from "../../src/simulation"
 import { renderCoreSignals } from "../support/core-render"
 
 /** Render through real core, permitting only specifically expected physical diagnostics. */
@@ -66,7 +66,7 @@ export function plannedBindings({
 }: {
   circuitJson: CircuitJson
   ibisSources: IbisSources
-}): RouteBindingsInput {
+}): TransientChannelSimulationPlan["bindings"] {
   const planner = new TransientChannelSimulationPlanSolver({
     circuitJson,
     ibisSources,
