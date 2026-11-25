@@ -1,7 +1,7 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
+import { convertIbisModelToSpice } from "@tscircuit/ibis-to-spice"
 import type { GraphicsObject } from "graphics-debug"
-import { convertIbisComponentWithPackage } from "../../../src/buffers/package-conversion"
 import { source } from "../../fixtures/coupled-package"
 import { packageInput, renderPackageModel } from "../../fixtures/package-input"
 import { assertPlanDrawingSnapshot } from "../../fixtures/plan-drawing-snapshot"
@@ -12,10 +12,7 @@ const CAPACITANCE_COLOR = "#a14324"
 
 test("shows the coupled package paths and board and die shunts", async () => {
   const input = packageInput(await renderPackageModel())
-  const converted = convertIbisComponentWithPackage({
-    bytes: new TextEncoder().encode(source),
-    input,
-  })
+  const converted = convertIbisModelToSpice(source, input.definition, input.run)
   const matrices = converted.metadata.packageData.matrices
   assert.ok(matrices)
   assert.match(converted.source, /^CPKG0_1a PAD0 PAD1 /m)

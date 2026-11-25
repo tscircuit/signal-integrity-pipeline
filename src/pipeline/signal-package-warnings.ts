@@ -1,11 +1,11 @@
 import { cju } from "@tscircuit/circuit-json-util"
-import { getSourcePortConnectivityMapFromCircuitJson } from "../board"
 import {
   formatCapacitanceSignWarnings,
-  type IbisSources,
-  loadModelSource,
+  parseIbis,
   resolveCoupledPackage,
-} from "../buffers"
+} from "@tscircuit/ibis-to-spice"
+import { getSourcePortConnectivityMapFromCircuitJson } from "../board"
+import { type IbisSources, loadModelSource } from "../buffers"
 import type { PrunedIbisModels } from "./signal-models"
 
 /** Validate selected package matrices and report their capacitance sign conversions. */
@@ -34,7 +34,7 @@ export function channelSimulationPackageWarnings({
     })
     const packagePins = ibisModelRecord.ibis_pin_name_to_source_port_id
     const reducedMatrices = resolveCoupledPackage({
-      text,
+      document: parseIbis(text),
       component: pin.component,
       pins: Object.keys(packagePins),
     })
