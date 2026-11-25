@@ -1,7 +1,6 @@
 import { cju } from "@tscircuit/circuit-json-util"
+import { convertIbisModelToSpice } from "@tscircuit/ibis-to-spice"
 import type { ModelRunDefinition } from "../../src/buffers"
-import { convertIbisComponentWithPackage } from "../../src/buffers/package-conversion"
-import { lineRanges, splitWords } from "../../src/buffers/source-tokens"
 import { renderCoreSignals } from "../support/core-render"
 import { simulation } from "./signal-parts"
 
@@ -74,8 +73,7 @@ export function points({
 }): SpiceSamples {
   const prefix = `V${label}0 `
   let pointText: string | undefined
-  for (const { start, end } of lineRanges(text)) {
-    const line = text.slice(start, end)
+  for (const line of text.split("\n")) {
     if (!line.startsWith(prefix) || !line.endsWith(")")) continue
     const open = line.lastIndexOf("PWL(")
     if (open < prefix.length) continue
@@ -83,30 +81,10 @@ export function points({
     break
   }
   if (!pointText) throw new Error(`Missing ${label} PWL points`)
-  const pointTokens = splitWords(pointText).map(Number)
+  const pointTokens = pointText.split(" ").map(Number)
   return pointTokens
     .filter((_, i) => i % 2 === 0)
     .map((seconds, i) => [seconds, pointTokens[i * 2 + 1]])
-}
-
-/** Alter the explicit run without altering caller-owned inputs. */
-export function run({
-  input,
-  bits,
-  interval,
-  duration = "5ns",
-}: {
-  input: ModelRunDefinition
-  bits: string
-  interval: string
-  duration?: string
-}): ModelRunDefinition {
-  const next = structuredClone(input)
-  next.run.duration = duration
-  const stimulus = next.run.stimuli[next.definition.pinMap["1"]]
-  stimulus.unitInterval = interval
-  stimulus.pattern.bits = bits
-  return next
 }
 
 /** Run an original inline model through the same package and switching boundary. */
@@ -116,13 +94,9 @@ export function convert({
 }: {
   next: ModelRunDefinition
   text?: string
-}): ReturnType<typeof convertIbisComponentWithPackage> {
-  const bytes = new TextEncoder().encode(text)
+}): ReturnType<typeof convertIbisModelToSpice> {
   const definition = { ...next.definition, source: { content: text } }
-  return convertIbisComponentWithPackage({
-    bytes,
-    input: { ...next, definition },
-  })
+  return convertIbisModelToSpice(text, definition, next.run)
 }
 
 /** Render the pin mapping through core before creating the switching run. */

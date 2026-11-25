@@ -1,7 +1,6 @@
 import { setDefaultTimeout, test } from "bun:test"
 import assert from "node:assert/strict"
-import { parseIbis } from "@tscircuit/ibis-to-spice"
-import { resolveCoupledPackage } from "../../../src/buffers/coupled-package"
+import { parseIbis, resolveCoupledPackage } from "@tscircuit/ibis-to-spice"
 import {
   loadVendorModelText,
   vendorAvailable,
@@ -15,10 +14,11 @@ const scalarPackage =
 test.skipIf(!vendorAvailable("W631GG6MB-12.ibs"))(scalarPackage, async () => {
   // A scalar lumped package is passive iff each R, L and C is non-negative (1 x 1 energy matrices).
   const text = await loadVendorModelText(vendorModels.ddr3)
-  const component = parseIbis(text).components["W631GG6MB-12"]
+  const document = parseIbis(text)
+  const component = document.components["W631GG6MB-12"]
   assert.equal(
     resolveCoupledPackage({
-      text,
+      document,
       component,
       pins: Object.keys(component.pins),
     }),

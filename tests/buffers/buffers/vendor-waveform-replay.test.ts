@@ -1,12 +1,12 @@
 import { setDefaultTimeout, test } from "bun:test"
 import assert from "node:assert/strict"
 import {
+  convertIbisModelToSpice,
   cornerValue,
   type IbisDocument,
   parseIbis,
 } from "@tscircuit/ibis-to-spice"
 import { referenceVoltages } from "../../../src/buffers/inspect"
-import { convertIbisComponentWithSwitchingSchedule } from "../../../src/buffers/switching-conversion"
 import {
   loadVendorModelText,
   vendorAvailable,
@@ -146,48 +146,45 @@ test.skipIf(skipReplay)(fixtureReplay, async () => {
     for (const edge of ["rising", "falling"] as const) {
       let initialState: 0 | 1 = 1
       if (edge === "rising") initialState = 0
-      const converted = convertIbisComponentWithSwitchingSchedule({
-        bytes: new TextEncoder().encode(text),
-        input: {
-          definition: {
-            source: { content: text },
-            component: replay.component,
-            pinMap: {
-              [replay.pin]: "sig",
-              [replay.power]: "vdd",
-              [replay.ground]: "gnd",
-            },
-            modelSelections: { [replay.pin]: replay.model },
-            references: {
-              [replay.pin]: {
-                pullup: "vdd",
-                pulldown: "gnd",
-                powerClamp: "vdd",
-                groundClamp: "gnd",
-              },
-            },
-            corner: "typical",
-            packagePolicy: "vendor",
+      const converted = convertIbisModelToSpice(
+        text,
+        {
+          source: { content: text },
+          component: replay.component,
+          pinMap: {
+            [replay.pin]: "sig",
+            [replay.power]: "vdd",
+            [replay.ground]: "gnd",
           },
-          run: {
-            duration: duration * 1e3,
-            pinStates: { sig: { mode: "output", enabled: true } },
-            stimuli: {
-              sig: {
-                unitInterval: duration * 1e3,
-                startTime: 0,
-                initialState,
-                pattern: {
-                  type: "bits",
-                  bits: String(1 - initialState),
-                  repeat: false,
-                },
+          modelSelections: { [replay.pin]: replay.model },
+          references: {
+            [replay.pin]: {
+              pullup: "vdd",
+              pulldown: "gnd",
+              powerClamp: "vdd",
+              groundClamp: "gnd",
+            },
+          },
+          corner: "typical",
+          packagePolicy: "omit",
+        },
+        {
+          duration: duration * 1e3,
+          pinStates: { sig: { mode: "output", enabled: true } },
+          stimuli: {
+            sig: {
+              unitInterval: duration * 1e3,
+              startTime: 0,
+              initialState,
+              pattern: {
+                type: "bits",
+                bits: String(1 - initialState),
+                repeat: false,
               },
             },
           },
         },
-        document,
-      })
+      )
       const name = firstSubcircuitName(converted.source)
       assert.ok(name, "converted SPICE must declare a subcircuit")
       lines.push(converted.source)
