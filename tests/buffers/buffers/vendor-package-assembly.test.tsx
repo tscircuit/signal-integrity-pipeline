@@ -2,13 +2,16 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import { convertIbisModelToSpice, parseIbis } from "@tscircuit/ibis-to-spice"
-import { cloneCircuitJson } from "../../src/board"
-import { convertIbisComponentWithPackage } from "../../src/buffers/package-conversion"
-import { isDigit, lineRanges } from "../../src/buffers/source-tokens"
-import { generalDeclarations, modelRunDefinition } from "../../src/simulation"
-import { plannedBindings, renderSignals } from "../fixtures/signal-render"
-import Differential from "../fixtures/unit-differential"
-import Single from "../fixtures/unit-single-ended"
+import { cloneCircuitJson } from "../../../src/board"
+import { compileBuffers, validateIbisSources } from "../../../src/buffers"
+import { rootScope } from "../../../src/kernel"
+import {
+  generalDeclarations,
+  modelRunDefinition,
+} from "../../../src/simulation"
+import { plannedBindings, renderSignals } from "../../fixtures/signal-render"
+import Differential from "../../fixtures/unit-differential"
+import Single from "../../fixtures/unit-single-ended"
 
 const DEFAULT_DIFFERENTIAL_FIXTURE = false
 
@@ -22,9 +25,14 @@ function sourceLines({
   source: string
   prefixes: string[]
 }): string[] {
-  return Array.from(lineRanges(source), ({ start, end }) =>
-    source.slice(start, end),
-  ).filter((line) => prefixes.some((prefix) => line.startsWith(prefix)))
+  return source
+    .split("\n")
+    .filter((line) => prefixes.some((prefix) => line.startsWith(prefix)))
+}
+
+/** A decimal digit in a generated package node suffix. */
+function isDigit(character: string): boolean {
+  return character >= "0" && character <= "9"
 }
 
 /** Recover original terminal names to compare the unchanged die buffer and drive tables. */
@@ -53,45 +61,10 @@ function normalizeNodes({
   return result
 }
 
-/** Detect the tiny upstream hold step when comparing PWL knots. */
-const HOLD_STEP_THRESHOLD_SECONDS = 1e-14
-
-/** Upstream holds each state until 1 fs before an edge; the pipeline starts the edge from that held state. */
-function held({
-  line,
-  companion,
-}: {
-  line: string
-  companion: string
-}): string {
-  const open = line.indexOf("PWL(")
-  const close = line.lastIndexOf(")")
-  if (open < 0 || close < open + 4) return line
-  const knots = line.slice(open + 4, close).split(" ")
-  const companionKnots = companion
-    .slice(companion.indexOf("PWL(") + 4, companion.lastIndexOf(")"))
-    .split(" ")
-  const kept: string[] = []
-  for (let i = 0; i < knots.length; i += 2) {
-    if (
-      i + 2 < knots.length &&
-      Number(knots[i + 2]) - Number(knots[i]) < HOLD_STEP_THRESHOLD_SECONDS &&
-      Math.abs(Number(knots[i + 3]) - Number(knots[i + 1])) <= 0.01 &&
-      Math.abs(Number(companionKnots[i + 3]) - Number(companionKnots[i + 1])) <=
-        0.01
-    ) {
-      i += 2
-      kept.push(knots[i], knots[i - 1])
-      continue
-    }
-    kept.push(knots[i], knots[i + 1])
-  }
-  return `${line.slice(0, open)}PWL(${kept.join(" ")})${line.slice(close + 1)}`
-}
-
 /** Vendor source bytes and declarations for a rendered package fixture. */
 interface PackageFixture {
   bytes: Uint8Array
+  file: string
   declarations: ReturnType<typeof generalDeclarations>
 }
 
@@ -116,16 +89,25 @@ async function fixture(
     modeling: bindings.modeling,
     controls: bindings.controls,
   })
-  return { bytes, declarations }
+  return { bytes, file, declarations }
 }
 
 test("ideal die rails preserve every pin package at the typical corner", async () => {
   for (const differential of [false, true]) {
-    const { bytes, declarations } = await fixture(differential)
+    const { bytes, file, declarations } = await fixture(differential)
     const document = parseIbis(new TextDecoder().decode(bytes))
-    for (const model of declarations.models) {
-      const input = modelRunDefinition({ model, plan: declarations.plans[0] })
-      const converted = convertIbisComponentWithPackage({ bytes, input })
+    const { value: validated } = validateIbisSources({
+      models: declarations.models,
+      ibisSources: { [`models/${file}`]: bytes },
+      scope: rootScope("buffers"),
+    })
+    const [models] = compileBuffers({
+      validated,
+      plans: declarations.plans,
+      define: modelRunDefinition,
+    })
+    for (const converted of models) {
+      const { input } = converted
       const die = convertIbisModelToSpice(
         bytes,
         { ...input.definition, packagePolicy: "omit" },
@@ -182,12 +164,7 @@ test("ideal die rails preserve every pin package at the typical corner", async (
         source: die.source,
         prefixes: drive,
       })
-      assert.deepEqual(
-        driveTables,
-        originalDriveTables.map((line, index) =>
-          held({ line, companion: originalDriveTables[index ^ 1] }),
-        ),
-      )
+      assert.deepEqual(driveTables, originalDriveTables)
       assert.deepEqual(converted.metadata.omissions, [])
     }
   }

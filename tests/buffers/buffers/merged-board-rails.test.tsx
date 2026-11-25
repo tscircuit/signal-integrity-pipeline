@@ -1,8 +1,7 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
+import { convertIbisModelToSpice } from "@tscircuit/ibis-to-spice"
 import { createNativeSolver } from "../../../src/adapters"
-import { convertIbisComponentWithPackage } from "../../../src/buffers/package-conversion"
-import { subcircuitHeader } from "../../../src/buffers/spice-netlist"
 import { source } from "../../fixtures/coupled-package"
 import { packageInput, renderPackageModel } from "../../fixtures/package-input"
 
@@ -42,19 +41,18 @@ V2 NC NC NC PWR
     tools: { ngspice: process.env.NGSPICE_BIN || "ngspice" },
   })
   for (const mergedPinsKeyword of ["", "[Merged Pins] V1\nV2\n"]) {
-    const converted = convertIbisComponentWithPackage({
-      bytes: new TextEncoder().encode(
-        ibis.replace("[Model Data]", `${mergedPinsKeyword}[Model Data]`),
-      ),
-      input,
-    })
+    const converted = convertIbisModelToSpice(
+      ibis.replace("[Model Data]", `${mergedPinsKeyword}[Model Data]`),
+      input.definition,
+      input.run,
+    )
     assert.deepEqual(converted.metadata.packageData.matrices?.mergedPins, {
       V2: "V1",
     })
     assert.doesNotMatch(converted.source, /^V(?:DIE|PKGM)/m)
     assert.match(converted.source, /^XBUF0 PKGD0 PKGD2 PKGD3 PKGD2 PKGD3 /m)
     assert.match(converted.source, /^XBUF1 PKGD1 PKGD2 PKGD3 PKGD2 PKGD3 /m)
-    const name = subcircuitHeader(converted.source)?.[1]
+    const name = converted.source.split("\n")[1].split(" ")[1]
     assert.ok(name)
     const nodes = Object.values(converted.spicePinMapping).map((port) => {
       if (port === pinMap.A1) return "in_a"
