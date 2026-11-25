@@ -1,11 +1,11 @@
 import { setDefaultTimeout, test } from "bun:test"
 import assert from "node:assert/strict"
-import { parseIbis } from "@tscircuit/ibis-to-spice"
-import { addrCmdPins } from "../../../examples/routed/ddr3-signals"
 import {
   buildCoupledPackageSpiceElements,
+  parseIbis,
   resolveCoupledPackage,
-} from "../../../src/buffers/coupled-package"
+} from "@tscircuit/ibis-to-spice"
+import { addrCmdPins } from "../../../examples/routed/ddr3-signals"
 import {
   loadVendorModelText,
   vendorAvailable,
@@ -26,7 +26,8 @@ test.skipIf(!vendorAvailable("sprm552c.ibs"))(coupledSelection, async () => {
   // TSX declarations select (examples/routed/ddr3-signals.tsx). Schur reduction of floating unused pins preserves
   // definiteness (Horn & Johnson, Matrix Analysis, 2nd ed., Theorem 7.7.6), and ngspice K must satisfy |k| < 1.
   const text = await loadVendorModelText(vendorModels.am335x)
-  const component = parseIbis(text).components.am335x_zcz
+  const document = parseIbis(text)
+  const component = document.components.am335x_zcz
   const sets = {
     addrCmd: addrCmdPins.map(([, pin]) => pin),
     dqWrite: ["M3", "M4", "N1", "N2", "N3", "N4", "P3", "P4", "M2", "P1", "P2"],
@@ -34,7 +35,7 @@ test.skipIf(!vendorAvailable("sprm552c.ibs"))(coupledSelection, async () => {
   const failures: string[] = []
   for (const [name, signals] of Object.entries(sets)) {
     const selected = resolveCoupledPackage({
-      text,
+      document,
       component,
       pins: [...signals, "E5", "A1"],
     })

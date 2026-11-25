@@ -1,4 +1,8 @@
-import type { StringOffsets } from "../buffers"
+/** Start and end offsets in the source text. */
+export type StringOffsets = {
+  start: number
+  end: number
+}
 
 const SUBCIRCUIT_DIRECTIVE = ".subckt"
 
