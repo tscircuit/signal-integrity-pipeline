@@ -1,7 +1,9 @@
 import { type DiagnosticInit, diagnostics } from "../kernel"
 
-/** Diagnostics for IBIS inspection, asset admission and conversion. */
+/** Diagnostics for IBIS inspection, source validation and conversion. */
 const raise = diagnostics("buffers", [
+  "converter_version",
+  "vendor_hash",
   "ibis_asset",
   "ibis_asset_missing",
   "ibis_capability_unsupported",
