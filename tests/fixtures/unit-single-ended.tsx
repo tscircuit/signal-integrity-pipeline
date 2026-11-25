@@ -14,11 +14,13 @@ export default function ({
   bitRate = BIT_RATE_BPS,
   pattern,
   seed,
+  driverDisabled,
   timing = { durationSeconds: CAPTURE_BITS / bitRate },
 }: {
   bitRate?: number
   pattern?: string
   seed?: number
+  driverDisabled?: boolean
   timing?: {
     durationSeconds?: number
     offsetSeconds?: number
@@ -55,6 +57,7 @@ export default function ({
           receiverRef=".RX > .A"
           pattern={pattern}
           seed={seed}
+          driverDisabled={driverDisabled}
           offset={timing.offsetSeconds}
         />
       </simulation.pcbtransientchannelsimulation>
