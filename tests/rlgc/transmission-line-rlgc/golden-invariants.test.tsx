@@ -29,13 +29,12 @@ test("golden invariants: every routed TSX section has SPD L/C with |k| < 1, Maxw
   })
   copper.solve()
   const { root } = await routedVisualFixture()
+  const copperSolutions = copper.getOutput().value.crossSectionSolutions
   const sections = [
-    ...copper
-      .getOutput()
-      .value.crossSectionSolutions.map((section) => ({
-        board: "routedCopper",
-        ...section,
-      })),
+    ...copperSolutions.map((section) => ({
+      board: "routedCopper",
+      ...section,
+    })),
     ...root
       .stageOutput("TransmissionLineRlgcSolver")
       .value.flatMap((extracted) =>
