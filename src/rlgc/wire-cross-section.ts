@@ -1,7 +1,7 @@
 import type { LayerRef } from "circuit-json"
 import type { BoardStackup, ExtractedCopper, WireSection } from "../board"
 import type { Snapshot } from "../kernel"
-import type { CrossSection, CrossSectionDielectricLayer } from "./cross-section"
+import type { CrossSection } from "./cross-section"
 import { DIELECTRIC_BOUNDARY_TOLERANCE_MM } from "./cross-section-regions"
 import { fail } from "./diagnostics"
 import {
@@ -28,27 +28,27 @@ function getCopperLayer({
   return copperLayer
 }
 
-/** Keep the board dielectric layers on the wire-facing side of each reference surface. */
-function clipDielectricLayers({
-  dielectricLayers,
-  wireSection,
-  copperLayers,
-}: {
-  dielectricLayers: CrossSectionDielectricLayer[]
-  wireSection: Snapshot<WireSection>
-  copperLayers: readonly CopperLayer[]
-}): CrossSectionDielectricLayer[] {
+/** Clip dielectric beyond the outer references, letting the field solver partition interior planes. */
+function clipDielectricLayers(crossSection: CrossSection): CrossSection {
+  const { conductors, planes } = crossSection
+  let lowestConductorZMm = Infinity
+  let highestConductorZMm = -Infinity
+  for (const conductor of conductors) {
+    lowestConductorZMm = Math.min(lowestConductorZMm, conductor.zMm)
+    highestConductorZMm = Math.max(
+      highestConductorZMm,
+      conductor.zMm + conductor.thicknessMm,
+    )
+  }
   let lowerBoundMm = -Infinity
   let upperBoundMm = Infinity
-  for (const reference of wireSection.references) {
-    const copperLayer = getCopperLayer({ copperLayers, layer: reference.layer })
-    if (reference.surfaceZMm === copperLayer.zMinMm) {
-      upperBoundMm = Math.min(upperBoundMm, reference.surfaceZMm)
-      continue
-    }
-    lowerBoundMm = Math.max(lowerBoundMm, reference.surfaceZMm)
+  for (const plane of planes) {
+    if (plane.zMm <= lowestConductorZMm)
+      lowerBoundMm = Math.max(lowerBoundMm, plane.zMm)
+    if (plane.zMm >= highestConductorZMm)
+      upperBoundMm = Math.min(upperBoundMm, plane.zMm)
   }
-  return dielectricLayers.flatMap((layer) => {
+  const dielectricLayers = crossSection.dielectricLayers.flatMap((layer) => {
     const zMm = Math.max(lowerBoundMm, layer.zMm)
     const thicknessMm =
       Math.min(upperBoundMm, layer.zMm + layer.thicknessMm) - zMm
@@ -57,6 +57,7 @@ function clipDielectricLayers({
       return [layer]
     return [{ ...layer, zMm, thicknessMm }]
   })
+  return { ...crossSection, dielectricLayers }
 }
 
 /** Project a wire section to the relative geometry and materials used by calculateRlgc. */
@@ -76,11 +77,6 @@ export function buildCrossSection({
       text: "A wire section needs at least one wire",
     })
   const { copperLayers } = stackup
-  const dielectricLayers = clipDielectricLayers({
-    dielectricLayers: buildDielectricLayers({ stackup, materials }),
-    wireSection,
-    copperLayers,
-  })
   const conductors = wireSection.wires.map((wire, conductorIndex) => {
     const copperLayer = getCopperLayer({ copperLayers, layer: wire.layer })
     return {
@@ -98,5 +94,9 @@ export function buildCrossSection({
       .conductivitySm,
   }))
   planes.sort((firstPlane, secondPlane) => firstPlane.zMm - secondPlane.zMm)
-  return { conductors, planes, dielectricLayers }
+  return clipDielectricLayers({
+    conductors,
+    planes,
+    dielectricLayers: buildDielectricLayers({ stackup, materials }),
+  })
 }
