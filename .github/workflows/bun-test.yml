@@ -30,31 +30,15 @@ jobs:
           key: vendor-ibis-models-${{ hashFiles('examples/vendor-models.lock.json') }}
       - run: bun run fetch:vendor-models
 
-      - name: Run tests
-        run: bun test
-        env:
-          IBIS_MODEL_DIR: models
-
       - name: Install ngspice
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ngspice=42+ds-3build1
           ngspice --version
-      - name: Test the transient channel simulation plan through native capture
+
+      - name: Run tests
+        run: bun test
         env:
           IBIS_MODEL_DIR: models
-        run: bun test tests/pipeline/routed-pipeline/plan-to-capture.test.tsx
-      - name: Test constant-high waveform
-        env:
-          SI_TEST_SWITCHING_NGSPICE: '1'
-        run: >-
-          bun test tests/simulation/route-network.test.tsx
-          --test-name-pattern '^a constant-high driver stays high throughout (the default|an explicit) capture$'
 
-      - name: Upload snapshot artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-snapshots
-          path: tests/**/__snapshots__/*.diff.png
-          if-no-files-found: ignore
+

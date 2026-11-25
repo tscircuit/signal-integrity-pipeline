@@ -1,10 +1,7 @@
 import { type CircuitJsonUtilObjects, cju } from "@tscircuit/circuit-json-util"
-import type { PcbTrace } from "circuit-json"
 import {
   type CircuitJson,
-  type CopperScope,
   endpointPorts,
-  getSourcePortConnectivityMapFromCircuitJson,
   hasBuiltInPassiveModel,
   type SignalEndpoint,
   type SimulationIbisModel,
@@ -12,24 +9,9 @@ import {
   type SimulationPcbTransientChannelSimulation,
   type SourceNetId,
   type SourcePortId,
-  sourceNetMembers,
-  stackupFromCircuitJson,
 } from "../board"
-import {
-  coupledPackage,
-  type IbisSources,
-  type InspectedPin,
-  loadModelSource,
-  packageCapacitanceWarnings,
-} from "../buffers"
+import type { InspectedPin } from "../buffers"
 import { snapshot } from "../kernel"
-import { voltageSourceTerminals } from "../simulation"
-import type { NumericalSettings } from "./modeling"
-import type { ScopedSignalPins, SignalPins } from "./signal-pins"
-import { withChannelSimulationSupplies } from "./supplies"
-
-/** Ports and nets with a node supplied by routed copper, a buffer, or a voltage source. */
-type LoadNodeIds = Set<SourcePortId | SourceNetId>
 
 /** Selected IBIS model for a single-ended pin or one ordered differential leg. */
 function selectedIbisModel({
@@ -152,7 +134,7 @@ export function validateComponentModels({
 }
 
 /** Pruned circuit and inspected pins pointing to its updated model records. */
-interface PrunedIbisModels {
+export interface PrunedIbisModels {
   circuit: CircuitJson
   pins: Map<SourcePortId, InspectedPin>
 }
@@ -215,204 +197,12 @@ export function withUsedIbisModels({
       return [model]
     }),
     pins: new Map(
-      Array.from(pins, ([id, pin]) => [
-        id,
-        { ...pin, model: models.get(pin.model)! },
-      ]),
+      Array.from(pins, ([sourcePortId, pin]) => {
+        const model = models.get(pin.model)
+        if (!model)
+          throw new Error(`${sourcePortId}: missing scoped IBIS model`)
+        return [sourcePortId, { ...pin, model }]
+      }),
     ),
   }
-}
-
-/** Report package corrections for the same retained physical pins that will be compiled. */
-function channelSimulationPackageWarnings({
-  circuit,
-  pins,
-  sources,
-}: PrunedIbisModels & {
-  sources: IbisSources
-}): string[] {
-  const warnings: string[] = []
-  const db = cju([...circuit])
-  for (const model of db.simulation_ibis_model.list()) {
-    const pin = [...pins.values()].find((pin) => pin.model === model)
-    if (!pin || pin.component.coupledPackage === undefined) continue
-    const { text, evidence } = loadModelSource({
-      model: { ...model, pipelineId: model.simulation_ibis_model_id },
-      sources,
-    })
-    const selected = coupledPackage({
-      text,
-      component: pin.component,
-      pins: Object.keys(model.ibis_pin_name_to_source_port_id),
-    })
-    const file = model.ibis_model_asset.project_relative_path
-    warnings.push(
-      ...packageCapacitanceWarnings({
-        selected,
-        file,
-        sourceSha256: evidence.sourceSha256,
-      }),
-    )
-  }
-  return warnings
-}
-
-/** Source trace IDs for scoped signal routes with separate terminal nodes. */
-type RoutedLoadTraceIds = Set<PcbTrace["source_trace_id"]>
-
-/** Identify scoped nonrail routes whose copper creates separate terminals. */
-function routedLoadTraceIds({
-  pcbTraces,
-  copperScope,
-}: {
-  pcbTraces: readonly PcbTrace[]
-  copperScope: CopperScope
-}): RoutedLoadTraceIds {
-  const scoped = new Set(copperScope.extractedPcbTraceIds)
-  const railTraces = new Set(copperScope.nearbyRailPcbTraceIds)
-  return new Set(
-    pcbTraces
-      .filter(
-        (trace) =>
-          scoped.has(trace.pcb_trace_id) && !railTraces.has(trace.pcb_trace_id),
-      )
-      .map((trace) => trace.source_trace_id),
-  )
-}
-
-/** Find nodes that exist independently of the passive loads. */
-function loadNodes({
-  db,
-  copperScope,
-  pins,
-}: {
-  db: CircuitJsonUtilObjects
-  copperScope: CopperScope
-  pins: Map<SourcePortId, InspectedPin>
-}): LoadNodeIds {
-  const routed = routedLoadTraceIds({
-    pcbTraces: db.pcb_trace.list(),
-    copperScope,
-  })
-  const traces = db.source_trace.list()
-  const ideal = getSourcePortConnectivityMapFromCircuitJson(
-    traces.filter((trace) => !routed.has(trace.source_trace_id)),
-  )
-  const routeTerminals = traces
-    .filter((trace) => routed.has(trace.source_trace_id))
-    .flatMap((trace) => [
-      ...trace.connected_source_port_ids,
-      ...(trace.connected_source_net_ids ?? []),
-    ])
-  const bufferTerminals = [...pins.values()].flatMap((pin) => [
-    pin.port,
-    ...Object.values(pin.references),
-  ])
-  const sourceTerminals = db.simulation_voltage_source
-    .list()
-    .flatMap(voltageSourceTerminals)
-  const nodes: LoadNodeIds = new Set()
-  for (const terminal of [
-    ...routeTerminals,
-    ...bufferTerminals,
-    ...sourceTerminals,
-  ]) {
-    if (terminal === undefined) continue
-    for (const id of sourceNetMembers({
-      connectivity: ideal,
-      memberId: terminal,
-    }))
-      nodes.add(id)
-  }
-  return nodes
-}
-
-/** Keep a retained load only when every modeled terminal already has an external connection. */
-function retainedPassiveComponents({
-  circuit,
-  copperScope,
-  pins,
-  retained,
-  rails,
-}: {
-  circuit: CircuitJson
-  copperScope: CopperScope
-  pins: Map<SourcePortId, InspectedPin>
-  retained: ReadonlySet<SourcePortId | SourceNetId>
-  rails: ReadonlySet<SourcePortId | SourceNetId>
-}): NonNullable<NumericalSettings["passiveComponents"]> {
-  const db = cju([...circuit])
-  const nodes = loadNodes({ db, copperScope, pins })
-  return db.source_component.list().flatMap((component) => {
-    const sourceComponentId = component.source_component_id
-    const model = db.simulation_spice_subcircuit.getWhere({
-      source_component_id: sourceComponentId,
-    })
-    if (!model && !hasBuiltInPassiveModel(component)) return []
-    let terminals = db.source_port
-      .list({ source_component_id: sourceComponentId })
-      .map((port) => port.source_port_id)
-    if (model) terminals = Object.values(model.spice_pin_to_source_port_map)
-    if (!terminals.some((port) => retained.has(port) && !rails.has(port)))
-      return []
-    if (!terminals.every((port) => nodes.has(port))) return []
-    return [{ sourceComponentId }]
-  })
-}
-
-/** Numerical settings and the pruned circuit with its supplies. */
-interface SuppliedSignalSettings {
-  circuit: CircuitJson
-  settings: NumericalSettings
-  warnings: string[]
-}
-
-/** Check the stackup and prepare numerical settings with supplies and retained loads. */
-export function prepareSignalSettings({
-  pruned,
-  signalPins,
-  scopedPins,
-  traceContacts,
-  sources,
-}: {
-  pruned: PrunedIbisModels
-  signalPins: Pick<SignalPins, "connectivity" | "rails" | "reference">
-  scopedPins: Pick<ScopedSignalPins, "copperScope" | "retained">
-  traceContacts: NumericalSettings["traceContacts"]
-  sources: IbisSources
-}): SuppliedSignalSettings {
-  const { connectivity, rails, reference } = signalPins
-  const { copperScope, retained } = scopedPins
-  const warnings = channelSimulationPackageWarnings({ ...pruned, sources })
-  const stack = stackupFromCircuitJson(pruned.circuit)
-  if (!stack.relativePermittivity) {
-    throw new Error(
-      "<simulation.pcbtransientchannelsimulation> needs explicit stackup dielectric constants.",
-    )
-  }
-  if (copperScope.extractedPcbViaIds.length && !stack.viaPlatingMm) {
-    throw new Error(
-      "pcb_stackup must specify plated_hole_copper_thickness for routed vias",
-    )
-  }
-  const settings: NumericalSettings = {
-    traceContacts,
-    copperScope,
-    channelReference: { sourcePortId: reference },
-  }
-  const { circuit, supplies } = withChannelSimulationSupplies({
-    ...pruned,
-    connectivity,
-    retained,
-    reference,
-  })
-  if (supplies.length) settings.supplies = supplies
-  settings.passiveComponents = retainedPassiveComponents({
-    circuit,
-    copperScope,
-    pins: pruned.pins,
-    retained,
-    rails,
-  })
-  return { circuit, settings, warnings }
 }
