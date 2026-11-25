@@ -1,5 +1,4 @@
 import { parseIbis } from "@tscircuit/ibis-to-spice"
-import { sha256 } from "../kernel"
 import {
   type CoupledPackageModel,
   comparePinPackageTerms,
@@ -15,6 +14,9 @@ import { resolveRailReferences } from "./package-rails"
 import { withPackageElements } from "./spice-netlist"
 import { convertIbisComponentWithSwitchingSchedule } from "./switching-conversion"
 import type { ConvertedIbisComponent, ModelRunDefinition } from "./types"
+
+const PACKAGE_WARNING =
+  "Vendor package parasitics applied. Die voltage sources bias rail branches with DC resistance."
 
 const UNUSED_PIN_POLICY = "open-series-floating-capacitance"
 
@@ -60,6 +62,29 @@ function buildPackageMetadata({
   }
 }
 
+/** The upstream scalar topology is exact without rail parasitics or pin shunts. */
+function canUseUpstreamPackage(
+  metadata: ConvertedIbisComponent["metadata"],
+): boolean {
+  const { coupledModel, mappedPins } = metadata.packageData
+  if (coupledModel) return false
+  return mappedPins.every(
+    ({ role, resistanceOhms, inductanceHenries, capacitanceFarads }) => {
+      if (capacitanceFarads !== 0) return false
+      if (role === "reference")
+        return resistanceOhms === 0 && inductanceHenries === 0
+      return (
+        resistanceOhms !== null &&
+        Number.isFinite(resistanceOhms) &&
+        resistanceOhms >= 0 &&
+        inductanceHenries !== null &&
+        Number.isFinite(inductanceHenries) &&
+        inductanceHenries >= 0
+      )
+    },
+  )
+}
+
 /** Convert IBIS die buffers and apply the requested package policy. */
 export function convertIbisComponentWithPackage({
   bytes,
@@ -82,8 +107,11 @@ export function convertIbisComponentWithPackage({
     bytes,
     input,
     document,
+    canUseVendorPackage: canUseUpstreamPackage,
   })
   if (packagePolicy === "omit") return converted
+  if (converted.metadata.packagePolicy === "vendor")
+    return { ...converted, warnings: [...converted.warnings, PACKAGE_WARNING] }
   const terminals = resolvePackageTerminals(converted)
   const physicalPins = terminals.flatMap(({ packagePinName }) =>
     packagePinName === undefined ? [] : [packagePinName],
@@ -98,7 +126,6 @@ export function convertIbisComponentWithPackage({
     terminals,
     coupled,
     component,
-    corner,
     references: railReferences,
   })
   const nodes = new Map(
@@ -129,9 +156,7 @@ export function convertIbisComponentWithPackage({
   const warnings = converted.warnings.filter(
     (warning) => !converted.metadata.omissions.includes(warning),
   )
-  warnings.push(
-    "Vendor package parasitics applied. Die voltage sources bias rail branches with DC resistance.",
-  )
+  warnings.push(PACKAGE_WARNING)
   if (coupled)
     warnings.push(
       COUPLED_PACKAGE_WARNING,
@@ -139,7 +164,7 @@ export function convertIbisComponentWithPackage({
       ...formatCapacitanceSignWarnings({
         selected: coupled,
         file: sourceFile || input.definition.source.file || "(inline IBIS)",
-        sourceSha256: sha256(bytes),
+        sourceSha256: converted.metadata.sourceSha256,
       }),
     )
   return { ...converted, source, metadata, warnings }
