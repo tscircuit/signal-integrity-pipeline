@@ -41,4 +41,21 @@ jobs:
         env:
           IBIS_MODEL_DIR: models
 
+      - name: Test the transient channel simulation plan through native capture
+        env:
+          IBIS_MODEL_DIR: models
+        run: bun test tests/pipeline/routed-pipeline/plan-to-capture.test.tsx
+      - name: Test constant-high waveform
+        env:
+          SI_TEST_SWITCHING_NGSPICE: '1'
+        run: >-
+          bun test tests/simulation/route-network.test.tsx
+          --test-name-pattern '^a constant-high driver stays high throughout (the default|an explicit) capture$'
 
+      - name: Upload snapshot artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-snapshots
+          path: tests/**/__snapshots__/*.diff.png
+          if-no-files-found: ignore

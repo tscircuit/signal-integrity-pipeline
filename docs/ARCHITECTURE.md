@@ -27,7 +27,7 @@ RouteTransientSolver invokes ngspice through the injected solver port and publis
 
 ```mermaid
 flowchart LR
-  source["Circuit JSON SI records"] --> plan["pipeline: channel planning and declared aggressor states<br/>buffers: package validation, unlisted-pin hierarchy and passivity"]
+  source["Circuit JSON SI records"] --> plan["pipeline: channel planning and declared aggressor states<br/>buffers: package admission, unlisted-pin hierarchy and passivity"]
   modelSources["IBIS sources"] --> plan
   plan --> manifest["Transient channel simulation plan manifest"]
   plan --> cuts["pipeline: physical trace cuts"]
@@ -49,7 +49,7 @@ Node facilities. Domain modules return owned artifacts. The pipeline ledger
 rejects path collisions and seals files in sorted order. Channel simulations have separate
 artifact prefixes.
 
-`board` owns physical validation, the copper scope, route sections and board drawings;
+`board` owns physical admission, the copper scope, route sections and board drawings;
 `buffers` owns vendor source bytes, pin/model selection and package assembly;
 `extraction` owns cross-section field solves, route lines, pair coupling and matrix
 checks; `simulation` owns declarations, electrical sources, node identity, the routed
@@ -86,7 +86,7 @@ The selected scope and omitted pairs are recorded.
 
 ```mermaid
 flowchart LR
-  board[Physical routed copper] --> cap[Board candidate-net validation and reference slicing]
+  board[Physical routed copper] --> cap[Board candidate-net admission and reference slicing]
   cap --> pair[Extraction solved parallel pair screen]
   pair --> field[Extraction retained 2D cross-sections]
   field --> ladder[Simulation route-arc energy assembly]
