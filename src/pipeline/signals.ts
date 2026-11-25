@@ -48,7 +48,7 @@ const DEFAULT_NEARBY_GAP_MM = 32
 
 /** The lowered circuit and controls for a single transient channel simulation. */
 export interface PreparedChannelSimulation {
-  warnings: string[]
+  warnings?: string[]
   durationSeconds: number
   fastestEdgeSeconds: number
   stepSeconds: number
@@ -216,8 +216,7 @@ function withPreparedChannelControls({
     pins,
     simulationPcbTransientChannelSimulationId,
   } = options
-  return {
-    warnings,
+  const prepared: PreparedChannelSimulation = {
     channelSimulation,
     driverReceiverChannels,
     circuit,
@@ -228,6 +227,8 @@ function withPreparedChannelControls({
     fastestEdgeSeconds,
     stepSeconds: options.stepSeconds,
   }
+  if (warnings.length) prepared.warnings = warnings
+  return prepared
 }
 
 /** Prepare one channel simulation from its declarations through controls and probes. */

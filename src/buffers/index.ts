@@ -27,7 +27,7 @@ export {
   referenceVoltages,
 } from "./inspect"
 export { failInvalidIbisSource, loadModelSource, relativeFile } from "./source"
-export type { TextRange } from "./text"
+export type { TextRange } from "./source-tokens"
 export type {
   AssemblyEntry,
   BufferModeling,
