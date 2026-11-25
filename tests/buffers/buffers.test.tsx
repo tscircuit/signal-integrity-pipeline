@@ -1,19 +1,18 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
-import React from "react"
 import { cloneCircuitJson } from "../../src/board"
-import { admitBuffers, compileBuffers } from "../../src/buffers"
+import { compileBuffers, validateIbisSources } from "../../src/buffers"
 import { rootScope, sha256 } from "../../src/kernel"
 import { generalDeclarations, modelRunDefinition } from "../../src/simulation"
 import { plannedBindings, renderSignals } from "../fixtures/signal-render"
 import Single from "../fixtures/unit-single-ended"
 
-const modelDir = process.env.IBIS_MODEL_DIR
+const modelDir = process.env.IBIS_MODEL_DIR || "models"
 
 const description =
-  "real vendor packages and optional references survive public preflight; source hashes are evidence"
-test.skipIf(!modelDir)(description, async () => {
+  "real vendor packages and optional references survive channel planning and conversion; source hashes are evidence"
+test(description, async () => {
   const bytes = await readFile(`${modelDir}/sn74lvc1g04.ibs`)
   const ibis = { "models/sn74lvc1g04.ibs": bytes }
   const bindings = plannedBindings({
@@ -26,13 +25,13 @@ test.skipIf(!modelDir)(description, async () => {
     modeling: bindings.modeling,
     controls: bindings.controls,
   })
-  const admitted = admitBuffers({
+  const validated = validateIbisSources({
     models: declarations.models,
     ibisSources: ibis,
     scope: rootScope("buffers"),
   })
   const compiled = compileBuffers({
-    admitted: admitted.value,
+    validated: validated.value,
     plans: declarations.plans,
     define: modelRunDefinition,
   })

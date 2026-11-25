@@ -54,7 +54,7 @@ export function failInvalidIbisSource(path: string): never {
 }
 
 /**
- * Admits the caller-supplied IBIS bytes for one model: checks the path, format and UTF-8 text,
+ * Validates the caller-supplied IBIS bytes for one model: checks the path, format and UTF-8 text,
  * then records the SHA-256 evidence. Nothing is ever downloaded from the declared URL.
  */
 export function loadModelSource({

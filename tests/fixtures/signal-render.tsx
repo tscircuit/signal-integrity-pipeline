@@ -1,13 +1,13 @@
 import type React from "react"
 import type { CircuitJson } from "../../src/board"
 import type { IbisSources } from "../../src/buffers"
+import type { TransientChannelSimulationPlan } from "../../src/pipeline"
 import { TransientChannelSimulationPlanSolver } from "../../src/pipeline"
 import {
   listChannelSimulations,
   type PreparedChannelSimulation,
   prepareChannelSimulationById,
 } from "../../src/pipeline/signals"
-import type { RouteBindingsInput } from "../../src/simulation"
 import { renderCoreSignals } from "../support/core-render"
 
 /** Render through real core, permitting only specifically expected physical diagnostics. */
@@ -59,9 +59,6 @@ export function prepareChannelSimulations({
   )
 }
 
-/** Binding inputs prepared by channel planning before a route binding solver allocates an artifact scope. */
-type PlannedRouteBindings = Omit<RouteBindingsInput, "scope">
-
 /** The first planned channel simulation's bindings, checked by the standalone plan solver. */
 export function plannedBindings({
   circuitJson,
@@ -69,7 +66,7 @@ export function plannedBindings({
 }: {
   circuitJson: CircuitJson
   ibisSources: IbisSources
-}): PlannedRouteBindings {
+}): TransientChannelSimulationPlan["bindings"] {
   const textSources = Object.fromEntries(
     Object.entries(ibisSources).map(([name, bytes]) => {
       if (typeof bytes === "string") return [name, bytes] as const

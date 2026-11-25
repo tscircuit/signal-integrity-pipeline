@@ -1,5 +1,5 @@
-import { simulation } from "@tscircuit/core"
 import React from "react"
+import { simulation } from "./signal-parts"
 
 // Original synthetic IBIS exercises the package boundary, never substitutes native board evidence.
 export const source = `[IBIS Ver] 4.2

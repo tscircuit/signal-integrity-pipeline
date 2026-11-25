@@ -14,10 +14,12 @@ export default function ({
   bitRate = BIT_RATE_BPS,
   pattern,
   seed,
+  driverDisabled,
 }: {
   bitRate?: number
   pattern?: string
   seed?: number
+  driverDisabled?: boolean
 } = {}): React.JSX.Element {
   return (
     <board
@@ -50,6 +52,7 @@ export default function ({
           receiverRef=".RX > .A"
           pattern={pattern}
           seed={seed}
+          driverDisabled={driverDisabled}
         />
       </simulation.pcbtransientchannelsimulation>
     </board>

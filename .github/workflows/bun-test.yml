@@ -30,6 +30,9 @@ jobs:
           key: vendor-ibis-models-${{ hashFiles('examples/vendor-models.lock.json') }}
       - run: bun run fetch:vendor-models
 
+      - name: Install ngspice
+        run: sudo apt-get update && sudo apt-get install -y ngspice
+
       - name: Run tests
         run: bun test
         env:

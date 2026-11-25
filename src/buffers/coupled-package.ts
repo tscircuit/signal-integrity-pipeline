@@ -1,37 +1,70 @@
 import type { IbisComponent } from "@tscircuit/ibis-to-spice"
-import {
-  type SelectedPackageModel,
-  selectPackageModel,
-  sumReferenceCapacitance,
-} from "./package-matrix"
 import { parsePackageModel } from "./package-model"
+import {
+  type ReducedPackageMatrices,
+  reducePackageMatrices,
+  sumReferenceCapacitance,
+} from "./reduce-package-matrices"
 
 /** A lumped pi section splits shunt capacitance between its two ends. */
-export const PACKAGE_SHUNT_COUNT = 2
+export const PI_SECTION_SHUNT_COUNT = 2
 
-/** Reference roles that can share a vendor package bus. */
-type PackageRail = "pullup" | "pulldown"
+/** [Pin Mapping] roles shared by POWER or GND pins. */
+type PackageRailRole = "pullup" | "powerClamp" | "pulldown" | "groundClamp"
 
-/** POWER and GND can share their package bus with a listed pin. */
-export function packageRail(model: string): PackageRail | undefined {
-  const name = model.toLowerCase()
-  if (name === "power") return "pullup"
-  if (name === "gnd") return "pulldown"
-  return undefined
+/** Find the bus labels that apply to this package pin's POWER or GND model. */
+function packagePinBuses({
+  component,
+  packagePinName,
+}: {
+  component: IbisComponent
+  packagePinName: string
+}): string[] {
+  const pin = component.pins[packagePinName]
+  const mapping = component.pinMapping[packagePinName]
+  if (!pin || !mapping) return []
+  const pinModelName = pin.model.toLowerCase()
+  let roles: PackageRailRole[] = []
+  if (pinModelName === "power") roles = ["pullup", "powerClamp"]
+  if (pinModelName === "gnd") roles = ["pulldown", "groundClamp"]
+  return roles.flatMap((role) => {
+    const bus = mapping[role]
+    if (bus === undefined) return []
+    return [bus]
+  })
+}
+
+/** Merged pins must share both the [Pin] model role and a [Pin Mapping] bus. */
+function sharePackageBus({
+  component,
+  packagePinName,
+  matrixPinName,
+}: {
+  component: IbisComponent
+  packagePinName: string
+  matrixPinName: string
+}): boolean {
+  const packagePinModel = component.pins[packagePinName]?.model.toLowerCase()
+  if (packagePinModel !== component.pins[matrixPinName]?.model.toLowerCase())
+    return false
+  const buses = packagePinBuses({ component, packagePinName })
+  return packagePinBuses({ component, packagePinName: matrixPinName }).some(
+    (bus) => buses.includes(bus),
+  )
 }
 
 /** Selected package matrices and aliases for physical pins sharing a package bus. */
-export interface CoupledPackageModel extends SelectedPackageModel {
+export interface CoupledPackageModel extends ReducedPackageMatrices {
   mergedPins: Record<string, string>
 }
 
-/** Log and retain source evidence even when a later admission gate rejects the board. */
-export function packageCapacitanceWarnings({
+/** Format the source evidence for an IBIS capacitance sign conversion. */
+export function formatCapacitanceSignWarnings({
   selected,
   file,
   sourceSha256,
 }: {
-  selected: SelectedPackageModel | undefined
+  selected: ReducedPackageMatrices | undefined
   file: string
   sourceSha256: string
 }): string[] {
@@ -42,59 +75,64 @@ export function packageCapacitanceWarnings({
   const reason =
     "(uniform positive magnitudes, diagonally dominant rows) before Maxwell sign/passivity validation"
   const warning = `${file} SHA-256 ${sourceSha256}: ${model}: ${entries} ${reason}`
-  console.warn(warning)
   return [warning]
 }
 
 /** IBIS [Pin Numbers]: unlisted pins use scalar data unless their rail bus is merged. */
-export function coupledPackage({
+export function resolveCoupledPackage({
   text,
   component,
   pins,
 }: {
   text: string
   component: IbisComponent
-  pins: SelectedPackageModel["pins"]
+  pins: ReducedPackageMatrices["activePins"]
 }): CoupledPackageModel | undefined {
   if (component.coupledPackage === undefined) return undefined
   const model = parsePackageModel({ text, name: component.coupledPackage })
   const mergedPins: Record<string, string> = {}
-  for (const pin of pins) {
-    const physical = component.pins[pin]
-    if (!physical)
+  for (const [packagePinName, matrixPinName] of Object.entries(
+    model.mergedPins || {},
+  )) {
+    if (!sharePackageBus({ component, packagePinName, matrixPinName }))
       throw new Error(
-        `${model.name}: selected physical pin ${pin} missing from [Pin]`,
+        `${model.name}: merged pins ${packagePinName} and ${matrixPinName} must share a [Pin Mapping] bus`,
       )
-    if (model.pins.includes(pin)) continue
-    const role = packageRail(physical.model)
-    if (!role) continue
-    const bus = component.pinMapping[pin]?.[role]
-    if (!bus) continue
-    const first = model.pins.find((other) => {
-      const sameModel =
-        component.pins[other]?.model.toLowerCase() ===
-        physical.model.toLowerCase()
-      return sameModel && component.pinMapping[other]?.[role] === bus
-    })
-    if (first) mergedPins[pin] = first
   }
-  const selected = [
+  for (const packagePinName of pins) {
+    if (!component.pins[packagePinName])
+      throw new Error(
+        `${model.name}: physical pin ${packagePinName} missing from [Pin]`,
+      )
+    if (model.pins.includes(packagePinName)) continue
+    const matrixPinName =
+      model.mergedPins?.[packagePinName] ||
+      model.pins.find((candidate) =>
+        sharePackageBus({
+          component,
+          packagePinName,
+          matrixPinName: candidate,
+        }),
+      )
+    if (matrixPinName) mergedPins[packagePinName] = matrixPinName
+  }
+  const activePins = [
     ...new Set(
       pins
-        .map((pin) => mergedPins[pin] ?? pin)
+        .map((pin) => mergedPins[pin] || pin)
         .filter((pin) => model.pins.includes(pin)),
     ),
   ]
-  return { ...selectPackageModel({ model, pins: selected }), mergedPins }
+  return { ...reducePackageMatrices({ model, pins: activePins }), mergedPins }
 }
 
 /** Report exact [Pin] self-term differences without substituting scalar package values. */
-export function packageComparisons({
+export function comparePinPackageTerms({
   component,
   selected,
 }: {
   component: IbisComponent
-  selected: SelectedPackageModel
+  selected: ReducedPackageMatrices
 }): string[] {
   const { R, L, C } = selected.selfTerms
   const terms = [
@@ -103,12 +141,12 @@ export function packageComparisons({
     ["capacitance", C],
   ] as const
   const differences: string[] = []
-  for (const [i, pin] of selected.pins.entries()) {
-    for (const [field, values] of terms) {
+  for (const [i, pin] of selected.activePins.entries()) {
+    for (const [field, diagonalEntries] of terms) {
       const scalar = component.pins[pin]?.[field]
-      const matrix = values[i]
-      if (scalar === undefined || scalar === matrix) continue
-      const detail = `[Package Model] self term ${matrix} (matrix takes precedence before unused-pin reduction)`
+      const matrixEntry = diagonalEntries[i]
+      if (scalar === undefined || scalar === matrixEntry) continue
+      const detail = `[Package Model] self term ${matrixEntry} (matrix takes precedence before unused-pin reduction)`
       differences.push(`${pin}: [Pin] ${field} ${scalar}; ${detail}`)
     }
   }
@@ -120,13 +158,13 @@ export function packageComparisons({
  * CCVS terms realize the entire R matrix; signed K realizes L. Maxwell C is split
  * equally at board/die ends as one lumped pi section, relative to ideal die ground.
  */
-export function coupledPackageElements({
+export function buildCoupledPackageSpiceElements({
   matrices,
   terminals,
   die,
   ground,
 }: {
-  matrices: Pick<SelectedPackageModel, "R" | "L" | "C">
+  matrices: Pick<ReducedPackageMatrices, "R" | "L" | "C">
   terminals: string[]
   die: string[]
   ground: string
@@ -148,12 +186,13 @@ export function coupledPackageElements({
       node = next
     }
     elements.push(`LPKG${i} ${node} ${die[i]} ${matrices.L[i][i]}`)
-    const reference = sumReferenceCapacitance(matrices.C[i])
-    if (reference > 0) {
-      const half = reference / PACKAGE_SHUNT_COUNT
+    const shuntCapacitanceFarads = sumReferenceCapacitance(matrices.C[i])
+    if (shuntCapacitanceFarads > 0) {
+      const halfShuntCapacitanceFarads =
+        shuntCapacitanceFarads / PI_SECTION_SHUNT_COUNT
       elements.push(
-        `CPKG${i}a ${terminals[i]} ${ground} ${half}`,
-        `CPKG${i}b ${die[i]} ${ground} ${half}`,
+        `CPKG${i}a ${terminals[i]} ${ground} ${halfShuntCapacitanceFarads}`,
+        `CPKG${i}b ${die[i]} ${ground} ${halfShuntCapacitanceFarads}`,
       )
     }
     for (let j = i + 1; j < terminals.length; j++) {
@@ -161,11 +200,12 @@ export function coupledPackageElements({
         matrices.L[i][j] / Math.sqrt(matrices.L[i][i] * matrices.L[j][j])
       if (coupling !== 0)
         elements.push(`KPKG${i}_${j} LPKG${i} LPKG${j} ${coupling}`)
-      const capacitance = -matrices.C[i][j] / PACKAGE_SHUNT_COUNT
-      if (!(capacitance > 0)) continue
+      const halfMutualCapacitanceFarads =
+        -matrices.C[i][j] / PI_SECTION_SHUNT_COUNT
+      if (!(halfMutualCapacitanceFarads > 0)) continue
       elements.push(
-        `CPKG${i}_${j}a ${terminals[i]} ${terminals[j]} ${capacitance}`,
-        `CPKG${i}_${j}b ${die[i]} ${die[j]} ${capacitance}`,
+        `CPKG${i}_${j}a ${terminals[i]} ${terminals[j]} ${halfMutualCapacitanceFarads}`,
+        `CPKG${i}_${j}b ${die[i]} ${die[j]} ${halfMutualCapacitanceFarads}`,
       )
     }
   }

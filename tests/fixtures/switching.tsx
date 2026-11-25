@@ -1,9 +1,9 @@
 import { cju } from "@tscircuit/circuit-json-util"
-import { simulation } from "@tscircuit/core"
 import type { ModelRunDefinition } from "../../src/buffers"
-import { convertPackaged } from "../../src/buffers/package"
-import { lineRanges, splitWords } from "../../src/buffers/text"
+import { convertIbisComponentWithPackage } from "../../src/buffers/package-conversion"
+import { lineRanges, splitWords } from "../../src/buffers/source-tokens"
 import { renderCoreSignals } from "../support/core-render"
+import { simulation } from "./signal-parts"
 
 // Original two-fixture CMOS model: the edge finishes at 0.8 ns, but the
 // acquisition includes a flat tail to 4 ns. No vendor data is copied here.
@@ -62,7 +62,7 @@ ${(["Rising", "Falling"] as const)
 [End]`
 
 /** Time in seconds and the corresponding value in a generated SPICE trace. */
-type SpiceSamples = Array<[seconds: number, value: number]>
+export type SpiceSamples = Array<[seconds: number, value: number]>
 
 /** Recover emitted PWL knots so assertions exercise the electrical artifact. */
 export function points({
@@ -116,14 +116,21 @@ export function convert({
 }: {
   next: ModelRunDefinition
   text?: string
-}): ReturnType<typeof convertPackaged> {
+}): ReturnType<typeof convertIbisComponentWithPackage> {
   const bytes = new TextEncoder().encode(text)
   const definition = { ...next.definition, source: { content: text } }
-  return convertPackaged({ bytes, input: { ...next, definition } })
+  return convertIbisComponentWithPackage({
+    bytes,
+    input: { ...next, definition },
+  })
 }
 
 /** Render the pin mapping through core before creating the switching run. */
-export async function switchingInput(): Promise<ModelRunDefinition> {
+export async function switchingInput({
+  hasExternalReference = false,
+}: {
+  hasExternalReference?: boolean
+} = {}): Promise<ModelRunDefinition> {
   const circuit = await renderCoreSignals(
     <board width={10} height={5} routingDisabled schematicDisabled>
       <chip
@@ -131,8 +138,11 @@ export async function switchingInput(): Promise<ModelRunDefinition> {
         pinLabels={{ 1: "DQ", 2: "VDD", 3: "VSS" }}
         footprint="sot23"
       />
+      {hasExternalReference && (
+        <resistor name="VREF" resistance="1k" footprint="0402" pcbX={4} />
+      )}
       <pcbnotetext
-        text="800 Mbps: 0.8 ns edge, 4 ns acquisition"
+        text="800 Mbps: 0.8 ns edge, 4 ns waveform"
         pcbX={0}
         pcbY={2}
       />
@@ -148,17 +158,28 @@ export async function switchingInput(): Promise<ModelRunDefinition> {
       />
     </board>,
   )
-  const [model] = cju(circuit).simulation_ibis_model.list()
+  const db = cju(circuit)
+  const [model] = db.simulation_ibis_model.list()
   if (!model) throw new Error("Missing TSX IBIS model")
   const pinMap = model.ibis_pin_name_to_source_port_id
+  const definition: ModelRunDefinition["definition"] = {
+    source: { content: source },
+    component: "fixture",
+    pinMap,
+    corner: "typical",
+    packagePolicy: "vendor",
+  }
+  if (hasExternalReference) {
+    const [reference] = db.source_component.list({ name: "VREF" })
+    if (!reference) throw new Error("Missing VREF component")
+    const [port] = db.source_port.list({
+      source_component_id: reference.source_component_id,
+    })
+    if (!port) throw new Error("Missing VREF port")
+    definition.references = { "1": { external: port.source_port_id } }
+  }
   return {
-    definition: {
-      source: { content: source },
-      component: "fixture",
-      pinMap,
-      corner: "typical",
-      packagePolicy: "vendor",
-    },
+    definition,
     run: {
       duration: "5ns",
       pinStates: { [pinMap["1"]]: { mode: "output", enabled: true } },

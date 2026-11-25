@@ -5,7 +5,7 @@ import {
   resolveIbisReferenceVoltages,
 } from "@tscircuit/ibis-to-spice"
 import type { SourcePortId } from "../board"
-import type { PackagedComponent } from "./types"
+import type { ConvertedIbisComponent } from "./types"
 
 /** Maximum mismatch between nominal voltages on one die rail. */
 export const DIE_VOLTAGE_TOLERANCE_VOLTS = 1e-8
@@ -22,7 +22,7 @@ export function resolveRailReferences({
   document,
   corner,
 }: {
-  pins: PackagedComponent["metadata"]["pins"]
+  pins: ConvertedIbisComponent["metadata"]["pins"]
   document: IbisDocument
   corner: IbisCorner
 }): Map<SourcePortId, RailReference> {
@@ -52,9 +52,9 @@ export function resolveRailReferences({
       ) {
         throw new Error(`${sourcePortId}: incompatible IBIS die voltages`)
       }
+      if (voltageVolts === undefined) voltageVolts = previous?.voltageVolts
       rails.set(sourcePortId, {
-        voltageVolts:
-          voltageVolts === undefined ? previous?.voltageVolts : voltageVolts,
+        voltageVolts,
         pulldownSourcePortIds: new Set([
           ...(previous?.pulldownSourcePortIds || []),
           pin.references.pulldown,

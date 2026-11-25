@@ -29,25 +29,13 @@ aggressor, measured at its declared bit rate after its offset.
 
 ```mermaid
 flowchart LR
-  input["Selected IBIS models"] --> result["Scalar and coupled packages"]
-```
-
-```mermaid
-stateDiagram-v2
-  [*] --> Ready
-  Ready --> Complete: Scalar and coupled packages
-  Ready --> Failed: invalid input
-  Complete --> [*]
-  Failed --> [*]
-```
-
-```mermaid
-flowchart LR
   board["Circuit JSON and channel declarations"] --> plan["TransientChannelSimulationPlanSolver"]
-  ibis["IBIS sources"] --> plan
+  ibis["IBIS sources"] --> packages["Validate IBIS package matrices"]
+  packages --> plan
   plan --> geometry["CopperGeometryExtractionSolver"]
   geometry --> transmissionLineRlgc["TransmissionLineRlgcSolver"]
   plan --> binding["IBIS binding inputs"]
+  binding --> spice["Convert packages and switching coefficients to SPICE"]
   plan --> manifest["Transient channel simulation plan manifest"]
 ```
 
@@ -59,7 +47,7 @@ stateDiagram-v2
   GeometryReady --> Complete: TransmissionLineRlgcSolver
   GeometryReady --> Failed: invalid cross-section geometry or material options
   Planned --> Failed: missing required contact or reference, unsupported route or soldermask
-  Ready --> Failed: invalid input, conflicting IBIS model selections or undeclared aggressors
+  Ready --> Failed: invalid input, conflicting IBIS model selections, invalid package matrices or undeclared aggressors
   Complete --> [*]
   Failed --> [*]
 ```
@@ -92,4 +80,6 @@ stateDiagram-v2
 
 Install dependencies with `bun install --frozen-lockfile`, then run `bun test`.
 Optional checks use `test.skipIf` and known failures still execute through `test.failing`.
+Run `bun run fetch:vendor-models` and put `ngspice` on PATH before running the IBIS tests locally.
+
 Run `bun run test:package` to verify the packed package in Node.

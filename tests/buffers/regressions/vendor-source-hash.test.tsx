@@ -1,6 +1,6 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
-import { admitBuffers } from "../../../src/buffers"
+import { validateIbisSources } from "../../../src/buffers"
 import { rootScope } from "../../../src/kernel"
 import { source } from "../../fixtures/coupled-package"
 import { renderPackageModel } from "../../fixtures/package-input"
@@ -14,5 +14,5 @@ test("rejects rendered IBIS model declarations when their expected asset hash di
     modeling: { ibisModelAssetSha256: { [path]: "0".repeat(64) } },
     scope: rootScope("buffers"),
   }
-  assert.throws(() => admitBuffers(request), { code: "vendor_hash" })
+  assert.throws(() => validateIbisSources(request), { code: "vendor_hash" })
 })
