@@ -1,11 +1,15 @@
-import type { IbisComponent, IbisCorner } from "@tscircuit/ibis-to-spice"
+import type { IbisComponent } from "@tscircuit/ibis-to-spice"
 import type { SourcePortId } from "../board"
 import {
   buildCoupledPackageSpiceElements,
   type CoupledPackageModel,
   PI_SECTION_SHUNT_COUNT,
 } from "./coupled-package"
-import { buildPackageBranch, type PackageBranch } from "./package-branch"
+import {
+  buildPackageBranch,
+  type PackageBranch,
+  type PinPackageTerms,
+} from "./package-branch"
 import {
   DIE_VOLTAGE_TOLERANCE_VOLTS,
   type resolveRailReferences,
@@ -21,6 +25,7 @@ export interface PackageTerminal {
   boardSpiceNode: SpiceNode
   sourcePortId: SourcePortId
   packagePinName?: PackagePinName
+  terms?: PinPackageTerms
 }
 
 /** Package branches and the node remapping for die buffers. */
@@ -35,13 +40,17 @@ export function resolvePackageTerminals(
   converted: ConvertedIbisComponent,
 ): PackageTerminal[] {
   return Object.entries(converted.spicePinMapping).map(
-    ([boardSpiceNode, sourcePortId]) => ({
-      boardSpiceNode,
-      sourcePortId,
-      packagePinName: converted.metadata.packageData.mappedPins.find(
+    ([boardSpiceNode, sourcePortId]) => {
+      const terms = converted.metadata.packageData.mappedPins.find(
         (pin) => pin.port === sourcePortId,
-      )?.physicalPin,
-    }),
+      )
+      return {
+        boardSpiceNode,
+        sourcePortId,
+        packagePinName: terms?.physicalPin,
+        terms,
+      }
+    },
   )
 }
 
@@ -50,13 +59,11 @@ export function buildPackageNetwork({
   terminals,
   coupled,
   component,
-  corner,
   references,
 }: {
   terminals: PackageTerminal[]
   coupled?: CoupledPackageModel
   component: IbisComponent
-  corner: IbisCorner
   references: ReturnType<typeof resolveRailReferences>
 }): PackageNetwork {
   const branches = new Map<PackagePinName, PackageBranch>()
@@ -91,8 +98,7 @@ export function buildPackageNetwork({
       packagePinName: canonicalTerminal?.packagePinName || packagePinName,
       index,
       matrixPinName,
-      component,
-      corner,
+      terms: canonicalTerminal?.terms || terminal.terms,
       coupled,
       railVoltageVolts,
     })
