@@ -18,6 +18,12 @@ import { fail } from "./diagnostics"
 import { loadModelSource } from "./source"
 import type { IbisSources } from "./types"
 
+/** One inspected IBIS source and the digest of its original bytes. */
+interface InspectedIbisSource {
+  document: IbisDocument
+  sourceSha256: string
+}
+
 /** The selected IBIS model, pin binding and rails for one source port. */
 export type InspectedPin = {
   /** Circuit JSON source port bound to this pin. */
@@ -28,6 +34,7 @@ export type InspectedPin = {
   model: Snapshot<SimulationIbisModel>
   /** Parsed IBIS component that owns the physical pin. */
   component: IbisComponent
+  ibisSource: InspectedIbisSource
   /** Selected IBIS buffer model for the physical pin. */
   buffer: IbisBuffer
   /** Source ports of the separate IBIS reference rails. */
@@ -152,7 +159,7 @@ export function inspectPins({
   ports,
 }: PinInspectionOptions): InspectedPins {
   const pins: InspectedPins = new Map()
-  const documents = new Map<IbisAssetPath, IbisDocument>()
+  const inspectedSources = new Map<IbisAssetPath, InspectedIbisSource>()
   const boundPorts = new Set<SourcePortId>()
   for (const model of cju([...circuit]).simulation_ibis_model.list()) {
     const selected = Object.entries(
@@ -161,15 +168,19 @@ export function inspectPins({
     if (!selected.length) continue
 
     const path = model.ibis_model_asset.project_relative_path
-    let document = documents.get(path)
-    if (!document) {
-      const { text } = loadModelSource({
+    let ibisSource = inspectedSources.get(path)
+    if (ibisSource === undefined) {
+      const { text, evidence } = loadModelSource({
         model: { ...model, pipelineId: model.simulation_ibis_model_id },
         sources,
       })
-      document = parseIbis(text)
-      documents.set(path, document)
+      ibisSource = {
+        document: parseIbis(text),
+        sourceSha256: evidence.sourceSha256,
+      }
+      inspectedSources.set(path, ibisSource)
     }
+    const { document } = ibisSource
     const component = document.components[model.ibis_component_name]
     if (!component)
       fail(
@@ -191,6 +202,7 @@ export function inspectPins({
       const buffer = document.getBuffer(name)
       pins.set(port, {
         ...binding,
+        ibisSource,
         buffer,
         references: referenceRails({ binding, buffer }),
       })
