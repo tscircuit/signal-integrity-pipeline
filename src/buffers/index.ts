@@ -9,10 +9,6 @@ export {
   ibisAssembly,
   validateIbisSources,
 } from "./buffers"
-export {
-  formatCapacitanceSignWarnings,
-  resolveCoupledPackage,
-} from "./coupled-package"
 export { edgeDurationSeconds } from "./edge-duration"
 export type {
   InspectedPin,
@@ -27,7 +23,6 @@ export {
   referenceVoltages,
 } from "./inspect"
 export { failInvalidIbisSource, loadModelSource, relativeFile } from "./source"
-export type { StringOffsets } from "./source-tokens"
 export type {
   AssemblyEntry,
   BufferModeling,

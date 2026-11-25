@@ -18,10 +18,11 @@ import {
   type SourcePortId,
   withRouteDrawing,
 } from "../board"
-import type { IbisSources, StringOffsets } from "../buffers"
+import type { IbisSources } from "../buffers"
 import type { Snapshot } from "../kernel"
 import { sha256 } from "../kernel"
 import type { RouteBuffer, RoutedCapture } from "./route-inputs"
+import type { StringOffsets } from "./spice-header"
 
 /** A board port and its transient waveform label. */
 export interface WaveformProbe {

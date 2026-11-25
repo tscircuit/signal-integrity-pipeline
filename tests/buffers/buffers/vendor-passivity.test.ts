@@ -1,7 +1,6 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
-import { parsePackageModel } from "../../../src/buffers/package-model"
-import { reducePackageMatrices } from "../../../src/buffers/reduce-package-matrices"
+import { parseIbis, reducePackageMatrices } from "@tscircuit/ibis-to-spice"
 import {
   loadVendorModelText,
   vendorAvailable,
@@ -23,7 +22,7 @@ test.skipIf(!vendorAvailable("sprm552c.ibs"))(am335xPackage, async () => {
   // L and C symmetric positive definite, every |k| = |M_ij|/sqrt(L_ii L_jj) < 1; R PSD; the Maxwell C has positive
   // diagonal, non-positive off-diagonal entries and non-negative row sums. Tolerances are floating point only.
   const text = await loadVendorModelText(vendorModels.am335x)
-  const model = parsePackageModel({ text, name: "am335x_zcz" })
+  const model = parseIbis(text).getPackageModel("am335x_zcz")
   const selected = reducePackageMatrices({ model, pins: model.pins })
   const L = energyFacts(model.L)
   const C = energyFacts(selected.C)
