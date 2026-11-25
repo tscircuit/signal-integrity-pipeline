@@ -16,6 +16,7 @@ import {
 import { type SafeId, safeId } from "../kernel"
 import type { RunControls } from "../simulation"
 import { planAggressors } from "./aggressors"
+import { listChannelSimulations } from "./channel-simulation-declarations"
 import { prepareTraceContacts } from "./channel-traces"
 import type { NumericalSettings } from "./modeling"
 import {
@@ -26,11 +27,14 @@ import {
 } from "./signal-controls"
 import {
   channelSimulationCircuit,
-  prepareSignalSettings,
   validateComponentModels,
   withUsedIbisModels,
 } from "./signal-models"
 import { compareNames } from "./signal-names"
+import { prepareSignalSettings } from "./signal-settings"
+
+export { listChannelSimulations } from "./channel-simulation-declarations"
+
 import {
   inspectSignalPins,
   scopeSignalPins,
@@ -44,7 +48,7 @@ const DEFAULT_NEARBY_GAP_MM = 32
 
 /** The lowered circuit and controls for a single transient channel simulation. */
 export interface PreparedChannelSimulation {
-  warnings?: string[]
+  warnings: string[]
   durationSeconds: number
   fastestEdgeSeconds: number
   stepSeconds: number
@@ -54,47 +58,6 @@ export interface PreparedChannelSimulation {
   controls: Record<string, RunControls>
   pins: Map<SourcePortId, InspectedPin>
   settings: NumericalSettings
-}
-
-/** Validate the shared channel simulation namespace before any independent channel simulation work. */
-export function listChannelSimulations(
-  circuitJson: CircuitJson,
-): SimulationPcbTransientChannelSimulation[] {
-  const db = cju([...circuitJson])
-  const channelSimulations =
-    db.simulation_pcb_transient_channel_simulation.list()
-  if (
-    channelSimulations.length > 1 &&
-    channelSimulations.some((channelSimulation) => !channelSimulation.name)
-  ) {
-    const element = "<simulation.pcbtransientchannelsimulation>"
-    throw new Error(
-      `This board has ${channelSimulations.length} ${element} declarations; give each a name.`,
-    )
-  }
-  const simulationPcbTransientChannelSimulationIds = new Set(
-    channelSimulations.map(
-      (channelSimulation) =>
-        channelSimulation.simulation_pcb_transient_channel_simulation_id,
-    ),
-  )
-  if (
-    simulationPcbTransientChannelSimulationIds.size !==
-    channelSimulations.length
-  )
-    throw new Error(
-      "Duplicate simulation_pcb_transient_channel_simulation identifier",
-    )
-  for (const signal of db.simulation_pcb_driver_receiver_channel.list()) {
-    if (
-      simulationPcbTransientChannelSimulationIds.has(
-        signal.simulation_pcb_transient_channel_simulation_id,
-      )
-    )
-      continue
-    throw new Error(`${signal.name}: unknown transient channel simulation`)
-  }
-  return channelSimulations
 }
 
 /** Shared by the search gap error and the plan drawing. */
@@ -181,7 +144,7 @@ function validateChannelNames({
     simulationPcbDriverReceiverChannelIds.size !== driverReceiverChannels.length
   ) {
     throw new Error(
-      `${channelSimulation.name ?? simulationPcbTransientChannelSimulationId}: require distinct named signals`,
+      `${channelSimulation.name || simulationPcbTransientChannelSimulationId}: require distinct named signals`,
     )
   }
 }
@@ -253,7 +216,8 @@ function withPreparedChannelControls({
     pins,
     simulationPcbTransientChannelSimulationId,
   } = options
-  const prepared: PreparedChannelSimulation = {
+  return {
+    warnings,
     channelSimulation,
     driverReceiverChannels,
     circuit,
@@ -264,8 +228,6 @@ function withPreparedChannelControls({
     fastestEdgeSeconds,
     stepSeconds: options.stepSeconds,
   }
-  if (warnings.length > 0) prepared.warnings = warnings
-  return prepared
 }
 
 /** Prepare one channel simulation from its declarations through controls and probes. */
