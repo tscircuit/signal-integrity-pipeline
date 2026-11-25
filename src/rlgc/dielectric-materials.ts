@@ -14,6 +14,7 @@ export interface DielectricMaterials {
 /** Origin of the effective soldermask thickness. */
 export type MaskThicknessSource = "explicit" | "stackup" | "assumed"
 
+/** Nominal board loss and soldermask properties when the caller supplies none. */
 const assumedMaterials: DielectricMaterials = Object.freeze({
   maskThicknessMm: 0.02,
   maskRelativePermittivity: 3.3,
