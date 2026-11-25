@@ -36,7 +36,6 @@ domain:
   visual: a board drawing or data used to build it
   above: toward increasing solver z in a physical stackup
   actual: read directly from the physical source-board records
-  admit: accept an IBIS asset after validating its content
   aggressor: an output-capable pin coupled to a selected channel outside its endpoints
   allow: an explicit caller-selected modelling permission
   annulus: the ring of copper between a via hole and the surrounding pad or plating
@@ -48,7 +47,7 @@ domain:
   bandwidth: the number of stored off-diagonals in a banded IBIS package matrix
   barrel: the plated copper tube that lines a via hole
   below: toward decreasing solver z in a physical stackup
-  bias: very weak DC anchor used to fix an otherwise floating common-mode voltage
+  bias: a DC voltage that fixes an electrical operating point
   bind: attach chip models and probes to the planned experiment
   board: the circuit board being analysed, read from Circuit JSON
   bottom: the outer copper layer on the lower face of the board
@@ -79,7 +78,8 @@ domain:
   control: pin enable state or drive timing for a simulation
   coplanar: lying in the same plane
   copper: the metal shapes on the board: traces, pours, pads and vias
-  correction: an explicit recorded change required by a documented numerical convention
+  term: an electrical quantity in a package matrix or scalar parasitic model
+  cutoff: the last measured sample time kept before a waveform tail is held
   coupled: electrical behavior in one pin or conductor that depends on another
   coupling: mutual electrical or magnetic interaction between conductors
   crossover: the frequency band where conductor loss turns from its DC value into skin loss
@@ -227,7 +227,7 @@ domain:
   subject: the thing a diagnostic points at, such as a cell, port or experiment
   swing: the voltage difference between the start and end of an edge
   switching: the time-dependent activation of a buffer's pullup and pulldown currents
-  tail: the inactive end of a measured transition after settling
+  tail: the settled suffix of a measured rising or falling waveform
   tangent: dielectric dissipation factor or direction along a boundary panel
   terminal: a connection end of a conductor or source
   timestamp: the time at which a waveform sample was recorded
@@ -235,14 +235,12 @@ domain:
   trace: routed PCB copper identified by a source trace, including its wire runs and layer transitions
   transient: a circuit simulation that follows voltage and current through time
   transition: a change of layer, reference or conductor geometry
-  transverse: across a route or trace
   typical: the nominal vendor corner for a model value or waveform
-  unused: a vendor package lead excluded from the selected physical pin mapping
+  unused: an IBIS package pin absent from the simulation pin mapping
   vacuum: reference material with relative permittivity one
   vector: one named sequence of engine samples, such as time or a node voltage
   via: a plated hole that carries a signal between layers
-  waveform: voltage over time at one probe
-  weight: a switching coefficient extracted from IBIS voltage and current data
+  waveform: measured voltage over time at a fixture or probe
   wire: one straight planar conductor derived from a PCB trace
   word: a contiguous non-whitespace field in an ASCII raw file or diagnostic
   # Transmission line is the electrical model of a coupled wire group over one section.
@@ -293,67 +291,3 @@ general:
   - close compare compile connect contain convert create cross define derive display draw emit end exit
   - expect fail fall find finish flip flush generate get has inspect invoke is link load locate match measure
   - merge normalize omit override parse produce quote raise read receive reduce refine register remove rename
-  - replace reset resolve rise run save select set shift skip solve sort split start supply test transmit
-  - unlink update use validate view visit write trim crop unroll cast fold append retain
-  # states and outcomes
-  - connected contained default failure found grounded killed named oriented pinned scoped seen supplied
-  - unavailable unconverged unevaluated unselected used done built crowded kept
-  # data shapes and code structure
-  - all any array attachment base binding body boolean box bucket budget byte candidate cell chain child
-  - character code column command comment content context count data declaration definition descriptor element
-  - entry error event expression field file first format graph grid hash index input item key
-  - kind label last level line list location log map mapping member message metadata method mode name
-  - namespace number option options order output owner package parent part pattern payload piece
-  - plan policy prefix progress record request rest result root row schema selection
-  - selector series source state status table text title token tree type unit validation value
-  # program runs and tools
-  - adapter comparison conversion converter diagram directory domain engine fast faster invocation tool
-  # report and user interface
-  - ambiguity approximation button canvas client color description detail download drag font hint issue
-  - limitation listener overview plot reason report role summary tab viewer warning drawing frame margin alpha bar hue tick band casing digit glyph lightness pitch fallback
-  # describing and comparing
-  - absolute active analytic best canonical common compatible compatibility condition convention direct collect
-  - empty equivalent exact expected finite fixed flat full global high horizontal inner limit low lowest
-  - max maximum middle min minimum native negative next numeric original other outer own physical half highest least longest median most near far reach
-  - positive preceding previous primitive prior pure quiet range raw relative safe serial target threshold
-  - characterization compliance valid invalid vertical
-  # quantities, electricity and units
-  - amount amplitude bit current denominator duration electrical energy factor fraction frequency millimeter
-  - interval material matrix measurement milliseconds ohm offset origin peak period phase plateau
-  - precision
-  - quantity reduction sample scale seconds speed step time timeout tolerance transmission volt voltage zero
-  # math
-  - cholesky delaunay evaluate integral magnitude interpolation multiply norm ratio sqrt sum symmetrize transpose union total
-  - exponent
-  # geometry
-  - alignment angle anchor ancestor area aspect border boundary center connection coordinate curve
-  - depth direction distance division edge endpoint epsilon face gap height hole left length nearest
-  - outline point position profile radius right round side sign size sizing spacing surface circle corner closest across
-  - thickness triangle width separation overlap
-  # axis letters and their steps or counts (x, dx = step along x, nx = count along x)
-  - x y z dx dy nx ny nz
-  # place and relation words
-  - after along at before between by for from in inside of on out per through to up within
-  # irregular plurals the checker cannot reduce
-  - indices matrices stimuli
-  # other everyday words
-  - tessellate hypotenuse touch
-
-avoid:
-  centre: center
-  transverse: lateral
-  slice: section
-  col: column
-  ctx: context
-  eps: epsilon
-  hi: high
-  lo: low
-  mid: middle
-  neg: negative
-  num: number
-  polys: polygon
-  pos: positive
-  pts: point
-  refs: reference
-  src: source
-  tris: triangle
