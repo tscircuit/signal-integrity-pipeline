@@ -77,7 +77,7 @@ function buildChannelPlan({
   return Object.freeze({
     simulationPcbTransientChannelSimulationId,
     name: channelSimulation.name ?? simulationPcbTransientChannelSimulationId,
-    warnings: snapshot(prepared.warnings),
+    warnings: snapshot(prepared.warnings || []),
     sections: Object.freeze({
       circuitJson,
       copperScope: modeling.copperScope,
