@@ -1,8 +1,7 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
+import { convertIbisModelToSpice } from "@tscircuit/ibis-to-spice"
 import { createNativeSolver } from "../../../src/adapters"
-import { convertIbisComponentWithPackage } from "../../../src/buffers/package-conversion"
-import { subcircuitHeader } from "../../../src/buffers/spice-netlist"
 import { source } from "../../fixtures/coupled-package"
 import { packageInput, renderPackageModel } from "../../fixtures/package-input"
 
@@ -43,10 +42,11 @@ A1
     "G1 VSS GND 6 6n 6p",
     "G1 VSS GND NA NA NA",
   )
-  const unlisted = convertIbisComponentWithPackage({
-    bytes: new TextEncoder().encode(partialSource),
-    input: input,
-  })
+  const unlisted = convertIbisModelToSpice(
+    partialSource,
+    input.definition,
+    input.run,
+  )
   const busSource = source
     .replace(
       "[Model] input",
@@ -80,18 +80,16 @@ V2 NC VDD NC NC
       },
     ]),
   )
-  const merged = convertIbisComponentWithPackage({
-    bytes: new TextEncoder().encode(mergedSource),
-    input: {
-      ...input,
-      definition: { ...input.definition, references },
-    },
-  })
+  const merged = convertIbisModelToSpice(
+    mergedSource,
+    { ...input.definition, references },
+    input.run,
+  )
   const solve = createNativeSolver({
     tools: { ngspice: process.env.NGSPICE_BIN || "ngspice" },
   })
   for (const mixed of [unlisted, merged]) {
-    const name = subcircuitHeader(mixed.source)?.[1]
+    const name = mixed.source.split("\n")[1].split(" ")[1]
     assert.ok(name)
     const deck = [
       "Mixed package only AC oracle",
