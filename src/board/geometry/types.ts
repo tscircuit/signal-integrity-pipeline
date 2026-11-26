@@ -1,4 +1,4 @@
-// Port selectors, lane mappings and routed copper shapes shared by board admission and the routed stages.
+// Port selectors, receiver trace paths and routed copper shapes shared by channel planning and the routed stages.
 import type {
   PcbTraceRoutePointVia,
   PcbTraceRoutePointWire,
@@ -32,13 +32,13 @@ export interface LaneModeling {
 /** A trace route point on a wire or via. */
 export type RoutedPoint = PcbTraceRoutePointWire | PcbTraceRoutePointVia
 
-/** One driver-to-receiver physical signal; `sourceTraceIds` lists every trace cut out of ideal connectivity. */
-export interface LaneMapping {
-  port: string
-  sourceTraceId: SourceTrace["source_trace_id"]
-  from: SourcePortId
-  to: SourcePortId
-  sourceTraceIds?: SourceTrace["source_trace_id"][]
+/** One driver-to-receiver path; `sourceTraceIds` lists its routed traces in path order. */
+export interface ReceiverTracePath {
+  readonly channelName: string
+  readonly sourceTraceId: SourceTrace["source_trace_id"]
+  readonly fromSourcePortId: SourcePortId
+  readonly toSourcePortId: SourcePortId
+  readonly sourceTraceIds?: readonly SourceTrace["source_trace_id"][]
 }
 
 /** Copper outlines in mm. */

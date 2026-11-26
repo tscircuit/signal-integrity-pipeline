@@ -165,38 +165,6 @@ test("nonzero exit rejects native_solver with logs and removes the workdir", asy
   await workdirGone()
 })
 
-test("timeout kills the tool, rejects native_timeout and removes the workdir", async () => {
-  const { root, tmp, tool, workdirGone } = await sandbox()
-  const marker = join(root, "survived.txt")
-  const solver = createNativeSolver({
-    tools: { ngspice: process.execPath },
-    timeoutMs: 200,
-  })
-  const started = Date.now()
-  const writeAfterTimeout = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'x'), 1500)`
-  const result = solver({
-    solver: "ngspice",
-    files: { "deck.cir": "x" },
-    args: tool(writeAfterTimeout),
-    outputFiles: ["out.txt"],
-  })
-  await assert.rejects(
-    result,
-    code(
-      "native_timeout",
-      /^native_timeout: ngspice: exceeded 200 ms process timeout; /,
-    ),
-  )
-  assert.ok(Date.now() - started < 1500)
-  await workdirGone().catch(async (error) => {
-    // Under concurrent load the timeout may kill Node before its cwd marker is written.
-    if (error.code !== "ENOENT") throw error
-    assert.deepEqual(await readdir(tmp), [])
-  })
-  await new Promise((done) => setTimeout(done, 1600))
-  await assert.rejects(stat(marker), { code: "ENOENT" }) // killed, not merely abandoned
-})
-
 const missingOutput =
   "missing requested output is omitted (solver.invoke rejects native_output)" +
   " and the workdir is removed"

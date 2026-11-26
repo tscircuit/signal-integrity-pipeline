@@ -1,10 +1,7 @@
 // Was src/stimulus.ts.
 import { fail, type SimulationCode } from "./diagnostics"
 
-/** Maximum number of bits accepted in a serialized stimulus pattern. */
-export const MAX_STIMULUS_BITS = 65_536
-
-/** Public. Normalizes a transmission pattern to a '0'/'1' string (<= 65536 bits). */
+/** Public. Normalizes a transmission pattern to a '0'/'1' string. */
 export function transmittedBits({
   value,
   code = "stimulus_pattern",
@@ -12,14 +9,6 @@ export function transmittedBits({
   value: unknown
   code?: SimulationCode
 }): string {
-  if (
-    (Array.isArray(value) || typeof value === "string") &&
-    value.length > MAX_STIMULUS_BITS
-  )
-    fail(
-      code,
-      `Transmission patterns must contain at most ${MAX_STIMULUS_BITS} bits`,
-    )
   if (
     Array.isArray(value) &&
     value.length &&

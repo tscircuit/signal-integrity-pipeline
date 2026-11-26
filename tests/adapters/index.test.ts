@@ -39,16 +39,11 @@ process.stdout.write('ran')
 process.stderr.write('notice')
 if (process.argv.includes('signal')) process.kill(process.pid, 'SIGTERM')
 if (process.argv.includes('fail')) process.exit(7)
-if (process.argv.includes('timeout')) {
-  setTimeout(() => {}, 15000)
-} else {
-  writeFileSync('output.dat', readFileSync('nested/input.dat', 'utf8'))
-}
+writeFileSync('output.dat', readFileSync('nested/input.dat', 'utf8'))
 `
   await writeFile(entry, toolSource)
   const solver = createNativeSolver({
     tools: { ngspice: process.execPath },
-    timeoutMs: 5000,
   })
   const request = {
     solver: "ngspice" as const,
@@ -74,22 +69,9 @@ if (process.argv.includes('timeout')) {
     /native_solver/,
   )
   await assert.rejects(
-    solver({ ...request, args: [entry, "timeout"] }),
-    (error) => {
-      assert.equal((error as { code: string }).code, "native_timeout")
-      assert.match((error as Error).message, /ngspice.*5000 ms/)
-      assert.match((error as Error).message, /ran[\s\S]*notice/)
-      return true
-    },
-  )
-  await assert.rejects(stat(await readFile(location, "utf8")), {
-    code: "ENOENT",
-  })
-  await assert.rejects(
     solver({ ...request, files: { "../escape": "bad" } }),
     /file_path/,
   )
-  assert.throws(() => createNativeSolver({ timeoutMs: 0 }), /native_timeout/)
 }, 15_000)
 const ibisAsset = "models/sn74lvc1g04.ibs"
 

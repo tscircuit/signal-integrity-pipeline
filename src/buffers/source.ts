@@ -20,9 +20,6 @@ const HTML_OPENING_TAG = "<html"
 /** ZIP archive headers begin with the ASCII characters P and K. */
 const ZIP_SIGNATURE = [0x50, 0x4b]
 
-/** Limit the size of a supplied IBIS asset to 64 MiB. */
-const MAX_IBIS_BYTES = 64 * 1024 * 1024
-
 /** Portable relative paths used by the explicit Node adapter as well as file maps. */
 export function relativeFile(path: string): string {
   const invalidPath =
@@ -51,8 +48,13 @@ function containsHtmlOpening(text: string): boolean {
   return next === "" || !WORD_CHARACTERS.includes(next)
 }
 
+/** Report an asset value whose runtime type cannot contain IBIS text or bytes. */
+export function failInvalidIbisSource(path: string): never {
+  return fail("ibis_asset", `${path}: expected a string or Uint8Array`)
+}
+
 /**
- * Admits the caller-supplied IBIS bytes for one model: checks the path, size, format and UTF-8 text,
+ * Admits the caller-supplied IBIS bytes for one model: checks the path, format and UTF-8 text,
  * then records the SHA-256 evidence. Nothing is ever downloaded from the declared URL.
  */
 export function loadModelSource({
@@ -68,15 +70,13 @@ export function loadModelSource({
     fail("ibis_asset_missing", `Supply IBIS bytes for ${path} in ibisSources`)
   const source = sources[path]
   if (typeof source !== "string" && !(source instanceof Uint8Array))
-    fail("ibis_asset", `${path}: expected a string or Uint8Array`)
+    failInvalidIbisSource(path)
   let bytes: Uint8Array
   if (typeof source === "string") {
     bytes = new TextEncoder().encode(source)
   } else {
     bytes = source
   }
-  if (bytes.length > MAX_IBIS_BYTES)
-    fail("ibis_asset", "IBIS asset exceeds 64 MiB")
   if (ZIP_SIGNATURE.every((byte, index) => bytes[index] === byte)) {
     fail(
       "ibis_asset",

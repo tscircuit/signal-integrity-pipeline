@@ -3,6 +3,7 @@ import type {
   SimulationPcbDriverReceiverChannel,
   SimulationPcbTransientChannelSimulation,
 } from "circuit-json"
+import type { SignalEndpointPortIds } from "./ids"
 
 export type {
   SignalEndpoint,
@@ -30,4 +31,10 @@ export function isQuiet(channel: DriverPattern): boolean {
   return (
     channel.driver_disabled === true || isConstantBitPattern(channel.pattern)
   )
+}
+
+/** Ordered physical ports. The sign of a differential signal is P minus N. */
+export function endpointPorts(endpoint: SignalEndpoint): SignalEndpointPortIds {
+  if ("source_port_id" in endpoint) return [endpoint.source_port_id]
+  return [endpoint.p_source_port_id, endpoint.n_source_port_id]
 }

@@ -1,9 +1,10 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import {
   type CircuitJson,
   type DriverPattern,
+  endpointPorts,
   isQuiet,
   type SignalEndpoint,
-  type SignalEndpointPortIds,
   type SimulationExperiment,
   type SimulationPcbDriverReceiverChannel,
   type SimulationPcbTransientChannelSimulation,
@@ -11,9 +12,9 @@ import {
   type SourcePortId,
 } from "../board"
 import type { InspectedPin } from "../buffers"
-import { MAX_STIMULUS_BITS, type RunControls } from "../simulation"
+import { Diagnostic } from "../kernel"
+import type { RunControls } from "../simulation"
 import type { Aggressors } from "./aggressors"
-import { circuitJsonDb } from "./circuit-json-db"
 import { defaultDurationSeconds, prbsPatterns } from "./timing"
 
 /** Milliseconds in one second. */
@@ -21,6 +22,9 @@ const MILLISECONDS_PER_SECOND = 1000
 
 /** Round bit intervals with the same floating-point tolerance as the IBIS converter. */
 const INTERVAL_ROUNDING_ULPS = 8
+
+/** The bit-string boundary must fit in one string in the supported Node runtime. */
+const MAX_PATTERN_BITS = 2 ** 29 - 24
 
 /** Solver error tolerances for the routed transient (relative, current in amps, voltage in volts). */
 const SPICE_OPTIONS: NonNullable<SimulationExperiment["spice_options"]> = {
@@ -51,14 +55,9 @@ export interface ChannelSimulationControlOptions {
   stepSeconds: number
 }
 
-/** Ordered physical ports. The sign of a differential signal is P minus N. */
-export function endpointPorts(endpoint: SignalEndpoint): SignalEndpointPortIds {
-  if ("source_port_id" in endpoint) return [endpoint.source_port_id]
-  return [endpoint.p_source_port_id, endpoint.n_source_port_id]
-}
-
-/** Maximum transient step for the recording. */
+/** Fastest edge and maximum transient step for the recording. */
 interface SignalTiming {
+  fastestEdgeSeconds: number
   stepSeconds: number
 }
 
@@ -72,14 +71,20 @@ export function signalTiming({
   durationSeconds: number
   edgeTimesSeconds: number[]
 }): SignalTiming {
-  const edgeTimeSeconds = Math.min(...edgeTimesSeconds)
+  const fastestEdgeSeconds = Math.min(...edgeTimesSeconds)
   const rate = Math.max(...patterns.map((signal) => signal.bit_rate_bps))
   const stepSeconds = Math.min(
     1 / rate / STEPS_PER_BIT,
-    edgeTimeSeconds / STEPS_PER_EDGE,
+    fastestEdgeSeconds / STEPS_PER_EDGE,
     durationSeconds / MIN_STEPS_PER_RECORDING,
   )
-  return { stepSeconds }
+  if (!Number.isFinite(stepSeconds) || stepSeconds <= 0)
+    throw new Diagnostic(
+      "pipeline",
+      "simulation_timing",
+      "Transient timestep must be finite and positive (time_per_step)",
+    )
+  return { fastestEdgeSeconds, stepSeconds }
 }
 
 /** Choose the capture duration in seconds and check coverage of enabled stimuli. */
@@ -115,7 +120,7 @@ export function channelSimulationDurationSeconds({
 /** Include a quiet driver as the last probe after the receivers. */
 export function probeEndpoints(
   signal: SimulationPcbDriverReceiverChannel,
-): SignalEndpoint[] {
+): readonly SignalEndpoint[] {
   if (isQuiet(signal)) return [...signal.receivers, signal.driver]
   return signal.receivers
 }
@@ -161,9 +166,9 @@ export function signalBits({
   }
   if (signal.driver_disabled) return "0"
   if (pattern === "clock") return "01"
-  if (!prbs) return pattern
+  if (!prbs || seed === undefined) return pattern
 
-  let state = seed!
+  let state = seed
   const captureSeconds =
     durationSeconds - signal.offset_ms / MILLISECONDS_PER_SECOND
   const bitSeconds =
@@ -175,9 +180,16 @@ export function signalBits({
     mask,
     Math.max(1, Math.ceil(intervals - roundingTolerance)),
   )
-  if (!Number.isFinite(count) || count > MAX_STIMULUS_BITS) {
+  if (!Number.isFinite(count)) {
     throw new Error(
-      `Signal "${signal.name}": ${pattern} patterns must contain at most ${MAX_STIMULUS_BITS} bits. Lower the bit rate or set duration to a shorter recording.`,
+      `Signal "${signal.name}": ${pattern} pattern length must be finite`,
+    )
+  }
+  if (count > MAX_PATTERN_BITS) {
+    throw new Diagnostic(
+      "pipeline",
+      "simulation_timing",
+      `Signal "${signal.name}": ${pattern} pattern exceeds ${MAX_PATTERN_BITS} bits`,
     )
   }
   const { width, tap } = prbs
@@ -239,9 +251,9 @@ export function withChannelSimulationControls({
   stepSeconds,
 }: ChannelSimulationControlOptions): ChannelSimulationControls {
   const controls: RunControls = { states: [], stimuli: [] }
-  const db = circuitJsonDb(circuit)
+  const db = cju([...circuit])
   const scope = db.pcb_board.getWhere({})?.subcircuit_id
-  const records: CircuitJson = []
+  const records: CircuitJson[number][] = []
   records.push({
     type: "simulation_experiment",
     simulation_experiment_id: simulationPcbTransientChannelSimulationId,

@@ -6,9 +6,9 @@ import { simulation } from "@tscircuit/core"
 import type { TraceProps } from "@tscircuit/props"
 import React from "react"
 import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
+import { endpointPorts } from "../../src/board"
+import { compareNames } from "../../src/pipeline/signal-names"
 import {
-  compareNames,
-  endpointPorts,
   listChannelSimulations,
   type PreparedChannelSimulation,
   prepareChannelSimulationById,
@@ -232,9 +232,9 @@ test("full unrouted check reaches the segment after a series passive", async () 
     sources: inverterSources,
   })
   assert.equal(
-    prepared.settings.lanes.length,
+    prepared.settings.traceContacts.length,
     1,
-    "only the routed segment before RS is a physical lane",
+    "only the routed trace before RS is a channel trace",
   )
 })
 
@@ -597,17 +597,15 @@ test("via plating comes from the preset and must be in the stackup", async () =>
 
 type DeclarationInput = Parameters<typeof generalDeclarations>[0]
 
-/** Map each prepared physical lane to its declaration endpoints. */
+/** Read each prepared trace’s declared endpoints. */
 function declarationInput(
   prepared: PreparedChannelSimulation,
 ): DeclarationInput {
   return {
     circuit: prepared.circuit,
-    mappings: prepared.settings.lanes.map((lane) => ({
-      port: lane.port,
-      sourceTraceId: lane.sourceTraceId!,
-      from: lane.from.sourcePortId!,
-      to: lane.to.sourcePortId!,
+    receiverPaths: prepared.settings.traceContacts.map((contacts) => ({
+      ...contacts,
+      channelName: contacts.sourceTraceId,
     })),
     modeling: prepared.settings,
     controls: prepared.controls,
@@ -712,15 +710,18 @@ test("a routed differential termination shares the receiver endpoint on each leg
   })
   const input = declarationInput(prepared)
   const { nodes, plans } = generalDeclarations(input)
-  assert.equal(input.mappings.length, 4)
+  assert.equal(input.receiverPaths.length, 4)
   const [positive, negative] = endpointPorts(
     prepared.driverReceiverChannels[0].receivers[0],
   )
   assert.ok(negative)
   for (const port of [positive, negative]) {
     assert.equal(
-      input.mappings.filter((lane) => lane.from === port || lane.to === port)
-        .length,
+      input.receiverPaths.filter(
+        (channelTrace) =>
+          channelTrace.fromSourcePortId === port ||
+          channelTrace.toSourcePortId === port,
+      ).length,
       2,
     )
   }
@@ -736,7 +737,7 @@ test("a routed differential termination shares the receiver endpoint on each leg
   assert.equal(plans[0].probes[0].referenceNode, nodes.node(negative))
 })
 
-test("PRBS31 fits the pattern limit at exactly 65536 intervals", async () => {
+test("PRBS31 generates exactly 65536 intervals for this duration", async () => {
   const circuit = await renderSignals({
     tree: <Board pattern="prbs31" duration={65_536 / 20e6} />,
   })
@@ -746,16 +747,6 @@ test("PRBS31 fits the pattern limit at exactly 65536 intervals", async () => {
   })
   const [plan] = generalDeclarations(declarationInput(prepared)).plans
   assert.equal(plan.stimuli[0].transmission_pattern.bits.length, 65_536)
-})
-
-test("PRBS31 rejects overlong captures during preparation", async () => {
-  const circuit = await renderSignals({
-    tree: <Board pattern="prbs31" duration={70_000 / 20e6} />,
-  })
-  assert.throws(
-    () => prepareChannelSimulations({ circuit, sources: inverterSources }),
-    /at most 65536 bits/,
-  )
 })
 
 test("the default capture accepts a quiet driver whose offset is past the end", async () => {

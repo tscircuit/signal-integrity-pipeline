@@ -62,12 +62,11 @@ test("model paths cannot escape the explicit project", () => {
       /file_path/,
     )
 })
-test("model loading rejects HTML, ZIP, invalid UTF-8 and oversized data", () => {
+test("model loading rejects HTML, ZIP, invalid UTF-8 and invalid input types", () => {
   for (const payload of [
     "<!doctype html><title>Download</title>",
     "PK\x03\x04archive",
     Buffer.from([0xc3, 0x28]),
-    new Uint8Array(64 * 1024 * 1024 + 1),
     42,
   ])
     assert.throws(

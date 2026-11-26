@@ -1,14 +1,14 @@
 // The straight two-lane board with explicit experiment records and hand-written lane mappings.
 import { readFile } from "node:fs/promises"
 export const fixtureGeometry = () => ({
-  mappings: [
+  receiverPaths: [
     ["p0", "p2"],
     ["p1", "p3"],
   ].map(([from, to], index) => ({
-    port: ["DQS", "DQSn"][index],
+    channelName: ["DQS", "DQSn"][index],
     sourceTraceId: `s${index}`,
-    from,
-    to,
+    fromSourcePortId: from,
+    toSourcePortId: to,
   })),
 })
 const geometryFromCircuitJson = fixtureGeometry

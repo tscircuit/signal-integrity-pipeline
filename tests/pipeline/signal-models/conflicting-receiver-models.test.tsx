@@ -1,6 +1,6 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
-import { endpointPorts } from "../../../src/pipeline/signals"
+import { endpointPorts } from "../../../src/board"
 import {
   ReceiverModels,
   receiverModelSources,

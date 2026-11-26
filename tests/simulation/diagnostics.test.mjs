@@ -21,10 +21,10 @@ const declare =
     const { cj, m: base, controls } = fixture()
     const modeling = m ? m(base) : base
     const out = mutate(cj, controls.run) ?? cj
-    const { mappings } = impl.geometry(out, modeling)
+    const { receiverPaths } = impl.geometry(out, modeling)
     return impl.generalDeclarations({
       circuit: out,
-      mappings,
+      receiverPaths,
       modeling,
       controls,
     })
@@ -38,7 +38,7 @@ const electrical =
     const g = impl.geometry(cj, modeling)
     const nodes = impl.circuitNodes({
       circuit: cj,
-      mappings: g.mappings,
+      receiverPaths: g.receiverPaths,
       modeling,
     })
     return impl.electricalSources({ circuit: cj, modeling, nodes })
@@ -375,7 +375,11 @@ function splitChannelNet(circuit) {
 test("a channel net split into subcircuits is cut like one shared net", () => {
   const { cj, m, g } = fixture()
   splitChannelNet(cj)
-  const nodes = circuitNodes({ circuit: cj, mappings: g.mappings, modeling: m })
+  const nodes = circuitNodes({
+    circuit: cj,
+    receiverPaths: g.receiverPaths,
+    modeling: m,
+  })
   assert.notEqual(nodes.node("p0"), nodes.node("p2"))
   assert.throws(() => nodes.node("dq-board"), /channel_net/)
   const { cj: fanoutCircuit, m: fanoutModeling, g: fanoutGeometry } = fixture()
@@ -388,7 +392,7 @@ test("a channel net split into subcircuits is cut like one shared net", () => {
   })
   const input = {
     circuit: fanoutCircuit,
-    mappings: fanoutGeometry.mappings,
+    receiverPaths: fanoutGeometry.receiverPaths,
     modeling: fanoutModeling,
   }
   assert.throws(() => circuitNodes(input), /channel_fanout/)
@@ -421,7 +425,11 @@ test("orphan ideal sources fail preflight", () => {
       is_dc_source: false,
     },
   )
-  const nodes = circuitNodes({ circuit: cj, mappings: g.mappings, modeling: m })
+  const nodes = circuitNodes({
+    circuit: cj,
+    receiverPaths: g.receiverPaths,
+    modeling: m,
+  })
   assert.throws(
     () => electricalSources({ circuit: cj, modeling: m, nodes }),
     /floating_source.*ORPHAN/,

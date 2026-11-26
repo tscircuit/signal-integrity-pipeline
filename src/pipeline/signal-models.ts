@@ -1,9 +1,11 @@
-import type { CircuitJsonUtilObjects } from "@tscircuit/circuit-json-util"
+import { type CircuitJsonUtilObjects, cju } from "@tscircuit/circuit-json-util"
 import type { PcbTrace } from "circuit-json"
 import {
   type CircuitJson,
   type CopperScope,
+  endpointPorts,
   getSourcePortConnectivityMapFromCircuitJson,
+  hasBuiltInPassiveModel,
   type SignalEndpoint,
   type SimulationIbisModel,
   type SimulationPcbDriverReceiverChannel,
@@ -14,18 +16,11 @@ import {
   stackupFromCircuitJson,
 } from "../board"
 import type { InspectedPin } from "../buffers"
+import { snapshot } from "../kernel"
 import { voltageSourceTerminals } from "../simulation"
-import { circuitJsonDb } from "./circuit-json-db"
 import type { NumericalSettings } from "./modeling"
-import { endpointPorts } from "./signal-controls"
 import type { ScopedSignalPins, SignalPins } from "./signal-pins"
 import { withChannelSimulationSupplies } from "./supplies"
-
-/** Source component variants with a functional model type and component ID. */
-type SourceComponent = Extract<
-  CircuitJson[number],
-  { type: "source_component" }
->
 
 /** Ports and nets with a node supplied by routed copper, a buffer, or a voltage source. */
 type LoadNodeIds = Set<SourcePortId | SourceNetId>
@@ -93,12 +88,10 @@ function ibisModelOverrides({
 
 /** Keep the board and part models, then apply the selected simulation's endpoint choices. */
 export function channelSimulationCircuit({
-  boardCircuitJson,
   db,
   channelSimulation,
   driverReceiverChannels,
 }: {
-  boardCircuitJson: CircuitJson
   db: CircuitJsonUtilObjects
   channelSimulation: SimulationPcbTransientChannelSimulation
   driverReceiverChannels: SimulationPcbDriverReceiverChannel[]
@@ -109,7 +102,8 @@ export function channelSimulationCircuit({
     ...db.simulation_voltage_source.list(),
     ...db.simulation_spice_subcircuit.list(),
   ])
-  const circuit = boardCircuitJson
+  const circuit = db
+    .toArray()
     .filter(
       (record) =>
         !record.type.startsWith("simulation_") || partModelRecords.has(record),
@@ -117,13 +111,6 @@ export function channelSimulationCircuit({
     .map((record) => models.get(record) ?? record)
   circuit.push(channelSimulation, ...driverReceiverChannels)
   return circuit
-}
-
-/** A routed signal component can use a built-in passive model. */
-function hasBuiltInPassiveModel(component: SourceComponent): boolean {
-  return ["simple_resistor", "simple_capacitor", "simple_inductor"].includes(
-    component.ftype,
-  )
 }
 
 /** Require a supported model for every component on the signal nets. */
@@ -136,7 +123,7 @@ export function validateComponentModels({
   topology: ReadonlyMap<SourcePortId | SourceNetId, string>
   pins: ReadonlyMap<SourcePortId, InspectedPin>
 }): void {
-  const db = circuitJsonDb(circuit)
+  const db = cju([...circuit])
   for (const port of db.source_port.list()) {
     if (!topology.has(port.source_port_id) || pins.has(port.source_port_id))
       continue
@@ -204,12 +191,15 @@ export function withUsedIbisModels({
   circuit: CircuitJson
   pins: Map<SourcePortId, InspectedPin>
 }): PrunedIbisModels {
-  const db = circuitJsonDb(circuit)
-  const models = new Map<CircuitJson[number], SimulationIbisModel | undefined>()
+  const db = cju([...circuit])
+  const models = new Map<
+    CircuitJson[number],
+    InspectedPin["model"] | undefined
+  >()
   for (const model of db.simulation_ibis_model.list()) {
     const used = [...pins.values()].filter((pin) => pin.model === model)
     if (used.length === 0) models.set(model, undefined)
-    else models.set(model, prunedIbisModel({ model, usedPins: used }))
+    else models.set(model, snapshot(prunedIbisModel({ model, usedPins: used })))
   }
   return {
     circuit: circuit.flatMap((record): CircuitJson => {
@@ -235,7 +225,7 @@ function routedLoadTraceIds({
   pcbTraces,
   copperScope,
 }: {
-  pcbTraces: PcbTrace[]
+  pcbTraces: readonly PcbTrace[]
   copperScope: CopperScope
 }): RoutedLoadTraceIds {
   const scoped = new Set(copperScope.extractedPcbTraceIds)
@@ -311,7 +301,7 @@ function retainedPassiveComponents({
   retained: ReadonlySet<SourcePortId | SourceNetId>
   rails: ReadonlySet<SourcePortId | SourceNetId>
 }): NonNullable<NumericalSettings["passiveComponents"]> {
-  const db = circuitJsonDb(circuit)
+  const db = cju([...circuit])
   const nodes = loadNodes({ db, copperScope, pins })
   return db.source_component.list().flatMap((component) => {
     const sourceComponentId = component.source_component_id
@@ -341,12 +331,12 @@ export function prepareSignalSettings({
   pruned,
   signalPins,
   scopedPins,
-  lanes,
+  traceContacts,
 }: {
   pruned: PrunedIbisModels
   signalPins: Pick<SignalPins, "connectivity" | "rails" | "reference">
   scopedPins: Pick<ScopedSignalPins, "copperScope" | "retained">
-  lanes: NumericalSettings["lanes"]
+  traceContacts: NumericalSettings["traceContacts"]
 }): SuppliedSignalSettings {
   const { connectivity, rails, reference } = signalPins
   const { copperScope, retained } = scopedPins
@@ -362,7 +352,7 @@ export function prepareSignalSettings({
     )
   }
   const settings: NumericalSettings = {
-    lanes,
+    traceContacts,
     copperScope,
     channelReference: { sourcePortId: reference },
   }

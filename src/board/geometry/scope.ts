@@ -32,6 +32,11 @@ import type {
   SourceTraceId,
 } from "../ids"
 import type { CircuitJson } from "../schema"
+import {
+  type CopperBounds,
+  type CopperBox,
+  getChannelCopperBounds,
+} from "./scope-bounds"
 import type { RoutedPoint } from "./types"
 
 /** Nearby copper can be one layer above or below the channel copper. */
@@ -41,6 +46,8 @@ const ADJACENT_LAYER_OFFSET = 1
 export interface CopperScope {
   /** Largest XY gap between copper bounds that counts as nearby. */
   nearbyGapMm: number
+  /** Envelope of the channel copper used as the seed of the nearby search. */
+  channelCopperBounds?: CopperBounds
   /** The channel's own traces. */
   channelPcbTraceIds: PcbTraceId[]
   /** Traces from the channel, nearby signal nets and nearby rails. */
@@ -51,21 +58,6 @@ export interface CopperScope {
   nearbyRailPcbTraceIds: PcbTraceId[]
   /** Source ports and nets included with their full electrical nets. */
   extractedSourceIds: SourceConnectionGroup
-}
-
-/** Extents of an axis-aligned copper bound in board millimetres. */
-interface CopperBounds {
-  xmin: number
-  ymin: number
-  xmax: number
-  ymax: number
-}
-
-/** Bounds in board millimetres and the inclusive span of occupied layer indices. */
-export interface CopperBox {
-  xy: CopperBounds
-  firstLayer: number
-  lastLayer: number
 }
 
 /** A surface-mount pad or plated hole with its copper outline. */
@@ -491,6 +483,7 @@ export function channelCopperScopeWithBounds({
     channelBoxes,
     scope: {
       nearbyGapMm,
+      channelCopperBounds: getChannelCopperBounds(channelBoxes),
       channelPcbTraceIds: channelTraces.map((trace) => trace.pcb_trace_id),
       extractedPcbTraceIds: extractedTraces.map((trace) => trace.pcb_trace_id),
       extractedPcbViaIds: extractedVias.map((via) => via.pcb_via_id),

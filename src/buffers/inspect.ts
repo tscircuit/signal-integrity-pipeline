@@ -1,3 +1,4 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import {
   type IbisBuffer,
   type IbisComponent,
@@ -12,6 +13,7 @@ import {
   resolveIbisReferenceVoltages,
 } from "@tscircuit/ibis-to-spice"
 import type { CircuitJson, SimulationIbisModel, SourcePortId } from "../board"
+import type { Snapshot } from "../kernel"
 import { fail } from "./diagnostics"
 import { loadModelSource } from "./source"
 import type { IbisSources } from "./types"
@@ -23,7 +25,7 @@ export type InspectedPin = {
   /** Physical pin name in the IBIS component. */
   pin: IbisPackagePin["name"]
   /** Circuit JSON model declaration for the chip. */
-  model: SimulationIbisModel
+  model: Snapshot<SimulationIbisModel>
   /** Parsed IBIS component that owns the physical pin. */
   component: IbisComponent
   /** Selected IBIS buffer model for the physical pin. */
@@ -152,8 +154,7 @@ export function inspectPins({
   const pins: InspectedPins = new Map()
   const documents = new Map<IbisAssetPath, IbisDocument>()
   const boundPorts = new Set<SourcePortId>()
-  for (const model of circuit) {
-    if (model.type !== "simulation_ibis_model") continue
+  for (const model of cju([...circuit]).simulation_ibis_model.list()) {
     const selected = Object.entries(
       model.ibis_pin_name_to_source_port_id,
     ).filter(([, port]) => ports.has(port))

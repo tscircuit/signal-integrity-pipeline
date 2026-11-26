@@ -8,6 +8,7 @@ import type {
   SourceNetId,
   SourcePortId,
 } from "../board"
+import type { Snapshot } from "../kernel"
 
 /** simulation's slice of the flat public `Modeling`. (`channelReference` is shared with board's slice.) */
 export interface SimulationModeling {
@@ -23,16 +24,23 @@ export interface SimulationModeling {
   }[]
 }
 
+/** A SPICE node name in the generated circuit. */
+export type SpiceNodeName = string
+
 /** SPICE node names indexed by source port or net id. */
-type CircuitNodeNames = Record<SourcePortId | SourceNetId, string>
+type CircuitNodeNames = Readonly<
+  Record<SourcePortId | SourceNetId, SpiceNodeName>
+>
 
 /** The SPICE node lookup and mapping for an experiment's source connectivity. */
 export interface CircuitNodes {
-  node(id: SourcePortId | SourceNetId): string
+  node(id: SourcePortId | SourceNetId): SpiceNodeName
   groundSourcePortId: SourcePortId
   mapping: CircuitNodeNames
 }
-export type PipelineIbisModel = SimulationIbisModel & { pipelineId: string }
+export type PipelineIbisModel = Snapshot<SimulationIbisModel> & {
+  pipelineId: string
+}
 export interface VoltageProbePlan {
   simulationVoltageProbeId: string
   name: string
@@ -70,7 +78,7 @@ export interface SimulationPlan extends RunControls {
   durationSeconds: number
   startTimeSeconds: number
   maxStepSeconds: number
-  experiment: SimulationExperiment
+  experiment: Snapshot<SimulationExperiment>
   probes: VoltageProbePlan[]
   models: PipelineIbisModel[]
 }
@@ -79,7 +87,7 @@ export interface Declarations {
   models: PipelineIbisModel[]
   nodes: CircuitNodes
   plans: SimulationPlan[]
-  ports: Map<SourcePortId, SourcePort>
+  ports: ReadonlyMap<SourcePortId, SourcePort>
 }
 
 /** Deck lines and electrical node evidence for the modeled voltage sources and passives. */

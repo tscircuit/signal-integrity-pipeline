@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
+import { accessSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import lock from "../../examples/vendor-models.lock.json"
@@ -22,4 +23,16 @@ export async function loadVendorModel(model: VendorModel): Promise<Uint8Array> {
     `${model.file}: locked SHA-256`,
   )
   return bytes
+}
+
+/** Whether a local vendor asset is present; used by Bun's test.skipIf at registration. */
+export function vendorAvailable(file: string): boolean {
+  if (!process.env.IBIS_MODEL_DIR) return false
+  try {
+    accessSync(join(process.env.IBIS_MODEL_DIR, file))
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
+    throw error
+  }
 }

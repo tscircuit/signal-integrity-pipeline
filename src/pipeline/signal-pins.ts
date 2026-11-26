@@ -1,8 +1,10 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import {
   type CircuitJson,
   type ConnectivityMap,
   type CopperScope,
   channelCopperScope,
+  endpointPorts,
   getSourcePortConnectivityMapFromCircuitJson,
   type SignalEndpointPortIds,
   type SimulationPcbDriverReceiverChannel,
@@ -19,12 +21,8 @@ import {
   pinCapabilities,
 } from "../buffers"
 import { safeId } from "../kernel"
-import { circuitJsonDb } from "./circuit-json-db"
-import { endpointPorts } from "./signal-controls"
+import { collectSignalRailIds, type SignalRailIds } from "../simulation"
 import { signalTopology, validateSignalGraph } from "./topology"
-
-/** Named source ports and nets electrically connected to channel simulation reference or power rails. */
-type RailIds = Set<SourcePortId | SourceNetId>
 
 /** Driver pins, named nets and edge times from validated channel endpoints. */
 interface SignalIndex {
@@ -37,40 +35,6 @@ interface SignalIndexOptions {
   driverReceiverChannels: SimulationPcbDriverReceiverChannel[]
   pins: Map<SourcePortId, InspectedPin>
   signalConnectivity: ConnectivityMap
-}
-
-/** Collect all ports and nets tied to declared rails or to IBIS reference pins. */
-function collectRailIds({
-  circuit,
-  connectivity,
-  pins,
-}: {
-  circuit: CircuitJson
-  connectivity: ConnectivityMap
-  pins: Map<SourcePortId, InspectedPin>
-}): RailIds {
-  const railIds: RailIds = new Set()
-  const db = circuitJsonDb(circuit)
-  const sourceNets = db.source_net.list()
-  const supplyNetIds = sourceNets
-    .filter((net) => net.is_ground || net.is_power)
-    .map((net) => net.source_net_id)
-  const pinReferences = [...pins.values()].flatMap((pin) =>
-    Object.values(pin.references),
-  )
-  const explicit = db.simulation_ibis_model
-    .list()
-    .flatMap((model) =>
-      Object.values(
-        model.ibis_pin_name_to_reference_source_port_ids ?? {},
-      ).flatMap(Object.values),
-    )
-  for (const port of [...pinReferences, ...explicit, ...supplyNetIds]) {
-    if (port === undefined || railIds.has(port)) continue
-    for (const connected of sourceNetMembers({ connectivity, memberId: port }))
-      railIds.add(connected)
-  }
-  return railIds
 }
 
 /** Check that each differential pair belongs to one chip and follows the model's pin order. */
@@ -212,7 +176,7 @@ function indexDriverReceiverChannels({
 export interface SignalPins extends SignalIndex {
   endpointIds: ReadonlySet<SourcePortId>
   connectivity: ConnectivityMap
-  rails: RailIds
+  rails: SignalRailIds
   routedTopology: ReturnType<typeof signalTopology>
   reference: SourcePortId
 }
@@ -234,7 +198,13 @@ export function inspectSignalPins({
   )
   const selectedPins = inspectPins({ circuit, sources, ports: endpointIds })
   const connectivity = getSourcePortConnectivityMapFromCircuitJson(circuit)
-  const rails = collectRailIds({ circuit, connectivity, pins: selectedPins })
+  const rails = collectSignalRailIds({
+    db: cju([...circuit]),
+    connectivity,
+    referenceSourcePortIds: [...selectedPins.values()].flatMap((pin) =>
+      Object.values(pin.references),
+    ),
+  })
   const routedTopology = signalTopology({ circuit, rails })
   const index = indexDriverReceiverChannels({
     driverReceiverChannels,
@@ -264,12 +234,12 @@ export interface ScopedSignalPins {
 export function scopeSignalPins({
   circuit,
   sources,
-  distanceMm,
+  nearbyGapMm,
   signalPins,
 }: {
   circuit: CircuitJson
   sources: IbisSources
-  distanceMm: number
+  nearbyGapMm: number
   signalPins: SignalPins
 }): ScopedSignalPins {
   const { connectivity, topology, reference, rails, endpointIds } = signalPins
@@ -279,7 +249,7 @@ export function scopeSignalPins({
     channelSourceIds: new Set(topology.keys()),
     referenceSourceIds: sourceNetMembers({ connectivity, memberId: reference }),
     railSourceIds: rails,
-    distanceMm,
+    distanceMm: nearbyGapMm,
   })
   const retained = new Set(copperScope.extractedSourceIds)
   const ports = new Set([...retained].filter((port) => !rails.has(port)))

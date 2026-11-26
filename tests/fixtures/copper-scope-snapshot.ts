@@ -13,10 +13,8 @@ import type {
   PcbTrace,
   Point,
 } from "circuit-json"
-import {
-  type CopperBox,
-  channelCopperScopeWithBounds,
-} from "../../src/board/geometry/scope"
+import { channelCopperScopeWithBounds } from "../../src/board/geometry/scope"
+import type { CopperBox } from "../../src/board/geometry/scope-bounds"
 import { scopeOptions } from "./copper-scope-board"
 import "./extend-expect-circuit-snapshot"
 

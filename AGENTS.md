@@ -26,7 +26,7 @@ This is the only agent rules file. Do not add CLAUDE.md, GEMINI.md, .cursorrules
   and `bun run typecheck && bun test`. Both commands must pass.
 - Relative imports have no extension: `from './stages'`, and `from '../board'` for another module (enforced by `tests/tooling/imports.test.ts`). The build adds `.js` back in `dist/`.
 - Module rules, verification and migration notes: `docs/ARCHITECTURE.md`.
-- Output must stay byte-identical unless the PR says otherwise: `tests/compat/` pins exports and error codes. Preserve artifact paths and hashes for any stages you add.
+- Output must stay byte-identical unless the PR says otherwise: `tests/compat/` pins exports, error codes, artifact paths and hashes.
 
 ## Code style (tscircuit handbook: `tscircuit/handbook` `guides/code.md`, `guides/api-design.md`)
 

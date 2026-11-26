@@ -1,5 +1,5 @@
 import { simulation } from "@tscircuit/core"
-import type { SimulationIbisModelProps } from "@tscircuit/props"
+import type { ChipProps, SimulationIbisModelProps } from "@tscircuit/props"
 import type React from "react"
 
 /** Common physical ground pad offset and matching through-board via. */
@@ -149,15 +149,18 @@ export function Inverter({
 export function Transceiver({
   name,
   x,
+  internallyConnectedPins,
 }: {
   name: string
   x: number
+  internallyConnectedPins?: ChipProps["internallyConnectedPins"]
 }): React.JSX.Element {
   return (
     <>
       <chip
         name={name}
         pcbX={x}
+        internallyConnectedPins={internallyConnectedPins}
         pinLabels={{
           pin5: "GND",
           pin6: "A",

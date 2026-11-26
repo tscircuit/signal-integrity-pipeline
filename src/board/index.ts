@@ -7,22 +7,26 @@
 
 export {
   type ConnectivityMap,
+  crossesDifferentialLegs,
   getSourcePortConnectivityMapFromCircuitJson,
+  hasBuiltInPassiveModel,
   type PassiveBridge,
   passiveBridges,
   sourceConnections,
   sourceNetMembers,
+  sourcePinTies,
 } from "./connectivity"
+export type { CopperGeometryExtractionInput } from "./copper-geometry-extraction-input"
 export { polygonContains } from "./geometry/polygon"
 export { resolveRouteVias, selectPort } from "./geometry/ports"
 export { type CopperScope, channelCopperScope } from "./geometry/scope"
 export type {
   CopperPoint,
   CopperPolygon,
-  LaneMapping,
   LaneModeling,
   PcbTrace,
   PortSelector,
+  ReceiverTracePath,
   RoutedPoint,
   RoutePoint,
   SourcePort,
@@ -32,15 +36,32 @@ export type {
   SimulationPcbTransientChannelSimulationId,
   SourceNetId,
   SourcePortId,
+  SourceTraceId,
 } from "./ids"
+export type { PlanHeaderRow } from "./plan-header"
+export { getPinName, indexPlanPorts } from "./plan-view"
+export { renderPlanDrawing } from "./plan-visual"
+export {
+  getTraceColor,
+  type PlanOverlay,
+  type PlanTrace,
+  type PlanVisualEndpoint,
+  type PlanVisualScene,
+  planColors,
+} from "./plan-visual-types"
 export type {
   CircuitJson,
   SimulationExperiment,
   SimulationIbisModel,
 } from "./schema"
-export { recordSchema, validateCircuitRecords } from "./schema"
+export {
+  cloneCircuitJson,
+  recordSchema,
+  validateCircuitRecords,
+} from "./schema"
 export {
   type DriverPattern,
+  endpointPorts,
   isQuiet,
   type SignalEndpoint,
   type SimulationPcbDriverReceiverChannel,

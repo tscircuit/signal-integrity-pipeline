@@ -2,8 +2,13 @@
 // Electrical sources and SPICE namespacing for the routed deck.
 import { cju } from "@tscircuit/circuit-json-util"
 import type { SimulationVoltageSource } from "circuit-json"
-import type { CircuitJson, SourceNetId, SourcePortId } from "../board"
-import { selectPort } from "../board"
+import {
+  type CircuitJson,
+  type SourceNetId,
+  type SourcePortId,
+  selectPort,
+} from "../board"
+import type { Snapshot } from "../kernel"
 import { fail } from "./diagnostics"
 import type {
   CircuitNodes,
@@ -146,7 +151,7 @@ function splitSpicePins(source: string): string[] {
 }
 
 /** Read terminals from the first placed subcircuit header with a name and terminal field. */
-function placedSubcircuitPins(source: string): string[] | undefined {
+export function placedSubcircuitPins(source: string): string[] | undefined {
   for (
     let start = source.indexOf(".");
     start !== -1;
@@ -337,6 +342,29 @@ function voltageSourceExpression(source: SimulationVoltageSource): string {
   return `PULSE(${lowValue} ${highValue} ${delay} ${riseValue} ${fallValue} ${width} ${periodValue})`
 }
 
+type PassiveSourceComponent = Extract<
+  CircuitJson[number],
+  { type: "source_component" }
+>
+type PassiveSelection = NonNullable<
+  SimulationModeling["passiveComponents"]
+>[number]
+
+/** Match the same explicit passive selection during contact validation and deck generation. */
+export function passiveSelectionComponents({
+  components,
+  selection,
+}: {
+  components: readonly PassiveSourceComponent[]
+  selection: PassiveSelection
+}): PassiveSourceComponent[] {
+  return components.filter((component) => {
+    if (selection.sourceComponentId)
+      return component.source_component_id === selection.sourceComponentId
+    return component.name === selection.component
+  })
+}
+
 /**
  * Turns physical voltage sources, declared supplies and selected passives into SPICE lines.
  * Fails when a source is shorted, floating or unsupported, because this backend never invents rails.
@@ -347,7 +375,7 @@ export function electricalSources({
   nodes,
 }: {
   circuit: CircuitJson
-  modeling: SimulationModeling
+  modeling: Snapshot<SimulationModeling>
   nodes: CircuitNodes
 }): ElectricalSources {
   const sources: string[] = []
@@ -404,10 +432,9 @@ export function electricalSources({
     dcConnections.push([pos, neg])
   }
   for (const [i, selection] of (modeling.passiveComponents ?? []).entries()) {
-    const components = sourceComponents.filter((component) => {
-      if (selection.sourceComponentId)
-        return component.source_component_id === selection.sourceComponentId
-      return component.name === selection.component
+    const components = passiveSelectionComponents({
+      components: sourceComponents,
+      selection,
     })
     if (components.length !== 1)
       fail(

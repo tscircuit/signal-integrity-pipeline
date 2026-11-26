@@ -18,10 +18,25 @@
 threshold: 85
 
 domain:
+  attempt: one evaluation of a declared channel simulation
+  bridge: a connection whose removal separates two vertices, or a passive joining two source ports
+  connectivity: which source contacts are electrically joined
+  mark: a symbol carried through drawing and clipping
+  bypass: an alternate path around an extracted trace or series passive
+  chevron: a mark indicating the direction of a receiver path
+  dash: one mark in a dashed line
+  fault: a diagnostic tied to specific contacts or copper
+  header: the text band above the board in a plan drawing
+  ideal: an electrical connection with no extracted impedance
+  legend: the explanation of a drawing's symbols and colors
+  scene: the records and annotations used to draw one view
+  short: an unintended electrical connection
+  stroke: the line or outline of a drawing primitive
+  topology: the connections between electrical nodes
+  visual: a board drawing or data used to build it
   above: toward increasing solver z in a physical stackup
   actual: read directly from the physical source-board records
-  admission: validation and derivation of one declared transient channel simulation
-  admit: the check that reads declared input (board records, IBIS bytes, transient channel simulations) before anything else uses it
+  admit: accept an IBIS asset after validating its content
   aggressor: an output-capable pin coupled to a selected channel outside its endpoints
   allow: an explicit caller-selected modelling permission
   antipad: clearance opening in a plane around a signal via
@@ -37,7 +52,7 @@ domain:
   bottom: the outer copper layer on the lower face of the board
   bound: the pipeline state after binding; elsewhere, a lower or upper limit of a range
   branch: a SPICE element current or a connection in a circuit graph
-  brand: a TypeScript type tag that proves a value passed a check (for example an admitted id)
+  brand: a TypeScript type tag that proves a value passed a check (for example a validated id)
   buffer: an IBIS model of a chip's input or output circuit
   bus: an IBIS Pin Mapping label for pins sharing an electrical reference
   c: capacitance matrix or its entries
@@ -47,7 +62,7 @@ domain:
   capacitive: coupling between conductors through their electric field
   capture: a finite recording of voltages over time
   causal: a response that depends only on present and earlier input
-  channel: everything electrical between driver and receiver: lanes, their return paths and nearby copper
+  channel: everything electrical between driver and receiver: signal traces, return paths and nearby copper
   charge: electric charge on a conductor or dielectric interface in the cross-section solve
   chord: straight approximation to a densely tessellated curve
   circuit: an electrical network; also the Circuit JSON document that describes the board
@@ -65,7 +80,7 @@ domain:
   coupling: mutual electrical or magnetic interaction between conductors
   crossover: the frequency band where conductor loss turns from its DC value into skin loss
   cursor: the current position while traversing an ordered route
-  cut: a partition point at a physical geometry or reference change
+  cut: an intentional break in physical copper
   deck: an input file for a solver (the ngspice netlist)
   declare: plan experiments and probes from the board's simulation records before any solver runs
   delay: time needed for a signal edge to propagate through a line
@@ -100,7 +115,16 @@ domain:
   join: connect physically continuous copper pieces into one path
   kernel: Green function relating boundary charge to potential or field
   ladder: distributed line approximated by connected lumped electrical cells
-  lane: one signal path on the board
+  lane: an existing converter term for an extracted transmission line
+  overlay: a drawing mark that depicts an electrical connection or a fault
+  segment: one trace, series component, or ideal connection along a receiver path
+  contact: a source port or source net used in electrical connectivity
+  group: contacts joined by ideal connections before SPICE node numbering
+  receiver: the declared destination of a channel path
+  path: the ordered connections from a driver to a receiver
+  leg: one signal path of a differential pair, positive or negative
+  clearance: space left free around a feature
+  vertex: a point in a connection graph, represented by a source contact, ideal group or SPICE node
   lateral: distance transverse to a routed line in the board plane
   layer: one copper or insulating sheet in the stackup
   ledger: the single record of every artifact path the pipeline writes; a second write to a path fails
@@ -139,7 +163,6 @@ domain:
   rail: a power or ground supply connection
   ramp: the loaded voltage change and duration between 20% and 80% of an IBIS edge
   recede: move a conducting wall away from the field region
-  receiver: the chip input that takes in a signal
   recession: displacement of conducting walls away from the field for Wheeler loss
   reciprocity: the check that a matrix is symmetric (the effect of A on B equals B on A)
   refinement: a finer spatial subdivision of a solve, used to check that the answer stops changing
@@ -167,7 +190,7 @@ domain:
   span: the range of layers a via crosses
   sparse: a matrix or realization with mostly zero couplings
   stackup: the order and thickness of the board's copper and insulating layers
-  stage: one fixed step of the routed pipeline (admission, sections, fields, bindings, network, transient)
+  stage: one fixed step of the routed pipeline (planning, sections, fields, bindings, network, transient)
   startup: the time a switching channel needs to settle after its stimulus starts
   stimulus: the bit pattern a driver sends during an experiment
   stub: the unused part of a via beyond the layer where the signal leaves it
@@ -179,7 +202,7 @@ domain:
   tangent: dielectric dissipation factor or direction along a boundary panel
   terminal: a connection end of a conductor or source
   top: the outer copper layer on the upper face of the board
-  trace: a copper wire on one board layer
+  trace: routed PCB copper identified by a source trace, including its wire runs and layer transitions
   transient: a circuit simulation that follows voltage and current through time
   transition: a change of layer, reference or conductor geometry
   typical: the nominal vendor corner for a model value or waveform
@@ -228,6 +251,9 @@ abbreviations:
   vref: reference voltage, the receiver's decision level
 
 general:
+  - search
+  - opposite
+  - describe
   # actions
   - accept acquire activate add advance apply assert assess attach begin build change check clean clip
   - close compare compile connect contain convert create cross define derive display draw emit end exit
@@ -241,20 +267,20 @@ general:
   # data shapes and code structure
   - all any array attachment base binding body boolean box bucket budget byte candidate cell chain child
   - code column command comment content context count data declaration definition descriptor element
-  - entry error event expression field file first format graph grid group hash index input item key
+  - entry error event expression field file first format graph grid hash index input item key
   - kind label last level line list location log map mapping member message metadata method mode name
-  - namespace number option options order output owner package parent part path pattern payload piece
+  - namespace number option options order output owner package parent part pattern payload piece
   - plan policy prefix progress record reference request rest result root row schema section selection
   - selector series source state status table text title token tree type unit validation value
   # program runs and tools
   - adapter comparison conversion converter diagram directory domain engine fast faster invocation tool
   # report and user interface
   - ambiguity approximation button canvas client color description detail download drag font hint issue
-  - limitation listener overlay overview plot reason report role summary tab viewer warning drawing frame margin alpha bar hue tick band casing digit glyph lightness pitch fallback
+  - limitation listener overview plot reason report role summary tab viewer warning drawing frame margin alpha bar hue tick band casing digit glyph lightness pitch fallback
   # describing and comparing
-  - absolute active analytic best canonical common compatible compatibility condition convention direct
+  - absolute active analytic best canonical common compatible compatibility condition convention direct collect
   - empty equivalent exact expected finite fixed flat full global high horizontal inner limit low lowest
-  - max maximum middle min minimum native negative next numeric original other outer own physical half highest least longest median most near far reach leg
+  - max maximum middle min minimum native negative next numeric original other outer own physical half highest least longest median most near far reach
   - positive preceding previous primitive prior pure quiet range raw relative safe serial target threshold
   - characterization compliance
   # quantities, electricity and units
@@ -264,9 +290,9 @@ general:
   # math
   - cholesky delaunay interpolation multiply norm sum symmetrize transpose union total
   # geometry
-  - alignment anchor ancestor area aspect border boundary center contact connection coordinate curve
+  - alignment anchor ancestor area aspect border boundary center connection coordinate curve
   - depth direction distance division edge endpoint epsilon face gap height hole left length nearest
-  - outline point position profile radius right round segment side sign size sizing spacing surface circle corner closest across
+  - outline point position profile radius right round side sign size sizing spacing surface circle corner closest across
   - thickness triangle width
   # axis letters and their steps or counts (x, dx = step along x, nx = count along x)
   - x y z dx dy nx ny nz

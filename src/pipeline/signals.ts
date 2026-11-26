@@ -1,3 +1,4 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import type {
   CircuitJson,
   DriverPattern,
@@ -12,10 +13,10 @@ import {
   type IbisSources,
   type InspectedPin,
 } from "../buffers"
-import { safeId } from "../kernel"
+import { type SafeId, safeId } from "../kernel"
 import type { RunControls } from "../simulation"
 import { planAggressors } from "./aggressors"
-import { circuitJsonDb } from "./circuit-json-db"
+import { prepareTraceContacts } from "./channel-traces"
 import type { NumericalSettings } from "./modeling"
 import {
   type ChannelSimulationControlOptions,
@@ -23,28 +24,29 @@ import {
   signalTiming,
   withChannelSimulationControls,
 } from "./signal-controls"
-import { prepareRoutedLanes } from "./signal-lanes"
 import {
   channelSimulationCircuit,
   prepareSignalSettings,
   validateComponentModels,
   withUsedIbisModels,
 } from "./signal-models"
+import { compareNames } from "./signal-names"
 import {
   inspectSignalPins,
   scopeSignalPins,
   validateSignalPins,
 } from "./signal-pins"
 
-export { endpointPorts, probeEndpoints, signalBits } from "./signal-controls"
-export { routedLanes } from "./signal-lanes"
+export { probeEndpoints, signalBits } from "./signal-controls"
 
-/** Maximum and default lateral search distance for routed admission, in millimetres. */
-const MAX_COPPER_SCOPE_DISTANCE_MM = 32
+/** Default lateral search distance for channel simulation planning, in millimetres. */
+const DEFAULT_NEARBY_GAP_MM = 32
 
 /** The lowered circuit and controls for a single transient channel simulation. */
 export interface PreparedChannelSimulation {
   durationSeconds: number
+  fastestEdgeSeconds: number
+  stepSeconds: number
   channelSimulation: SimulationPcbTransientChannelSimulation
   driverReceiverChannels: SimulationPcbDriverReceiverChannel[]
   circuit: CircuitJson
@@ -57,7 +59,7 @@ export interface PreparedChannelSimulation {
 export function listChannelSimulations(
   circuitJson: CircuitJson,
 ): SimulationPcbTransientChannelSimulation[] {
-  const db = circuitJsonDb(circuitJson)
+  const db = cju([...circuitJson])
   const channelSimulations =
     db.simulation_pcb_transient_channel_simulation.list()
   if (
@@ -94,27 +96,35 @@ export function listChannelSimulations(
   return channelSimulations
 }
 
+/** Shared by the search gap error and the plan drawing. */
+export const INVALID_NEARBY_GAP_MESSAGE =
+  "Copper search gap must be finite and positive (mm)."
+
+/** Normalize a caller's nearby copper gap at the preparation boundary. */
+export function validateNearbyGapMm(
+  nearbyGapMm: number = DEFAULT_NEARBY_GAP_MM,
+): number {
+  if (!Number.isFinite(nearbyGapMm) || nearbyGapMm <= 0) {
+    throw new Error(INVALID_NEARBY_GAP_MESSAGE, {
+      cause: "nearbyGapMm",
+    })
+  }
+  return nearbyGapMm
+}
+
 /** Validate one channel simulation and lower its test intent to the private routed declarations. */
 export function prepareChannelSimulationById({
   circuit,
   sources,
   simulationPcbTransientChannelSimulationId,
-  distanceMm = MAX_COPPER_SCOPE_DISTANCE_MM,
+  distanceMm,
 }: {
   circuit: CircuitJson
   sources: IbisSources
   simulationPcbTransientChannelSimulationId: SimulationPcbTransientChannelSimulationId
   distanceMm?: number
 }): PreparedChannelSimulation {
-  if (
-    !Number.isFinite(distanceMm) ||
-    distanceMm <= 0 ||
-    distanceMm > MAX_COPPER_SCOPE_DISTANCE_MM
-  ) {
-    throw new Error(
-      `Copper scope distance must be in (0,${MAX_COPPER_SCOPE_DISTANCE_MM}] mm`,
-    )
-  }
+  const nearbyGapMm = validateNearbyGapMm(distanceMm)
   const channelSimulations = listChannelSimulations(circuit)
   const matches = channelSimulations.filter(
     (channelSimulation) =>
@@ -128,20 +138,13 @@ export function prepareChannelSimulationById({
   return prepareChannelSimulation({
     boardCircuitJson: circuit,
     channelSimulation: matches[0],
+    simulationPcbTransientChannelSimulationId: safeId({
+      raw: simulationPcbTransientChannelSimulationId,
+      field: "simulationPcbTransientChannelSimulationId",
+    }),
     sources,
-    distanceMm,
+    nearbyGapMm,
   })
-}
-
-/** Unicode code point order, independent of locale and UTF-16 surrogate ordering. */
-export function compareNames({ a, b }: { a: string; b: string }): number {
-  const left = Array.from(a, (character) => character.codePointAt(0)!)
-  const right = Array.from(b, (character) => character.codePointAt(0)!)
-  const sharedLength = Math.min(left.length, right.length)
-  for (let i = 0; i < sharedLength; i++) {
-    if (left[i] !== right[i]) return left[i] - right[i]
-  }
-  return left.length - right.length
 }
 
 /** One channel simulation's validated records. */
@@ -186,15 +189,14 @@ function validateChannelNames({
 function selectChannelSimulation({
   boardCircuitJson,
   channelSimulation,
-}: {
-  boardCircuitJson: CircuitJson
-  channelSimulation: SimulationPcbTransientChannelSimulation
-}): ChannelSelection {
-  const simulationPcbTransientChannelSimulationId = safeId({
-    raw: channelSimulation.simulation_pcb_transient_channel_simulation_id,
-    field: "simulationPcbTransientChannelSimulationId",
-  })
-  const db = circuitJsonDb(boardCircuitJson)
+  simulationPcbTransientChannelSimulationId,
+}: Pick<
+  ChannelSimulationOptions,
+  | "boardCircuitJson"
+  | "channelSimulation"
+  | "simulationPcbTransientChannelSimulationId"
+>): ChannelSelection {
+  const db = cju([...boardCircuitJson])
   const driverReceiverChannels = db.simulation_pcb_driver_receiver_channel.list(
     {
       simulation_pcb_transient_channel_simulation_id:
@@ -208,7 +210,6 @@ function selectChannelSimulation({
     simulationPcbTransientChannelSimulationId,
   })
   const circuit = channelSimulationCircuit({
-    boardCircuitJson,
     db,
     channelSimulation,
     driverReceiverChannels,
@@ -221,19 +222,23 @@ function selectChannelSimulation({
   }
 }
 
+/** A board and one validated simulation declaration with its model sources and radius. */
 interface ChannelSimulationOptions {
   boardCircuitJson: CircuitJson
   channelSimulation: SimulationPcbTransientChannelSimulation
+  simulationPcbTransientChannelSimulationId: SafeId
   sources: IbisSources
-  distanceMm: number
+  nearbyGapMm: number
 }
 
 /** Lower controls and assemble the prepared simulation. */
 function withPreparedChannelControls({
   settings,
+  fastestEdgeSeconds,
   ...options
 }: ChannelSimulationControlOptions & {
   settings: NumericalSettings
+  fastestEdgeSeconds: number
 }): PreparedChannelSimulation {
   const { circuit, controls } = withChannelSimulationControls(options)
   const {
@@ -251,16 +256,18 @@ function withPreparedChannelControls({
     pins,
     settings,
     durationSeconds,
+    fastestEdgeSeconds,
+    stepSeconds: options.stepSeconds,
   }
 }
 
 /** Prepare one channel simulation from its declarations through controls and probes. */
-function prepareChannelSimulation(
+export function prepareChannelSimulation(
   options: ChannelSimulationOptions,
 ): PreparedChannelSimulation {
-  const { sources, distanceMm } = options
+  const { sources, nearbyGapMm } = options
   const { circuit, ...selection } = selectChannelSimulation(options)
-  const inspection = { ...selection, circuit, sources, distanceMm }
+  const inspection = { ...selection, circuit, sources, nearbyGapMm }
   const signalPins = inspectSignalPins(inspection)
   const scopedPins = scopeSignalPins({ ...inspection, signalPins })
   const scoped = { ...selection, ...scopedPins, circuit, signalPins }
@@ -282,13 +289,13 @@ function prepareChannelSimulation(
   })
   const timing = signalTiming({ patterns, durationSeconds, edgeTimesSeconds })
   validateComponentModels({ ...scoped, topology: signalPins.topology })
-  const lanes = prepareRoutedLanes(scoped)
+  const traceContacts = prepareTraceContacts(scoped)
   const pruned = withUsedIbisModels(scoped)
   const supplied = prepareSignalSettings({
     pruned,
     signalPins,
     scopedPins,
-    lanes,
+    traceContacts,
   })
   return withPreparedChannelControls({
     ...selection,

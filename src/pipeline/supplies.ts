@@ -1,3 +1,4 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import type { SimulationVoltageSource } from "circuit-json"
 import {
   type ConnectivityMap,
@@ -6,7 +7,6 @@ import {
 import type { CircuitJson, SourceNetId, SourcePortId } from "../board"
 import { type InspectedPin, referenceVoltages } from "../buffers"
 import { type SimulationModeling, voltageSourceTerminals } from "../simulation"
-import { circuitJsonDb } from "./circuit-json-db"
 
 /** Allowed difference between typical IBIS voltages on one reference net. */
 const REFERENCE_VOLTAGE_TOLERANCE_V = 1e-8
@@ -94,7 +94,7 @@ export function withChannelSimulationSupplies(
   options: ChannelSimulationSupplyOptions,
 ): ChannelSimulationSupplies {
   const { circuit, connectivity, pins, reference } = options
-  const db = circuitJsonDb(circuit)
+  const db = cju([...circuit])
   const voltageSources = db.simulation_voltage_source.list()
   const { sources, sourceNets } = retainedVoltageSources({
     ...options,

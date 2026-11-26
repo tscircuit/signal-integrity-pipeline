@@ -14,7 +14,9 @@ import {
 import type {
   LayerRef,
   PcbComponent,
+  PcbPlatedHole,
   PcbPort,
+  PcbSmtPad,
   PcbTrace,
   PcbTraceRoutePointVia,
   PcbTraceRoutePointWire,
@@ -90,11 +92,11 @@ interface WireJunctions {
 /** A route point that can end a wire. Through-pad copper comes from the pad record. */
 type WireEnd = PcbTraceRoutePointWire | PcbTraceRoutePointVia
 
-/** Source ports and routes admitted to physical topology validation. */
+/** Source ports and routes selected for physical topology validation. */
 interface CopperSelection {
   circuit: CircuitJson
-  ports: PcbPort[]
-  traces: PcbTrace[]
+  ports: readonly PcbPort[]
+  traces: readonly PcbTrace[]
   selected: ReadonlySet<SourceNetId | SourcePortId>
   rails: ReadonlySet<SourceNetId | SourcePortId>
   traceIds: ReadonlySet<SourceTrace["source_trace_id"]>
@@ -257,7 +259,7 @@ function routeWire({
 }
 
 /** Build the wires and barrel connections encoded directly in each selected route. */
-function traceCopper(traces: PcbTrace[]): TraceCopper {
+function traceCopper(traces: readonly PcbTrace[]): TraceCopper {
   const wires: CopperWire[] = []
   const regions: CopperRegion[] = []
   const groups: CopperGroup[] = []
@@ -330,7 +332,7 @@ function copperRegions({
     if (record.type === "pcb_smtpad") {
       regions.push({
         layer: record.layer,
-        outline: getSmtPadPolygon(record),
+        outline: getSmtPadPolygon(record as PcbSmtPad),
         key: pointKey({ point: port, layer: record.layer }),
       })
       continue
@@ -338,7 +340,7 @@ function copperRegions({
     let rotation: number | undefined
     if (record.pcb_component_id !== undefined)
       rotation = rotations.get(record.pcb_component_id)
-    const outline = getPlatedHolePolygon(record, rotation)
+    const outline = getPlatedHolePolygon(record as PcbPlatedHole, rotation)
     for (const layer of record.layers)
       regions.push({ layer, outline, key: record.pcb_plated_hole_id })
     groups.push([

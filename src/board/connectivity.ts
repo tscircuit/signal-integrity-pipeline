@@ -1,4 +1,4 @@
-import { cju } from "@tscircuit/circuit-json-util"
+import { type CircuitJsonUtilObjects, cju } from "@tscircuit/circuit-json-util"
 import type { SourceComponentBase } from "circuit-json"
 import type { ConnectivityMap } from "circuit-json-to-connectivity-map"
 import type { SourceNetId, SourcePortId } from "./ids"
@@ -31,25 +31,38 @@ export type SourceConnectionGroup = Array<SourcePortId | SourceNetId>
 /** Source port and net identifiers on one electrical net. */
 export type SourceNetMembers = Set<SourcePortId | SourceNetId>
 
-/** Collect source connectivity groups in the same order as the library's source map. */
+/** Read internal pin ties from both Circuit JSON representations. */
+export function sourcePinTies(
+  db: CircuitJsonUtilObjects,
+): SourceConnectionGroup[] {
+  return [
+    ...db.source_component
+      .list()
+      .flatMap((component) =>
+        (component.internally_connected_source_port_ids ?? []).map((ids) => [
+          ...ids,
+        ]),
+      ),
+    ...db.source_component_internal_connection
+      .list()
+      .map((connection) => [...connection.source_port_ids]),
+  ]
+}
+
+/** Collect explicit source traces and component pin ties. */
 export function sourceConnections(
   circuit: CircuitJson,
 ): SourceConnectionGroup[] {
-  return circuit.flatMap((record) => {
-    if (record.type === "source_trace") {
-      return [
-        [
-          ...(record.connected_source_port_ids ?? []),
-          ...(record.connected_source_net_ids ?? []),
-        ],
-      ]
-    }
-    if (record.type === "source_component")
-      return record.internally_connected_source_port_ids ?? []
-    if (record.type === "source_component_internal_connection")
-      return [record.source_port_ids]
-    return []
-  })
+  const db = cju([...circuit])
+  return [
+    ...db.source_trace
+      .list()
+      .map((trace) => [
+        ...trace.connected_source_port_ids,
+        ...(trace.connected_source_net_ids ?? []),
+      ]),
+    ...sourcePinTies(db),
+  ]
 }
 
 /** The two pins of a resistor, capacitor or inductor treated as wired together for a signal. */
@@ -74,17 +87,39 @@ export function passiveBridges({
     }
     pins.push(port.source_port_id)
   }
-  const passiveTypes = [
-    "simple_resistor",
-    "simple_capacitor",
-    "simple_inductor",
-  ]
   const connections: PassiveBridge[] = []
   for (const component of db.source_component.list()) {
-    if (!passiveTypes.includes(component.ftype)) continue
+    if (!hasBuiltInPassiveModel(component)) continue
     const pins = ports.get(component.source_component_id)
     if (pins?.length === 2 && pins.every((pin) => !excluded.has(pin)))
       connections.push(pins as PassiveBridge)
   }
   return connections
+}
+
+/** Check the same leg boundary for a physical or a source-level passive bridge. */
+export function crossesDifferentialLegs<T>({
+  from,
+  to,
+  differential,
+}: {
+  from: T
+  to: T
+  differential: readonly {
+    positive: ReadonlySet<T>
+    negative: ReadonlySet<T>
+  }[]
+}): boolean {
+  return differential.some(
+    ({ positive, negative }) =>
+      (positive.has(from) && negative.has(to)) ||
+      (positive.has(to) && negative.has(from)),
+  )
+}
+
+/** Identify components with a built-in resistor, capacitor or inductor model. */
+export function hasBuiltInPassiveModel(component: { ftype: string }): boolean {
+  return ["simple_resistor", "simple_capacitor", "simple_inductor"].includes(
+    component.ftype,
+  )
 }

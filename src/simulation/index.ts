@@ -8,8 +8,8 @@
  * Imports: kernel, solver, board, extraction, observation, buffers.
  */
 
+export { buildConnectionGraph, findConnectionPath } from "./connection-paths"
 export {
-  circuitNodes,
   generalDeclarations,
   modelRunDefinition,
 } from "./declarations"
@@ -18,7 +18,23 @@ export {
   namespaceSpice,
   voltageSourceTerminals,
 } from "./netlist"
-export { MAX_STIMULUS_BITS, transmittedBits } from "./stimulus"
+export {
+  buildReceiverGraphs,
+  findReceiverPath,
+  type ReceiverGraphs,
+} from "./receiver-paths"
+export type {
+  RouteBindingsInput,
+  RouteCompileOptions,
+  TraceContacts,
+} from "./route-inputs"
+export {
+  circuitNodes,
+  numberCircuitNodes,
+  validateRoutedNodes,
+} from "./routed-nodes"
+export { collectSignalRailIds, type SignalRailIds } from "./signal-rails"
+export { transmittedBits } from "./stimulus"
 export type {
   CircuitNodes,
   Declarations,

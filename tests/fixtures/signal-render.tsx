@@ -36,7 +36,7 @@ export async function renderSignals({
   }
 }
 
-/** Lower every transient channel simulation in board order, as RoutedAdmissionSolver does one channel simulation per step. */
+/** Lower every transient channel simulation in board order, as TransientChannelSimulationPlanSolver does one channel simulation per step. */
 export function prepareChannelSimulations({
   circuit,
   sources,

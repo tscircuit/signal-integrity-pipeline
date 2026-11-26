@@ -1,7 +1,8 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
 import type { SimulationPcbDriverReceiverChannel } from "../../src/board"
-import { endpointPorts, signalBits } from "../../src/pipeline/signal-controls"
+import { endpointPorts } from "../../src/board"
+import { signalBits } from "../../src/pipeline/signal-controls"
 import { renderSignals } from "../fixtures/signal-render"
 import Single from "../fixtures/unit-single-ended"
 

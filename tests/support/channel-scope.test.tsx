@@ -145,7 +145,7 @@ test("unrelated branched copper cannot reject a selected channel", async () => {
     sources,
     distanceMm: 1,
   })
-  assert.equal(channelSimulation.settings.lanes.length, 1)
+  assert.equal(channelSimulation.settings.traceContacts.length, 1)
   const retained = new Set(
     channelSimulation.settings.copperScope.extractedPcbTraceIds,
   )
@@ -160,7 +160,7 @@ test("unrelated branched copper cannot reject a selected channel", async () => {
     distanceMm: 1,
   })[0]
   assert.equal(
-    near.settings.lanes.length,
+    near.settings.traceContacts.length,
     1,
     "only the selected channel is a lane",
   )
@@ -194,7 +194,7 @@ test("unrelated branched copper cannot reject a selected channel", async () => {
     distanceMm: 1,
   })[0]
   assert.equal(
-    branched.settings.lanes.length,
+    branched.settings.traceContacts.length,
     1,
     "nearby branched copper is a scoped neighbour, not a rejected lane",
   )

@@ -16,15 +16,8 @@ import { contained, relativeFile } from "./paths"
 
 export interface NativeSolverOptions {
   tools?: Partial<Record<Solver, string>>
-  timeoutMs?: number
 }
 const exec = promisify(execFile)
-
-/** Give native solvers up to fifteen minutes to complete the requested run. */
-const DEFAULT_TIMEOUT_MS = 900000
-
-/** Cap each captured output stream at 64 MiB. */
-const OUTPUT_BUFFER_BYTES = 64 * 1024 * 1024
 
 /**
  * Executes only requests passed by the caller; never installs or downloads tools.
@@ -33,11 +26,7 @@ const OUTPUT_BUFFER_BYTES = 64 * 1024 * 1024
  */
 export function createNativeSolver({
   tools = {},
-  timeoutMs = DEFAULT_TIMEOUT_MS,
 }: NativeSolverOptions = {}): RunSolver {
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
-    fail("native_timeout", "timeoutMs must be a positive integer")
-  }
   return async (request) => {
     if (request.solver !== "ngspice") fail("native_solver", "Unknown solver")
     for (const path of [...Object.keys(request.files), ...request.outputFiles])
@@ -56,27 +45,15 @@ export function createNativeSolver({
       try {
         run = await exec(tools.ngspice ?? "ngspice", request.args, {
           cwd: directory,
-          timeout: timeoutMs,
-          maxBuffer: OUTPUT_BUFFER_BYTES,
+          maxBuffer: Infinity,
           env: { ...process.env, OMP_NUM_THREADS: "1" },
         })
       } catch (error) {
         const detail = error as Error & {
-          code?: string | number | null
-          killed?: boolean
-          signal?: string
           stdout?: string
           stderr?: string
         }
-        // execFile's timeout kills with SIGTERM and no exit code. External
-        // signals are not marked killed; maxBuffer errors have a string code.
-        const timedOut =
-          detail.killed && detail.signal === "SIGTERM" && detail.code === null
         const output = `${detail.stdout ?? ""}\n${detail.stderr ?? ""}`
-        if (timedOut) {
-          const timeout = `exceeded ${timeoutMs} ms process timeout; ${detail.message}`
-          fail("native_timeout", `${request.solver}: ${timeout}\n${output}`)
-        }
         fail("native_solver", `${request.solver}: ${detail.message}\n${output}`)
       }
       const files: Record<string, string> = Object.create(null)
