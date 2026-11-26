@@ -49,8 +49,43 @@ function containsHtmlOpening(text: string): boolean {
 }
 
 /** Report an asset value whose runtime type cannot contain IBIS text or bytes. */
-export function failInvalidIbisSource(path: string): never {
+function failInvalidIbisSource(path: string): never {
   return fail("ibis_asset", `${path}: expected a string or Uint8Array`)
+}
+
+/** Frozen maps whose byte getters already return isolated copies. */
+const capturedIbisSources = new WeakSet<Readonly<IbisSources>>()
+
+/** Capture original bytes without decoding and give readers copies of byte views. */
+export function captureIbisSources(
+  sources: Readonly<IbisSources>,
+): Readonly<IbisSources> {
+  if (capturedIbisSources.has(sources)) return sources
+  const prototype: unknown = sources && Object.getPrototypeOf(sources)
+  if (!sources || (prototype !== Object.prototype && prototype !== null))
+    fail("ibis_asset", "Expected a plain ibisSources dictionary")
+  const ibisSources: IbisSources = Object.create(prototype)
+  for (const assetPath of Object.keys(sources)) {
+    const source = sources[assetPath]
+    if (typeof source === "string") {
+      Object.defineProperty(ibisSources, assetPath, {
+        enumerable: true,
+        value: source,
+      })
+      continue
+    }
+    let capturedBytes: Uint8Array | undefined
+    if (source instanceof Uint8Array) capturedBytes = new Uint8Array(source)
+    Object.defineProperty(ibisSources, assetPath, {
+      enumerable: true,
+      get() {
+        if (!capturedBytes) return failInvalidIbisSource(assetPath)
+        return new Uint8Array(capturedBytes)
+      },
+    })
+  }
+  capturedIbisSources.add(ibisSources)
+  return Object.freeze(ibisSources)
 }
 
 /**

@@ -13,7 +13,7 @@ import {
   sha256,
   snapshot,
 } from "../kernel"
-import type { RouteBindingsInput } from "../simulation"
+import type { ChannelNetlistInput } from "../simulation"
 import {
   capturePlanInput,
   type TransientChannelSimulationPlanInput,
@@ -26,15 +26,12 @@ import { resolveReceiverTracePaths } from "./resolve-receiver-paths"
 import { compareNames } from "./signal-names"
 import { prepareChannelSimulation } from "./signals"
 
-/** Planning starts with the base route mesh resolution. */
-const BASE_REFINEMENT = 1
-
 /** Frozen section and binding inputs for one planned transient channel simulation. */
 export interface TransientChannelSimulationPlan {
   readonly simulationPcbTransientChannelSimulationId: SimulationPcbTransientChannelSimulationId
   readonly name: string
   readonly sections: CopperGeometryExtractionInput
-  readonly bindings: RouteBindingsInput
+  readonly bindings: ChannelNetlistInput
   readonly warnings: readonly string[]
 }
 
@@ -86,17 +83,12 @@ function buildChannelPlan({
     }),
     bindings: Object.freeze({
       circuitJson,
+      copperScope: modeling.copperScope,
       receiverPaths,
       traceContacts,
       modeling,
       controls: snapshot(prepared.controls),
       ibisSources: input.ibisSources,
-      options: Object.freeze({
-        fastestEdgeSeconds: prepared.fastestEdgeSeconds,
-        refinement: BASE_REFINEMENT,
-        stepSeconds: prepared.stepSeconds,
-        durationSeconds: prepared.durationSeconds,
-      }),
       artifactPrefix,
     }),
   })

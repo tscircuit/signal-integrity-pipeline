@@ -22,7 +22,7 @@ export {
   pinCapabilities,
   referenceVoltages,
 } from "./inspect"
-export { failInvalidIbisSource, loadModelSource, relativeFile } from "./source"
+export { captureIbisSources, loadModelSource, relativeFile } from "./source"
 export type {
   AssemblyEntry,
   BufferModeling,

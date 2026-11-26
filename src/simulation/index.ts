@@ -2,12 +2,17 @@
  * simulation — experiments as declared on the board, the routed deck, and running it in ngspice.
  * Owns: SimulationPlan declaration from simulation_* records (timing, probes, stimuli, pin
  * states), electrical node mapping + ideal sources/passives, the converter run definition per
- * model, the routed ladder/network deck (RouteBindingsSolver, RouteNetworkSolver) and the live
- * transient (RouteTransientSolver).
+ * model, the channel netlist (ChannelNetlistSolver), the routed ladder/network deck
+ * (RouteNetworkSolver), and the live transient (RouteTransientSolver).
  * Artifacts: electrical-node-map.json, simulation.cir, evidence.json and the transient capture.
  * Imports: kernel, solver, board, extraction, observation, buffers.
  */
 
+export {
+  type ChannelNetlist,
+  type ChannelNetlistInput,
+  ChannelNetlistSolver,
+} from "./channel-netlist"
 export { buildConnectionGraph, findConnectionPath } from "./connection-paths"
 export {
   generalDeclarations,
@@ -23,11 +28,7 @@ export {
   findReceiverPath,
   type ReceiverGraphs,
 } from "./receiver-paths"
-export type {
-  RouteBindingsInput,
-  RouteCompileOptions,
-  TraceContacts,
-} from "./route-inputs"
+export type { TraceContacts } from "./route-inputs"
 export {
   circuitNodes,
   numberCircuitNodes,

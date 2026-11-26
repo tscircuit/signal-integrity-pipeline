@@ -11,6 +11,7 @@ Each declared channel simulation becomes immutable inputs for copper geometry ex
 `CopperGeometryExtractionSolver` models scoped traces, vias, reference pours, and pad contacts. It groups wires into sections with consistent nearby copper and reference surfaces.
 `TransmissionLineRlgcSolver` screens nearby wire pairs for coupling and calculates per-unit-length RLGC matrices for each coupled group.
 IBIS conversion resolves scalar or coupled package elements and validates selected package matrices during planning.
+`ChannelNetlistSolver` takes the planner's binding input, allocates SPICE nodes and compiles one IBIS model per step.
 
 Aggressors are output-capable pins retained by the copper scope that do not
 drive a declared channel in the simulation. This includes bidirectional
@@ -34,8 +35,8 @@ flowchart LR
   packages --> plan
   plan --> geometry["CopperGeometryExtractionSolver"]
   geometry --> transmissionLineRlgc["TransmissionLineRlgcSolver"]
-  plan --> binding["IBIS binding inputs"]
-  binding --> spice["Convert packages and switching coefficients to SPICE"]
+  plan -->|Binding input| netlist["ChannelNetlistSolver"]
+  netlist --> bound["SPICE node map, electrical elements and IBIS assembly"]
   plan --> manifest["Transient channel simulation plan manifest"]
 ```
 
@@ -44,11 +45,17 @@ stateDiagram-v2
   [*] --> Ready
   Ready --> Planned: TransientChannelSimulationPlanSolver
   Planned --> GeometryReady: CopperGeometryExtractionSolver
-  GeometryReady --> Complete: TransmissionLineRlgcSolver
+  GeometryReady --> FieldsReady: TransmissionLineRlgcSolver
+  Planned --> BindingModels: ChannelNetlistSolver allocates nodes and validates IBIS sources
+  BindingModels --> BindingModels: compile one IBIS model per step
+  BindingModels --> NetlistReady: publish netlist and assembly after the last model
+  Planned --> Failed: invalid experiment, electrical contacts or IBIS sources
+  BindingModels --> Failed: IBIS conversion failed
   GeometryReady --> Failed: invalid cross-section geometry or material options
   Planned --> Failed: missing required contact or reference, unsupported route or soldermask
   Ready --> Failed: invalid input, conflicting IBIS model selections, invalid package matrices or undeclared aggressors
-  Complete --> [*]
+  FieldsReady --> [*]
+  NetlistReady --> [*]
   Failed --> [*]
 ```
 

@@ -145,6 +145,7 @@ domain:
   mutual: a capacitance or inductance term relating two different conductors
   nearby: inside the explicitly defined spatial coupling horizon
   net: a set of pins and copper that are connected together
+  netlist: the SPICE nodes and the electrical elements connected to them
   network: the connected electrical cells and correction elements of routed copper
   node: a named connection point in the SPICE circuit
   non: prefix identifying an explicitly excluded property
