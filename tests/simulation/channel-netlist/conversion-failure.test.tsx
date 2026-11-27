@@ -2,20 +2,23 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { ChannelNetlistSolver } from "../../../src/simulation"
 import { renderTwoTraceNetlistInput } from "../../fixtures/channel-netlist"
-import { routedVisualIbis } from "../../fixtures/routed-visual-fixture"
-import { inverterModelPath } from "../../fixtures/two-trace-plan-input"
 
-test("marks the netlist failed when IBIS conversion fails", async () => {
+test("marks the netlist failed when conversion fails after the first model", async () => {
   const input = await renderTwoTraceNetlistInput()
+  const [, secondModel] = input.circuitJson.filter(
+    (record) => record.type === "simulation_ibis_model",
+  )
+  assert.ok(secondModel)
   const solver = new ChannelNetlistSolver({
     ...input,
-    ibisSources: {
-      [inverterModelPath]: routedVisualIbis.replace(
-        "[Component] LVC1G04_DCK",
-        "[Component] Unmapped",
-      ),
-    },
+    circuitJson: input.circuitJson.map((record) => {
+      if (record !== secondModel) return record
+      return { ...secondModel, ibis_component_name: "Unmapped" }
+    }),
   })
+  solver.step()
+  assert.equal(solver.stats.models, 1)
+  assert.equal(solver.failed, false)
   assert.throws(() => solver.step(), { code: "missing_component" })
   assert.equal(solver.failed, true)
   assert.throws(() => solver.getOutput(), /netlist is incomplete/)

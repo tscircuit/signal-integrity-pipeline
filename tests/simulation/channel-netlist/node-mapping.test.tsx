@@ -1,11 +1,10 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { cju } from "@tscircuit/circuit-json-util"
-import { TransientChannelSimulationPlanSolver } from "../../../src/pipeline"
 import { ChannelNetlistSolver } from "../../../src/simulation"
 import { fixturePortId } from "../../fixtures/channel-netlist"
 import { differentialIbis } from "../../fixtures/routed-visual-fixture"
-import { renderSignals } from "../../fixtures/signal-render"
+import { plannedBindings, renderSignals } from "../../fixtures/signal-render"
 import Differential from "../../fixtures/unit-differential"
 
 test("allocates distinct SPICE nodes for each leg of a routed differential channel", async () => {
@@ -13,12 +12,10 @@ test("allocates distinct SPICE nodes for each leg of a routed differential chann
     tree: <Differential routedTermination />,
     expectedErrors: ["pcb_port_not_connected_error"],
   })
-  const planner = new TransientChannelSimulationPlanSolver({
+  const bindings = plannedBindings({
     circuitJson,
     ibisSources: { "models/sn65hvd72.ibs": differentialIbis },
   })
-  planner.solve()
-  const [{ bindings }] = planner.getOutput().value
   const solver = new ChannelNetlistSolver(bindings)
   solver.solve()
 

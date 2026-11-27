@@ -43,7 +43,8 @@ stateDiagram-v2
   Ready --> Planned: TransientChannelSimulationPlanSolver
   Planned --> GeometryReady: CopperGeometryExtractionSolver
   GeometryReady --> FieldsReady: TransmissionLineRlgcSolver
-  Planned --> CompilingModels: step 1 initializes the netlist and compiles model 0
+  Planned --> NetlistReady: compile the only model and publish in one step
+  Planned --> CompilingModels: initialize a multi-model netlist and compile its first model
   CompilingModels --> CompilingModels: compile the next IBIS model
   CompilingModels --> NetlistReady: compile the final model and publish the netlist and IBIS assembly
   Planned --> Failed: invalid experiment or IBIS sources, missing contacts or reference, unsupported route or soldermask, or model 0 conversion failed

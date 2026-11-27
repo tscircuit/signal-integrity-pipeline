@@ -15,7 +15,6 @@ import {
 } from "../buffers"
 import {
   type ArtifactScope,
-  isDeeplyFrozen,
   type Produced,
   rootScope,
   type Snapshot,
@@ -78,6 +77,8 @@ interface ChannelNetlistState {
 
 /** Allocate electrical nodes and compile one IBIS model per step. */
 export class ChannelNetlistSolver extends BaseSolver {
+  override MAX_ITERATIONS = Infinity
+
   private readonly input: ChannelNetlistInput
   private state?: ChannelNetlistState
   private readonly models: CompiledIbisComponent[] = []
@@ -86,15 +87,17 @@ export class ChannelNetlistSolver extends BaseSolver {
   /** Capture the board, experiment inputs and raw IBIS sources for this run. */
   constructor(input: ChannelNetlistInput) {
     super()
-    const { circuitJson, ibisSources, ...netlistInput } = input
-    const captured = {
-      ...snapshot(netlistInput),
-      circuitJson,
-      ibisSources: captureIbisSources(ibisSources),
-    }
-    if (!isDeeplyFrozen(circuitJson))
-      captured.circuitJson = snapshot(circuitJson)
-    this.input = Object.freeze(captured)
+    this.input = Object.freeze({
+      ...snapshot({
+        circuitJson: input.circuitJson,
+        receiverPaths: input.receiverPaths,
+        traceContacts: input.traceContacts,
+        modeling: input.modeling,
+        controls: input.controls,
+        artifactPrefix: input.artifactPrefix,
+      }),
+      ibisSources: captureIbisSources(input.ibisSources),
+    })
   }
 
   /** Resolve the plan and validate every IBIS source it uses. */
@@ -137,13 +140,7 @@ export class ChannelNetlistSolver extends BaseSolver {
 
   /** Compile the next model and publish the netlist after the last one. */
   override _step(): void {
-    if (!this.state) {
-      this.state = this.initialize()
-      this.MAX_ITERATIONS = Math.min(
-        this.MAX_ITERATIONS,
-        this.state.plan.models.length,
-      )
-    }
+    this.state ??= this.initialize()
     const { plan, sources } = this.state
     const model = plan.models[this.models.length]
     const [[compiled]] = compileBuffers({
@@ -152,10 +149,7 @@ export class ChannelNetlistSolver extends BaseSolver {
       define: modelRunDefinition,
     })
     this.models.push(compiled)
-    this.stats = {
-      models: this.models.length,
-      probes: plan.probes.length,
-    }
+    this.stats = { models: this.models.length }
     if (this.models.length !== plan.models.length) return
     this.finalize(this.state)
     this.solved = true

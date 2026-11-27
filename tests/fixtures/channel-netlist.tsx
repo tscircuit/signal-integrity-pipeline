@@ -1,37 +1,19 @@
 import assert from "node:assert/strict"
 import type { cju } from "@tscircuit/circuit-json-util"
 import { TwoTraceBoard } from "../../examples/routed/two-trace-board"
-import type { CircuitJson, SourcePortId } from "../../src/board"
-import {
-  type TransientChannelSimulationPlan,
-  TransientChannelSimulationPlanSolver,
-} from "../../src/pipeline"
+import type { SourcePortId } from "../../src/board"
 import type { ChannelNetlistInput } from "../../src/simulation"
 import { renderCoreSignals } from "../support/core-render"
 import { routedVisualIbis } from "./routed-visual-fixture"
+import { plannedBindings } from "./signal-render"
 import { inverterModelPath } from "./two-trace-plan-input"
-
-/** Plan a rendered board using synthetic IBIS text. */
-export function planNetlistChannels({
-  circuitJson,
-  ibisText = routedVisualIbis,
-}: {
-  circuitJson: CircuitJson
-  ibisText?: string
-}): readonly TransientChannelSimulationPlan[] {
-  const planner = new TransientChannelSimulationPlanSolver({
-    circuitJson,
-    ibisSources: { [inverterModelPath]: ibisText },
-    nearbyGapMm: 1,
-  })
-  planner.solve()
-  return planner.getOutput().value
-}
 
 /** Render and plan a board with two routed channels. */
 export async function renderTwoTraceNetlistInput(): Promise<ChannelNetlistInput> {
-  const circuitJson = await renderCoreSignals(<TwoTraceBoard />)
-  return planNetlistChannels({ circuitJson })[0].bindings
+  return plannedBindings({
+    circuitJson: await renderCoreSignals(<TwoTraceBoard data-pattern="10" />),
+    ibisSources: { [inverterModelPath]: routedVisualIbis },
+  })
 }
 
 /** Resolve a physical pin of a named component in a rendered fixture. */
