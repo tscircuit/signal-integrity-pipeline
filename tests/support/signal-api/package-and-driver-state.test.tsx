@@ -33,6 +33,7 @@ test("keeps vendor parasitics and rejects disabling an output-only driver", asyn
   const declarations = generalDeclarations({
     circuit: cloneCircuitJson(bindings.circuitJson),
     receiverPaths: bindings.receiverPaths,
+    traceContacts: bindings.traceContacts,
     modeling: bindings.modeling,
     controls: bindings.controls,
   })

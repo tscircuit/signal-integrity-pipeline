@@ -86,6 +86,7 @@ async function fixture(
   const declarations = generalDeclarations({
     circuit: cloneCircuitJson(bindings.circuitJson),
     receiverPaths: bindings.receiverPaths,
+    traceContacts: bindings.traceContacts,
     modeling: bindings.modeling,
     controls: bindings.controls,
   })

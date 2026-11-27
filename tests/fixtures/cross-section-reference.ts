@@ -141,6 +141,72 @@ export function coupledStripline({
   }
 }
 
+/** Arithmetic–geometric mean. Evaluates K(k)/K(k') as AGM(1, k)/AGM(1, k') to avoid 1 - k^2 cancellation. */
+function agm(a: number, b: number): number {
+  while (Math.abs(a - b) > Number.EPSILON * a)
+    [a, b] = [(a + b) / 2, Math.sqrt(a * b)]
+  return a
+}
+
+/** Centred stripline impedance in ohms and capacitance per meter. */
+interface StriplineReference {
+  z: number
+  capacitance: number
+}
+
+/** Exact zero-thickness centred stripline, S. B. Cohn, "Characteristic impedance of the shielded-strip
+ * transmission line", IRE Trans. MTT-2 (1954), pp. 52–57: Z0 = eta0/(4 sqrt(er)) K(k)/K(k'), k = sech(pi w/2b)
+ * (the familiar 30 pi is eta0/4 with eta0 ~ 120 pi). Per-unit-length C = sqrt(er)/(c Z0) = 4 eps0 er K(k')/K(k).
+ * w and b share any length unit; capacitance is in F/m.
+ */
+export function stripline({
+  w,
+  b,
+  er,
+}: {
+  w: number
+  b: number
+  er: number
+}): StriplineReference {
+  const x = (Math.PI * w) / (2 * b)
+  const ratio = agm(1, 1 / Math.cosh(x)) / agm(1, Math.tanh(x))
+  return {
+    z: (VACUUM_IMPEDANCE / (4 * Math.sqrt(er))) * ratio,
+    capacitance: (4 * VACUUM_PERMITTIVITY * er) / ratio,
+  }
+}
+
+/** Wheeler incremental-inductance stripline conductor loss as tabulated by D. M. Pozar, Microwave Engineering,
+ * 4th ed., section 3.7 (Cohn thick-strip fit):
+ * alpha_c = 2.7e-3 Rs er Z0 A / (30 pi (b - t)) Np/m when sqrt(er) Z0 < 120 ohm,
+ * A = 1 + 2W/(b - t) + (b + t)/(pi (b - t)) ln((2b - t)/t), with Pozar's own Z0 = 30 pi b/(sqrt(er) (We + 0.441 b)).
+ * Returns alpha_c in Np/m. Lengths in metres; a curve fit, never an exact reference.
+ */
+export function pozarStriplineAttenuation({
+  w,
+  b,
+  t,
+  er,
+  surfaceResistance,
+}: {
+  w: number
+  b: number
+  t: number
+  er: number
+  surfaceResistance: number
+}): number {
+  let effective = w
+  if (!(w / b >= 0.35)) effective = w - b * (0.35 - w / b) ** 2
+  const z = (30 * Math.PI * b) / (Math.sqrt(er) * (effective + 0.441 * b))
+  if (Math.sqrt(er) * z >= 120)
+    throw new Error("Pozar narrow-strip branch is not implemented")
+  const a =
+    1 +
+    (2 * w) / (b - t) +
+    ((b + t) / (Math.PI * (b - t))) * Math.log((2 * b - t) / t)
+  return (2.7e-3 * surfaceResistance * er * z * a) / (30 * Math.PI * (b - t))
+}
+
 /** Isolated line impedance and effective relative permittivity. */
 interface MicrostripReference {
   z: number

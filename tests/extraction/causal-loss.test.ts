@@ -5,8 +5,8 @@ import {
   causalLossResponse,
   crossoverPoles,
   skinCrossover,
-  solveCrossSection,
 } from "../../src/extraction"
+import { calculateRlgc } from "../../src/rlgc"
 import {
   conductorLossTolerance,
   filamentImpedance,
@@ -152,11 +152,11 @@ function conductorLoss(strips: readonly ConductorLossStrip[]): string[] {
   const rows: Record<string, number | string>[] = []
   const failures: string[] = []
   for (const [label, w, t, b] of strips) {
-    const line = solveCrossSection({
-      section: {
+    const line = calculateRlgc({
+      crossSection: {
         conductors: [
           {
-            id: "s",
+            conductorId: "s",
             xMm: 0,
             zMm: (b - t) / 2,
             widthMm: w,
@@ -164,19 +164,22 @@ function conductorLoss(strips: readonly ConductorLossStrip[]): string[] {
           },
         ],
         planes: [{ zMm: 0 }, { zMm: b }],
-        dielectrics: [
+        dielectricLayers: [
           {
             zMm: 0,
             thicknessMm: b,
-            er: 4.1,
+            relativePermittivity: 4.1,
             lossTangent: 0,
           },
         ],
       },
     })
-    const dc = line.dcResistance[0][0]
-    const skin = line.skinResistance[0][0]
-    const own = Math.min(line.stripSkinResistance[0][0], skin)
+    const dc = line.dcResistanceOhmsPerMeter[0][0]
+    const skin = line.totalSkinResistanceOhmsPerMeterPerSqrtHz[0][0]
+    const own = Math.min(
+      line.conductorSkinResistanceOhmsPerMeterPerSqrtHz[0][0],
+      skin,
+    )
     const reference = filamentImpedance({
       line: {
         strips: [
