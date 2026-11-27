@@ -4,7 +4,8 @@ import {
   validateCircuitRecords,
 } from "../../board"
 import { captureIbisSources, type IbisSources } from "../../buffers"
-import { type SafeId, safeId } from "../../kernel"
+import { type SafeId, safeId, snapshot } from "../../kernel"
+import type { DielectricMaterials } from "../../rlgc"
 import { listChannelSimulations, validateNearbyGapMm } from "../signals"
 
 /** Board and model sources supplied to channel simulation planning. */
@@ -12,6 +13,7 @@ export interface TransientChannelSimulationPlanInput {
   readonly circuitJson: CircuitJson
   readonly ibisSources: Readonly<IbisSources>
   readonly nearbyGapMm?: number
+  readonly materials?: DielectricMaterials
 }
 
 /** A named simulation declaration and its validated artifact ID. */
@@ -54,6 +56,7 @@ export function capturePlanInput(
   return Object.freeze({
     circuitJson: structuredClone(input.circuitJson),
     nearbyGapMm: input.nearbyGapMm,
+    materials: snapshot(input.materials),
     ibisSources: captureIbisSources(input.ibisSources),
   })
 }

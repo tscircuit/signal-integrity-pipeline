@@ -10,6 +10,8 @@ export function routedStageDocumentation(): string {
   const nodes = names.map((name, i) => {
     let step = "Plan one transient channel simulation per step"
     if (i > 0) step = "All planned channel simulations, one item per step"
+    if (name === "ChannelNetlistSolver")
+      step = "Compile one IBIS model per step"
     return `  s${i}["${name}<br/>${step}"]`
   })
   const nextStages = names.slice(1)

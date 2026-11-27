@@ -31,7 +31,7 @@ export type SourceConnectionGroup = Array<SourcePortId | SourceNetId>
 /** Source port and net identifiers on one electrical net. */
 export type SourceNetMembers = Set<SourcePortId | SourceNetId>
 
-/** Read internal pin ties from both Circuit JSON representations. */
+/** @internal Read pin ties from both Circuit JSON representations. */
 export function sourcePinTies(
   db: CircuitJsonUtilObjects,
 ): SourceConnectionGroup[] {

@@ -1,8 +1,10 @@
 import type React from "react"
 import type { CircuitJson } from "../../src/board"
 import type { IbisSources } from "../../src/buffers"
-import type { TransientChannelSimulationPlan } from "../../src/pipeline"
-import { TransientChannelSimulationPlanSolver } from "../../src/pipeline"
+import {
+  RoutedPipelineSolver,
+  type TransientChannelSimulationPlan,
+} from "../../src/pipeline"
 import {
   listChannelSimulations,
   type PreparedChannelSimulation,
@@ -59,7 +61,7 @@ export function prepareChannelSimulations({
   )
 }
 
-/** The first planned channel simulation's bindings, checked by the standalone plan solver. */
+/** Gets the first channel simulation's bindings through the public solver. */
 export function plannedBindings({
   circuitJson,
   ibisSources,
@@ -67,21 +69,16 @@ export function plannedBindings({
   circuitJson: CircuitJson
   ibisSources: IbisSources
 }): TransientChannelSimulationPlan["bindings"] {
-  const textSources = Object.fromEntries(
-    Object.entries(ibisSources).map(([name, bytes]) => {
-      if (typeof bytes === "string") return [name, bytes] as const
-      return [
-        name,
-        new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-          bytes,
-        ),
-      ] as const
-    }),
-  )
-  const planner = new TransientChannelSimulationPlanSolver({
-    circuitJson,
-    ibisSources: textSources,
+  const root = new RoutedPipelineSolver({
+    input: { circuitJson, ibisSources },
+    context: {
+      runSolver: async () => {
+        throw new Error("channel planning needs no native solver")
+      },
+      progress: () => undefined,
+    },
   })
-  planner.solve()
-  return planner.getOutput().value[0].bindings
+  root.solveUntilStage("CopperGeometryExtractionSolver")
+  return root.stageOutput("TransientChannelSimulationPlanSolver").value[0]
+    .bindings
 }

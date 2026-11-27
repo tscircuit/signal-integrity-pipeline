@@ -53,6 +53,16 @@ function failInvalidIbisSource(path: string): never {
   return fail("ibis_asset", `${path}: expected a string or Uint8Array`)
 }
 
+/** Model bytes that serialize as exact UTF-8 in exported solver inputs. */
+class IbisModelBytes extends Uint8Array {
+  /** Decode only when exporting captured model bytes as JSON. */
+  toJSON(): string {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+      this,
+    )
+  }
+}
+
 /** Frozen maps whose byte getters already return isolated copies. */
 const capturedIbisSources = new WeakSet<Readonly<IbisSources>>()
 
@@ -80,7 +90,7 @@ export function captureIbisSources(
       enumerable: true,
       get() {
         if (!capturedBytes) return failInvalidIbisSource(assetPath)
-        return new Uint8Array(capturedBytes)
+        return new IbisModelBytes(capturedBytes)
       },
     })
   }

@@ -24,6 +24,7 @@ export {
   namespaceSpice,
   voltageSourceTerminals,
 } from "./netlist"
+/** @internal */
 export {
   buildReceiverGraphs,
   findReceiverPath,
@@ -48,11 +49,13 @@ export {
   terminalInductance,
 } from "./route-transitions"
 export { routedControl } from "./routed-control"
+/** @internal */
 export {
   circuitNodes,
   numberCircuitNodes,
   validateRoutedNodes,
 } from "./routed-nodes"
+/** @internal */
 export { collectSignalRailIds, type SignalRailIds } from "./signal-rails"
 export { transmittedBits } from "./stimulus"
 export type {

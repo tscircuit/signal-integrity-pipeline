@@ -111,7 +111,7 @@ async function solveVisualFixture(
     input: {
       circuitJson,
       ibisSources: { "models/sn74lvc1g04.ibs": routedVisualIbis },
-      scopeDistanceMm: FIXTURE_SCOPE_DISTANCE_MM,
+      nearbyGapMm: FIXTURE_SCOPE_DISTANCE_MM,
     },
     context,
   })
@@ -134,7 +134,7 @@ export function routedVisualFixture(
 }
 
 /** Compare actual exported SVG, including explicit text and fills; snapshots contain no vendor data. */
-export function assertRouteVisual({
+export function assertPlanDrawingSnapshot({
   drawing,
   module,
   name,
@@ -163,7 +163,7 @@ export function assertRouteVisual({
     backgroundColor: "white",
     includeTextLabels: false,
   })
-  if (process.env.UPDATE_ROUTED_VISUALS === "1") {
+  if (process.env.UPDATE_PLAN_DRAWINGS === "1") {
     mkdirSync(join(path, ".."), { recursive: true })
     writeFileSync(path, svg)
   }

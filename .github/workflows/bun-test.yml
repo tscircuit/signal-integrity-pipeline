@@ -41,6 +41,10 @@ jobs:
         env:
           IBIS_MODEL_DIR: models
 
+      - name: Test the transient channel simulation plan through native capture
+        env:
+          IBIS_MODEL_DIR: models
+        run: bun test tests/pipeline/routed-pipeline/plan-to-capture.test.tsx
       - name: Test constant-high waveform
         env:
           SI_TEST_SWITCHING_NGSPICE: '1'

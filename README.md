@@ -1,75 +1,145 @@
 ## What is it?
 
-Signal-integrity tools for tscircuit boards.
+Native signal-integrity simulation for tscircuit boards. Describe each test with
+`<simulation.pcbtransientchannelsimulation>` and `<simulation.pcbdriverreceiverchannel>`. `RoutedPipelineSolver` consumes the
+resulting Circuit JSON, solves quasi-TEM 2D cross-sections along the actual routed copper (2.5D), assembles
+coupled ladders with the IBIS buffers, and runs one transient per channel simulation in ngspice.
+This draft implements the pipeline entry of [RFC #28](https://github.com/tscircuit/rfc/pull/28).
 
 ## How to use it?
 
-The stack retains Circuit JSON validation, physical stackup and stimulus helpers, IBIS asset loading and the ngspice adapter.
-`TransientChannelSimulationPlanSolver` reads PCB transient channel simulation records written by core from TSX. It checks
-channel endpoints, IBIS models, timing and patterns, including pseudo-random binary sequences (PRBS).
-Each declared channel simulation becomes immutable inputs for copper geometry extraction and channel netlist generation.
-`CopperGeometryExtractionSolver` models scoped traces, vias, reference pours, and pad contacts. It groups wires into sections with consistent nearby copper and reference surfaces.
-`TransmissionLineRlgcSolver` screens nearby wire pairs for coupling and calculates per-unit-length RLGC matrices for each coupled group.
-Planning validates selected IBIS package matrices. The internal `ChannelNetlistSolver` allocates SPICE nodes and compiles one IBIS model per step, including scalar or coupled package elements.
-`RouteNetworkSolver` uses the copper geometry, extracted RLGC matrices and channel netlist to assemble a coupled ladder with via and oblique corrections and emit a SPICE deck.
-`RouteTransientSolver` invokes ngspice through the injected solver port and publishes complete raw-vector captures.
+```tsx
+import { simulation } from "@tscircuit/core"
 
+<board fabricatorPreset="jlcpcb_standard">
+  {/* Place the routed endpoints and their simulation.ibismodel declarations here. */}
+  <simulation.pcbtransientchannelsimulation name="DATA_TEST" bitRate="20Mbps">
+    <simulation.pcbdriverreceiverchannel name="DATA" driverRef=".TX > .Y" receiverRef=".RX > .A" />
+  </simulation.pcbtransientchannelsimulation>
+  <simulation.eyediagram name="DATA_EYE" simulationRef="DATA_TEST" />
+</board>
+```
+
+```ts
+import { RoutedPipelineSolver } from '@tscircuit/signal-integrity-pipeline'
+import { createNativeSolver, loadIbisSources } from '@tscircuit/signal-integrity-pipeline/node'
+
+const solver = new RoutedPipelineSolver({
+  input: { circuitJson, ibisSources: await loadIbisSources({ circuitJson, baseDir: '.' }) },
+  context: { runSolver: createNativeSolver(), progress: console.log },
+})
+await solver.solveAsync()
+const { channelSimulations, files } = solver.getOutput()
+```
+
+Circuit JSON is the electrical input. `ibisSources` and the `{ runSolver, progress }`
+context are IO ports. Circuit JSON durations and channel offsets are in milliseconds.
+Captured solver timestamps are in seconds. Each entry in `channelSimulations` holds its compiled ngspice deck,
+evidence and completed probe capture.
+Captures are candidate evidence without independent convergence qualification.
+`files` maps every artifact path to its bytes; writing them is the caller's choice.
+A board with no channel simulations completes after planning without invoking a solver.
+
+Branched routes remain unsupported. Inline IBIS coupled package matrices are
+validated before the deck is built and lowered to a passive lumped package. Unlisted
+pins follow the IBIS [Pin]/[Package] hierarchy and merged rail bus rules;
+missing or invalid matrix definitions still fail.
+Die POWER/GND references always connect directly to perfect rails;
+vendor package R/L/C remains between every mapped pin and its die node.
+
+The TSX examples use the pinned `@tscircuit/core` preview. Place transient
+simulations and eye diagrams directly under the board, including when it
+contains cached subcircuits. Core checks endpoint connectivity and routing,
+supplies preset via plating, and plans omitted pseudo-random binary sequence (PRBS) seeds by channel name.
+The pipeline reads the IBIS assets and validates the selected model capabilities.
 Aggressors are output-capable pins retained by the copper scope that do not
 drive a declared channel in the simulation. This includes bidirectional
 receivers. Declare their state on the simulation. Use `aggressorPattern="0"`
 or `"1"` for a quiet level, or use a channel pattern such as `"clock"` or
 `"prbs7"` to switch at the simulation bit rate from time zero.
 `aggressorDisabled` takes precedence and requires every aggressor
-model to support high impedance. The selected channels keep their own
-`pattern` and `driverDisabled` settings. The pinned core version emits the
-aggressor fields.
+model to support high impedance. The selected channels (victims) keep their
+own `pattern` and `driverDisabled` settings. TSX authors need a core build that
+emits the aggressor fields.
 
-Automatic duration covers a full pattern for every switching channel or
-aggressor, measured at its declared bit rate after its offset.
+ngspice must already be installed; `createNativeSolver({ tools: { ngspice } })`
+accepts an executable path. No package install or solver download happens during
+a solve. Native processes are serialized and run with `OMP_NUM_THREADS=1`.
+Vendor IBIS files and board JSON remain local and ignored by git.
 
 ## General workflow
 
 ```mermaid
+flowchart TD
+  board[/"Your board<br/>(Circuit JSON with transient channel simulations)"/] --> s1["1. Admit each channel simulation: drivers, receivers, the copper scope and declared aggressor states<br/><small>pipeline</small>"]
+  chips[/"Chip models<br/>(IBIS files; coupled package validation)"/] --> s1
+  s1 --> manifest["Transient channel simulation plan manifest"]
+  s1 --> s2["2. Cut the scoped copper into straight sections over their reference planes<br/><small>board</small>"]
+  s2 --> s3["3. Calculate each unique cross-section's coupled RLGC matrices<br/><small>rlgc</small>"]
+  chips --> s4
+  s1 --> s4["4. Allocate SPICE nodes and compile one IBIS model per step into the channel netlist<br/><small>buffers, simulation</small>"]
+  s2 --> s5["5. Assemble delay-bounded coupled ladders with via and oblique corrections into one deck<br/><small>simulation</small>"]
+  s3 --> s5
+  s4 --> s5
+  s5 --> s6["6. Run one transient per channel simulation and admit only complete probe vectors<br/><small>simulation</small>"]
+  s6 <-->|"RunSolver"| ng{{"ngspice"}}
+  s6 --> out[/"Captures + deck and evidence artifacts"/]
+  s1 -->|"no channel simulations"| out
+```
+
+<!-- routed-stages:start -->
+| # | Stage solver |
+|---|---|
+| 1 | TransientChannelSimulationPlanSolver |
+| 2 | CopperGeometryExtractionSolver |
+| 3 | TransmissionLineRlgcSolver |
+| 4 | ChannelNetlistSolver |
+| 5 | RouteNetworkSolver |
+| 6 | RouteTransientSolver |
+
+```mermaid
 flowchart LR
-  board["Circuit JSON and channel declarations"] --> plan["TransientChannelSimulationPlanSolver"]
-  ibis["IBIS sources"] --> packages["Validate IBIS package matrices"]
-  packages --> plan
-  plan --> geometry["CopperGeometryExtractionSolver"]
-  geometry --> transmissionLineRlgc["TransmissionLineRlgcSolver"]
-  plan -->|Scoped board, trace contacts, receiver paths, supplies, passives, reference, run controls and IBIS sources| netlist["ChannelNetlistSolver (internal)"]
-  netlist --> netlistOutput["SPICE node map, electrical elements and IBIS assembly"]
-  geometry --> network["RouteNetworkSolver"]
-  transmissionLineRlgc --> network
-  netlistOutput --> network
-  network --> deck["SPICE deck"]
-  deck --> transient["RouteTransientSolver"]
-  transient --> capture["Raw-vector capture"]
-  plan --> manifest["Transient channel simulation plan manifest"]
+  s0["TransientChannelSimulationPlanSolver<br/>Plan one transient channel simulation per step"]
+  s1["CopperGeometryExtractionSolver<br/>All planned channel simulations, one item per step"]
+  s2["TransmissionLineRlgcSolver<br/>All planned channel simulations, one item per step"]
+  s3["ChannelNetlistSolver<br/>Compile one IBIS model per step"]
+  s4["RouteNetworkSolver<br/>All planned channel simulations, one item per step"]
+  s5["RouteTransientSolver<br/>All planned channel simulations, one item per step"]
+  s0 --> s1
+  s1 --> s2
+  s2 --> s3
+  s3 --> s4
+  s4 --> s5
+  s5 <-->|"await RunSolver"| engine["local native ngspice"]
 ```
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Ready
-  Ready --> Planned: TransientChannelSimulationPlanSolver
-  Planned --> GeometryReady: CopperGeometryExtractionSolver
-  GeometryReady --> FieldsReady: TransmissionLineRlgcSolver
-  Planned --> NetlistReady: compile the only model and publish in one step
-  Planned --> CompilingModels: initialize a multi-model netlist and compile its first model
-  CompilingModels --> CompilingModels: compile the next IBIS model
-  CompilingModels --> NetlistReady: compile the final model and publish the netlist and IBIS assembly
-  Planned --> Failed: invalid experiment or IBIS sources, missing contacts or reference, unsupported route or soldermask, or model 0 conversion failed
-  CompilingModels --> Failed: IBIS conversion failed
-  GeometryReady --> Failed: invalid cross-section geometry or material options
-  Ready --> Failed: invalid input, conflicting IBIS model selections, invalid package matrices or undeclared aggressors
-  FieldsReady --> NetworkReady: channel netlist and copper geometry available
-  NetlistReady --> NetworkReady: routed RLGC matrices and copper geometry available
-  NetworkReady --> DeckReady: RouteNetworkSolver
-  NetworkReady --> Failed: invalid network inputs
-  DeckReady --> CaptureReady: RouteTransientSolver completes ngspice and reads the raw vectors
-  DeckReady --> Failed: ngspice or capture parsing failed
-  CaptureReady --> [*]
-  Failed --> [*]
+  [*] --> TransientChannelSimulationPlanSolver
+  TransientChannelSimulationPlanSolver --> CopperGeometryExtractionSolver: all channel simulations completed
+  CopperGeometryExtractionSolver --> TransmissionLineRlgcSolver: all channel simulations completed
+  TransmissionLineRlgcSolver --> ChannelNetlistSolver: all channel simulations completed
+  ChannelNetlistSolver --> RouteNetworkSolver: all channel simulations completed
+  RouteNetworkSolver --> RouteTransientSolver: all channel simulations completed
+  RouteTransientSolver --> [*]
+  TransientChannelSimulationPlanSolver --> failed: invalid channel simulation input, including undeclared aggressors
+  CopperGeometryExtractionSolver --> failed
+  TransmissionLineRlgcSolver --> failed
+  ChannelNetlistSolver --> failed
+  RouteNetworkSolver --> failed
+  RouteTransientSolver --> failed
+  failed --> [*]
 ```
+<!-- routed-stages:end -->
+
+Missing electrical facts fail explicitly. Numerical settings come from selected
+IBIS edge rates, bit rates, stackup and actual routes. Every channel simulation produces an
+independent run. A differential endpoint drives opposite physical levels and
+measures P minus N. Quiet channels remain connected and are probed at the far
+receiver and at the near quiet driver. Single-ended probes always use their chip's
+local ground. Numeric offsets are seconds. Automatic duration covers a full pattern for every switching channel or
+aggressor, measured at its declared bit rate after its offset.
+IBIS values always use the typical corner.
 
 ### 2D RLGC calculation
 
@@ -101,4 +171,4 @@ Install dependencies with `bun install --frozen-lockfile`, then run `bun test`.
 Optional checks use `test.skipIf` and known failures still execute through `test.failing`.
 Run `bun run fetch:vendor-models` and put `ngspice` on PATH before running the IBIS tests locally.
 
-Run `bun run test:package` to verify the packed package in Node.
+Run `bun run test:package` to verify the packed package in Node and Bun.

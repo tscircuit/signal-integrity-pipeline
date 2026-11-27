@@ -5,6 +5,7 @@
  * Imports: kernel.
  */
 
+/** @internal */
 export {
   type ConnectivityMap,
   crossesDifferentialLegs,
@@ -55,9 +56,13 @@ export type {
   SourcePortId,
   SourceTraceId,
 } from "./ids"
+/** @internal */
 export type { PlanHeaderRow } from "./plan-header"
+/** @internal */
 export { getPinName, indexPlanPorts } from "./plan-view"
+/** @internal */
 export { renderPlanDrawing } from "./plan-visual"
+/** @internal */
 export {
   getTraceColor,
   type PlanOverlay,

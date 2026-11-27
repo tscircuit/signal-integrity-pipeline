@@ -34,6 +34,7 @@ export function getPointBounds(points: readonly Point[]): Viewbox | undefined {
 }
 
 /** The board's physical extent, including unscoped copper on boards without a boundary. */
+/** @internal */
 export function getBoardBounds(db: CircuitJsonUtilObjects): Viewbox {
   const board = db.pcb_board.getWhere({})
   if (board?.outline) {
@@ -66,6 +67,7 @@ export function getBoardBounds(db: CircuitJsonUtilObjects): Viewbox {
 }
 
 /** The board window and its geometric scale before reserving header space. */
+/** @internal */
 export interface PlanFrame {
   box: Viewbox
   crop?: Box
@@ -74,6 +76,7 @@ export interface PlanFrame {
 }
 
 /** Pad, via and through-pad contacts use the same board coordinates. */
+/** @internal */
 export interface PlanPort extends Point {
   sourcePortId: SourcePortId
   label: string
@@ -85,6 +88,7 @@ export interface PlanPort extends Point {
 export type PlanPorts = ReadonlyMap<SourcePortId, PlanPort>
 
 /** Index placed signal ports and prefer a stable human-readable pin name. */
+/** @internal */
 export function indexPlanPorts(db: CircuitJsonUtilObjects): PlanPorts {
   const ports = new Map<SourcePortId, PlanPort>()
   const sources = new Map(
@@ -141,6 +145,7 @@ function getTracePoints(trace: PcbTrace): Point[] {
 }
 
 /** Corners in winding order, without a duplicate closing vertex. */
+/** @internal */
 export function getBoxPoints({ minX, minY, maxX, maxY }: Viewbox): Point[] {
   return [
     { x: minX, y: minY },
@@ -177,6 +182,7 @@ const BOARD_WIDTH_IN_DRAWING_UNITS = 92
 const BOARD_TO_FOCUS_RATIO = 3
 
 /** Use full board context on small boards and crop large boards around scoped copper. */
+/** @internal */
 export function buildPlanFrame({
   board,
   focus,
@@ -207,6 +213,7 @@ export function buildPlanFrame({
 }
 
 /** Expand the scope's channel copper bounds by the search gap within the board. */
+/** @internal */
 export function getCopperSearchBox({
   board,
   copperScope,
@@ -253,6 +260,7 @@ function clipPlanSegment({
 }
 
 /** Clip strokes to the window using their actual segments. */
+/** @internal */
 export function clipPlanLines<Mark extends Line>({
   lines,
   crop,
@@ -271,6 +279,7 @@ export function clipPlanLines<Mark extends Line>({
 }
 
 /** Rebuild a copper polygon with the outside ring and all clearance holes. */
+/** @internal */
 export function getPlanPolygonOutline(polygon: PlanPolygon): CopperPolygon {
   const outline = new CopperPolygon(polygon.points.map(({ x, y }) => [x, y]))
   for (const hole of polygon.holes || [])
@@ -279,6 +288,7 @@ export function getPlanPolygonOutline(polygon: PlanPolygon): CopperPolygon {
 }
 
 /** Clip board geometry to the window before converting it to graphics primitives. */
+/** @internal */
 export function clipPlanPolygons<Mark extends PlanPolygon>({
   polygons,
   crop,

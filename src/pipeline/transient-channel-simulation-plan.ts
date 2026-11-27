@@ -13,6 +13,7 @@ import {
   sha256,
   snapshot,
 } from "../kernel"
+import type { DielectricMaterials } from "../rlgc"
 import type { ChannelNetlistInput, RouteCompileOptions } from "../simulation"
 import {
   capturePlanInput,
@@ -34,6 +35,7 @@ export interface TransientChannelSimulationPlan {
   readonly simulationPcbTransientChannelSimulationId: SimulationPcbTransientChannelSimulationId
   readonly name: string
   readonly sections: CopperGeometryExtractionInput
+  readonly materials?: DielectricMaterials
   readonly bindings: ChannelNetlistInput
   readonly networkOptions: RouteCompileOptions
   readonly warnings: readonly string[]
@@ -78,6 +80,7 @@ function buildChannelPlan({
     simulationPcbTransientChannelSimulationId,
     name: channelSimulation.name ?? simulationPcbTransientChannelSimulationId,
     warnings: snapshot(prepared.warnings || []),
+    materials: input.materials,
     sections: Object.freeze({
       circuitJson,
       copperScope: snapshot(copperScope),

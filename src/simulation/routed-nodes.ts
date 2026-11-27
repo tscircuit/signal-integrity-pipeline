@@ -283,6 +283,7 @@ interface ResolvedRoutedNodes {
 }
 
 /** Number one SPICE node per ideal group in source port order. */
+/** @internal */
 export function numberCircuitNodes({
   db,
   graphs,
@@ -391,6 +392,7 @@ export function resolveRoutedNodes({
 }
 
 /** Validate trace contacts, receiver paths and passive boundaries. */
+/** @internal */
 export function validateRoutedNodes({
   traceContacts,
   receiverPaths,
