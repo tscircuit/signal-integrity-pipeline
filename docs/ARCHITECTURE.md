@@ -30,9 +30,9 @@ flowchart LR
   source["Circuit JSON SI records"] --> plan["pipeline: channel planning and declared aggressor states<br/>buffers: package admission, unlisted-pin hierarchy and passivity"]
   modelSources["IBIS sources"] --> plan
   plan --> manifest["Transient channel simulation plan manifest"]
-  plan --> cuts["pipeline: physical trace cuts"]
-  cuts --> sections["board: copper scope, straight sections and reference planes"]
-  cuts --> groups["simulation: ideal source groups"]
+  plan --> traceContacts["pipeline: trace contacts"]
+  traceContacts --> sections["board: copper scope, straight sections and reference planes"]
+  traceContacts --> groups["simulation: ideal source groups"]
   groups --> receiverPaths["pipeline: routed receiver paths"]
   sections --> fields["rlgc: quasi-TEM cross-sections and pair screening"]
   receiverPaths --> netlist["buffers + simulation: channel netlist, including IBIS models, pin packages, ideal die rails, probes and sources"]
@@ -51,7 +51,7 @@ Node facilities. Domain modules return owned artifacts. The pipeline ledger
 rejects path collisions and seals files in sorted order. Channel simulations have separate
 artifact prefixes.
 
-`board` owns physical admission, the copper scope, route sections and board drawings;
+`board` owns board validation, the copper scope, route sections and board drawings;
 `buffers` owns vendor source bytes, pin/model selection and package assembly;
 `extraction` owns cross-section field solves, route lines, pair coupling and matrix
 checks; `simulation` owns declarations, electrical sources, node identity, the routed
@@ -190,6 +190,22 @@ Completed domain values are copied and frozen. Only the root folds the six stage
 Original assumptions, coupling decisions, reference omissions, external ports,
 model provenance, node maps, via/oblique policies and deck evidence remain visible.
 
+The site's `Step` input starts at 0 for the initial board, then synchronizes to
+stages 1–6, matching table rows 01–06. Entering a number
+selects that retained stage until the next pipeline advance. Each flat stage
+retains its last completed channel simulation's domain solver and final drawing; selecting
+an earlier stage never recomputes it. Each domain solver draws its physical input
+before its first step. Stage wrappers construct that domain solver when the inputs are ready,
+and root transitions preview the incoming immutable input before the next step.
+Fields preview the first physical cross-section without solving coefficients.
+Pending transients show the board with probe marks and empty plot axes; curves
+appear only after complete samples arrive. Future stages whose inputs are
+incomplete draw the selected copper in neutral grey, and a problem with no planned
+channel simulations shows the whole board with one quiet line. Values outside 0–6 are clamped silently; clicking
+a table row also selects that stage. Selection lives in fixture component state.
+The page starts with this input and the debugger; local asset loading remains,
+while only blocking load, backend and solver errors appear inline.
+
 Every stage draws in board millimetres, y up, inside one fixed camera per problem
 (`routeView`): the selected copper and its endpoint parts (a large package only near
 the copper), plus a pane slot on the side that brings the camera nearest 1.6:1. Every
@@ -216,7 +232,12 @@ label, so the site can link them on hover.
 renders a dimmed top view (soldermask, pads, silkscreen lines) of only the records
 near the camera, through a `viewport` equal to it. The overlay is graphics-debug's own
 SVG, cropped by `viewBox` to the camera frame it finds in that SVG, so objects outside
-the camera never move it. Both layers are letterboxed in the same box. Only scripts and tests import the module, so `circuit-to-svg` stays a development dependency outside the library bundle. Display sampling caps object counts;
+the camera never move it. Both layers are letterboxed in the same box. The site
+stacks the two layers; ctrl/⌘ + wheel zooms 1–20× and dragging pans, and after a
+pause the visible region is re-rendered with labels at the same size. Hovering a
+labelled object dims the others and names it. Stage drawings are cached per solver
+state. Only the site, scripts and tests import the module, so `circuit-to-svg` stays a
+development dependency outside the library bundle. Display sampling caps object counts;
 numerical inputs and native samples remain complete.
 
 `RouteTransientSolver` awaits one `solver.invoke` call in `_stepAsync`. Its
@@ -310,3 +331,31 @@ stateDiagram-v2
 ```
 
 The native adapter waits for the executable to exit. The legacy caller-specified timeout and its dedicated diagnostic were removed. IBIS source validation continues to check paths and reject non-IBIS data. The previous byte-size limit was removed.
+
+### Cosmos development backend
+
+`vite.config.ts` installs `createSolverMiddleware` in Cosmos's Vite renderer.
+The Cosmos UI listens on 127.0.0.1:5000; the renderer and API listen on
+127.0.0.1:5050. The plugin's config hook overrides Cosmos 6's inline wildcard
+host. The renderer URL is explicitly IPv4 loopback, matching the API's Host and
+Origin checks. `createHttpSolver` is a browser-safe adapter inside `adapters`;
+it adds no Node imports to the fixture graph.
+
+```mermaid
+stateDiagram-v2
+  [*] --> validate: POST /api/run-solver
+  validate --> rejected: invalid JSON / solver / paths / flags / origin
+  validate --> queued: accepted request
+  queued --> running: single slot available
+  running --> completed: result and output files
+  running --> failed: native error
+  completed --> [*]: release slot and clean temp directory
+  failed --> [*]: release slot and clean temp directory
+  rejected --> [*]
+```
+
+Version probes share the queue, and the existing native adapter enforces
+OMP_NUM_THREADS=1. The request cannot override tools or cwd. Local asset reads
+are limited to the four known example IBIS filenames under IBIS_MODEL_DIR and
+the board file selected by SI_DDR3_BOARD; URLs cannot select filesystem paths.
+These assets are loaded at runtime and never part of a published static bundle.

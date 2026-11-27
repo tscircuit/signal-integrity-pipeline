@@ -374,7 +374,7 @@ async function loadBoardSolver({
   const problem = {
     circuitJson,
     ibisSources,
-    scopeDistanceMm: SCOPE_DISTANCE_MM,
+    nearbyGapMm: SCOPE_DISTANCE_MM,
   }
   onReady(
     new RoutedPipelineSolver({
