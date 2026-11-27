@@ -38,6 +38,7 @@ domain:
   actual: read directly from the physical source-board records
   aggressor: an output-capable pin coupled to a selected channel outside its endpoints
   allow: an explicit caller-selected modelling permission
+  annulus: the ring of copper between a via hole and the surrounding pad or plating
   antipad: clearance opening in a plane around a signal via
   arc: distance measured along a routed polyline including its bends
   artifact: a file the pipeline produces (solver deck, log, capture, evidence), recorded in the ledger
@@ -96,6 +97,7 @@ domain:
   dielectric: the insulating material between copper layers
   differential: a signal carried as the voltage difference between two wires
   digital: a stimulus described by timed binary logic states
+  dispersion: frequency-dependent wave travel that can distort a signal edge
   driver: the chip output that sends a signal
   er: relative dielectric permittivity
   evidence: data kept in the result that shows how a conclusion was reached
@@ -105,6 +107,7 @@ domain:
   extract: derive copper geometry from PCB records
   extraction: deriving copper geometry from PCB records
   farad: SI unit of capacitance
+  filament: an ideal thin current path used to estimate mutual inductance
   fixture: a known resistive load used to capture an IBIS switching waveform
   gate: the start of the interval compared during numerical convergence
   general: shared across supported channel experiment shapes
@@ -117,8 +120,10 @@ domain:
   inductance: magnetic flux linkage per unit current, measured in henries
   inductive: coupling between conductors through their magnetic field
   initial: the state or value at the beginning of a simulation
+  integration: accumulating per-length electrical values along a route or over time
   interface: boundary between two dielectric materials
   join: an ideal connection from an original wire to the centerline of its copper union
+  junction: the point where electrically connected conductors meet
   kernel: Green function relating boundary charge to potential or field
   ladder: distributed line approximated by connected lumped electrical cells
   lane: an existing converter term for an extracted transmission line
@@ -140,6 +145,7 @@ domain:
   mask: insulating soldermask on the outer copper layers
   mesh: the set of boundary panels used to approximate the field in a cross-section
   meter: SI unit of length used for per-unit-length electrical matrices
+  modal: describing an electrical mode or the factor that represents its stored energy
   model: a chip model (IBIS) or the electrical model of the channel built from extraction
   modeling: private numerical settings derived from Circuit JSON
   mutual: a capacitance or inductance term relating two different conductors
@@ -168,6 +174,7 @@ domain:
   pole: a stable relaxation rate in a causal rational loss model
   polygon: a closed shape made of outline rings of points
   port: a chip connection the library drives or measures (source_port in Circuit JSON)
+  post: a vertical conductor between a terminal and a route or reference plane
   pour: a filled copper area on a layer (copper pour)
   power: an electrical supply net or reference plane
   prepare: derive private experiment settings from the declared channel intent
@@ -201,6 +208,7 @@ domain:
   signal: a voltage that carries data along a lane
   simplify: reduce curve tessellation while bounding geometric displacement
   simulation: running the SPICE circuit over time with ngspice
+  sine: the trigonometric measure used here to compare route directions
   skin: concentration of alternating conductor current near its surface
   wheeler: incremental inductance method for calculating skin loss from a small displacement of conductor walls
   sweep: partition geometry by visiting consecutive boundaries in order
@@ -211,7 +219,7 @@ domain:
   span: the range of layers a via crosses
   sparse: a matrix or realization with mostly zero couplings
   stackup: the order and thickness of the board's copper and insulating layers
-  stage: one fixed step of the routed pipeline (planning, copper geometry extraction, RLGC calculation, bindings, network, transient)
+  stage: one fixed step of the routed pipeline (planning, copper geometry extraction, RLGC calculation, channel netlist, network, transient)
   startup: the time a switching channel needs to settle after its stimulus starts
   stimulus: the bit pattern a driver sends during an experiment
   stub: the unused part of a via beyond the layer where the signal leaves it
@@ -281,7 +289,7 @@ general:
   - close compare compile connect contain convert create cross define derive display draw emit end exit
   - expect fail fall find finish flip flush generate get has inspect invoke is link load locate match measure
   - merge normalize omit override parse produce quote raise read receive reduce refine register remove rename
-  - replace reset resolve rise run select set shift skip solve sort split start supply test transmit
+  - replace reset resolve rise run save select set shift skip solve sort split start supply test transmit
   - unlink update use validate view visit write trim crop unroll cast fold append
   # states and outcomes
   - connected contained default failure found grounded killed named oriented pinned scoped seen supplied
@@ -308,12 +316,13 @@ general:
   # quantities, electricity and units
   - amount amplitude bit current denominator duration electrical energy factor fraction frequency millimeter
   - interval material matrix measurement milliseconds ohm offset origin peak period phase plateau
+  - precision
   - nominal schur quantity reduction sample scale seconds speed step time timeout tolerance transmission volt voltage zero
   # math
   - cholesky delaunay evaluate integral magnitude interpolation multiply norm ratio sqrt sum symmetrize transpose union total
   - exponent
   # geometry
-  - alignment anchor ancestor area aspect border boundary center connection coordinate curve
+  - alignment angle anchor ancestor area aspect border boundary center connection coordinate curve
   - depth direction distance division edge endpoint epsilon face gap height hole left length nearest
   - outline point position profile radius right round side sign size sizing spacing surface circle corner closest across
   - thickness triangle width separation overlap

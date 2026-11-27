@@ -8,6 +8,7 @@
  * Imports: kernel, solver, board, extraction, observation, buffers.
  */
 
+export { branchSaves } from "./branch-saves"
 export {
   type ChannelNetlist,
   type ChannelNetlistInput,
@@ -28,7 +29,23 @@ export {
   findReceiverPath,
   type ReceiverGraphs,
 } from "./receiver-paths"
-export type { TraceContacts } from "./route-inputs"
+export type {
+  RouteCompileOptions,
+  RoutedDeck,
+  RouteNetworkInput,
+  TraceContacts,
+} from "./route-inputs"
+export { type RouteLadder, routeLadder } from "./route-ladder"
+export { RouteNetworkSolver } from "./route-network"
+export { routeOblique } from "./route-oblique"
+export {
+  barrelCapacitance,
+  barrelInductance,
+  type RouteTransitions,
+  routeTransitions,
+  terminalInductance,
+} from "./route-transitions"
+export { routedControl } from "./routed-control"
 export {
   circuitNodes,
   numberCircuitNodes,

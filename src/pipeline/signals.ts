@@ -50,6 +50,7 @@ const DEFAULT_NEARBY_GAP_MM = 32
 export interface PreparedChannelSimulation {
   warnings?: string[]
   durationSeconds: number
+  fastestEdgeSeconds: number
   channelSimulation: SimulationPcbTransientChannelSimulation
   driverReceiverChannels: SimulationPcbDriverReceiverChannel[]
   circuit: CircuitJson
@@ -197,10 +198,12 @@ interface ChannelSimulationOptions {
 function withPreparedChannelControls({
   settings,
   warnings,
+  fastestEdgeSeconds,
   ...options
 }: ChannelSimulationControlOptions & {
   settings: NumericalSettings
   warnings: string[]
+  fastestEdgeSeconds: number
 }): PreparedChannelSimulation {
   const { circuit, controls } = withChannelSimulationControls(options)
   const {
@@ -218,6 +221,7 @@ function withPreparedChannelControls({
     pins,
     settings,
     durationSeconds,
+    fastestEdgeSeconds,
   }
   if (warnings.length) prepared.warnings = warnings
   return prepared
@@ -249,10 +253,11 @@ export function prepareChannelSimulation(
     channelSimulation: selection.channelSimulation,
     patterns,
   })
+  const fastestEdgeSeconds = Math.min(...edgeTimesSeconds)
   const stepSeconds = signalStepSeconds({
     patterns,
     durationSeconds,
-    edgeTimesSeconds,
+    fastestEdgeSeconds,
   })
   validateComponentModels({ ...scoped, topology: signalPins.topology })
   const traceContacts = prepareTraceContacts(scoped)
@@ -266,6 +271,7 @@ export function prepareChannelSimulation(
   return withPreparedChannelControls({
     ...selection,
     stepSeconds,
+    fastestEdgeSeconds,
     ...supplied,
     durationSeconds,
     aggressors,

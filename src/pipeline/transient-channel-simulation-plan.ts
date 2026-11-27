@@ -13,7 +13,7 @@ import {
   sha256,
   snapshot,
 } from "../kernel"
-import type { ChannelNetlistInput } from "../simulation"
+import type { ChannelNetlistInput, RouteCompileOptions } from "../simulation"
 import {
   capturePlanInput,
   type TransientChannelSimulationPlanInput,
@@ -26,19 +26,23 @@ import { resolveReceiverTracePaths } from "./resolve-receiver-paths"
 import { compareNames } from "./signal-names"
 import { prepareChannelSimulation } from "./signals"
 
-/** Frozen section and binding inputs for one planned transient channel simulation. */
+/** Planning starts with the base route mesh resolution. */
+const BASE_REFINEMENT = 1
+
+/** Frozen stage inputs for one planned transient channel simulation. */
 export interface TransientChannelSimulationPlan {
   readonly simulationPcbTransientChannelSimulationId: SimulationPcbTransientChannelSimulationId
   readonly name: string
   readonly sections: CopperGeometryExtractionInput
   readonly bindings: ChannelNetlistInput
+  readonly networkOptions: RouteCompileOptions
   readonly warnings: readonly string[]
 }
 
 /** The completed channel plans and their plan manifest. */
 type PlanOutput = Produced<readonly TransientChannelSimulationPlan[]>
 
-/** Lower the validated declaration into sectioning and binding inputs. */
+/** Lower the validated declaration into sectioning, netlist and route mesh inputs. */
 function buildChannelPlan({
   input,
   nearbyGapMm,
@@ -79,6 +83,10 @@ function buildChannelPlan({
       copperScope: snapshot(copperScope),
       requiredSourcePortIds,
       artifactPrefix,
+    }),
+    networkOptions: Object.freeze({
+      fastestEdgeSeconds: prepared.fastestEdgeSeconds,
+      refinement: BASE_REFINEMENT,
     }),
     bindings: Object.freeze({
       circuitJson,

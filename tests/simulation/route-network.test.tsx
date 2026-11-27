@@ -10,7 +10,7 @@ import {
   TransientChannelSimulationPlanSolver,
 } from "../../src/pipeline"
 import { TransmissionLineRlgcSolver } from "../../src/rlgc"
-import { RouteBindingsSolver, RouteNetworkSolver } from "../../src/simulation"
+import { ChannelNetlistSolver, RouteNetworkSolver } from "../../src/simulation"
 import { routedRequest } from "../../src/simulation/route-transient"
 import { quietDriverIbis } from "../fixtures/routed-visual-fixture"
 import { renderTwoTracePlanInput } from "../fixtures/two-trace-plan-input"
@@ -30,27 +30,23 @@ function compileNetwork(
   const sections = new CopperGeometryExtractionSolver(plan.sections)
   sections.solve()
   const copperGeometry = sections.getOutput().value
-  const { geometry, copperScope: scope } = copperGeometry
   const fields = new TransmissionLineRlgcSolver({
     copperGeometry,
     artifactPrefix: plan.sections.artifactPrefix,
   })
   fields.solve()
   const extracted = fields.getOutput().value
-  const bindings = new RouteBindingsSolver({
-    ...plan.bindings,
-    copperScope: scope,
-  })
-  bindings.solve()
+  const netlist = new ChannelNetlistSolver(plan.bindings)
+  netlist.solve()
   const network = new RouteNetworkSolver({
     simulationPcbTransientChannelSimulationId:
       plan.simulationPcbTransientChannelSimulationId,
     name: plan.name,
-    geometry,
+    copperGeometry,
     extracted,
-    bindings: bindings.getOutput().value,
+    channelNetlist: netlist.getOutput().value,
     materials: extracted.materials,
-    options: plan.bindings.options,
+    options: plan.networkOptions,
     warnings: plan.warnings,
     artifactPrefix: plan.sections.artifactPrefix,
   })

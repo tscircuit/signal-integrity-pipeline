@@ -1,13 +1,13 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
-import type { RouteXY } from "../../src/board"
+import type { CopperPoint } from "../../src/board"
 import { terminalInductance } from "../../src/simulation"
 
 const line = [
   [0.55e-6, 0.22e-6],
   [0.22e-6, 0.55e-6],
 ]
-const positions: RouteXY[] = [
+const positions: CopperPoint[] = [
   [0, 0],
   [0, 0.3],
 ]

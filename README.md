@@ -11,6 +11,7 @@ Each declared channel simulation becomes immutable inputs for copper geometry ex
 `CopperGeometryExtractionSolver` models scoped traces, vias, reference pours, and pad contacts. It groups wires into sections with consistent nearby copper and reference surfaces.
 `TransmissionLineRlgcSolver` screens nearby wire pairs for coupling and calculates per-unit-length RLGC matrices for each coupled group.
 Planning validates selected IBIS package matrices. The internal `ChannelNetlistSolver` allocates SPICE nodes and compiles one IBIS model per step, including scalar or coupled package elements.
+`RouteNetworkSolver` uses the copper geometry, extracted RLGC matrices and channel netlist to assemble a coupled ladder with via and oblique corrections and emit a SPICE deck.
 
 Aggressors are output-capable pins retained by the copper scope that do not
 drive a declared channel in the simulation. This includes bidirectional
@@ -36,6 +37,10 @@ flowchart LR
   geometry --> transmissionLineRlgc["TransmissionLineRlgcSolver"]
   plan -->|Scoped board, trace contacts, receiver paths, supplies, passives, reference, run controls and IBIS sources| netlist["ChannelNetlistSolver (internal)"]
   netlist --> netlistOutput["SPICE node map, electrical elements and IBIS assembly"]
+  geometry --> network["RouteNetworkSolver"]
+  transmissionLineRlgc --> network
+  netlistOutput --> network
+  network --> deck["SPICE deck"]
   plan --> manifest["Transient channel simulation plan manifest"]
 ```
 
@@ -53,8 +58,11 @@ stateDiagram-v2
   CompilingModels --> Failed: IBIS conversion failed
   GeometryReady --> Failed: invalid cross-section geometry or material options
   Ready --> Failed: invalid input, conflicting IBIS model selections, invalid package matrices or undeclared aggressors
-  FieldsReady --> [*]
-  NetlistReady --> [*]
+  FieldsReady --> NetworkReady: channel netlist and copper geometry available
+  NetlistReady --> NetworkReady: routed RLGC matrices and copper geometry available
+  NetworkReady --> DeckReady: RouteNetworkSolver
+  NetworkReady --> Failed: invalid network inputs
+  DeckReady --> [*]
   Failed --> [*]
 ```
 

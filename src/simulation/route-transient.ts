@@ -1,5 +1,5 @@
 import type { SolverRequest } from "../solver"
-import type { RoutedDeck } from "./routed-types"
+import type { RoutedDeck } from "./route-inputs"
 
 /** A solver request with the routed transient's single raw waveform output. */
 type RoutedSolverRequest = SolverRequest & { outputFiles: ["waveform.raw"] }

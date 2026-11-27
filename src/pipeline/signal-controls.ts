@@ -59,13 +59,12 @@ export interface ChannelSimulationControlOptions {
 export function signalStepSeconds({
   patterns,
   durationSeconds,
-  edgeTimesSeconds,
+  fastestEdgeSeconds,
 }: {
   patterns: readonly DriverPattern[]
   durationSeconds: number
-  edgeTimesSeconds: number[]
+  fastestEdgeSeconds: number
 }): number {
-  const fastestEdgeSeconds = Math.min(...edgeTimesSeconds)
   const rate = Math.max(...patterns.map((signal) => signal.bit_rate_bps))
   const stepSeconds = Math.min(
     1 / rate / STEPS_PER_BIT,

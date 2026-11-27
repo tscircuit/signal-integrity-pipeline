@@ -17,6 +17,7 @@ Planning validates the package matrices for the mapped pins and records any capa
 
 The package uses one branch for each merged rail pin group. Multiple board pins in a group must already share a board node. Rail branches with zero DC resistance use the board bias. The die clamp biases a rail behind nonzero series resistance. Scalar shunt capacitance uses the buffer’s pulldown reference, and a coupled package with separate ground banks uses circuit ground for its shared matrix reference.
 The internal `ChannelNetlistSolver` uses the planner's lowered experiment for timing, allocates SPICE nodes and compiles one IBIS model per step through `@tscircuit/ibis-to-spice`. It publishes the node map, ideal electrical elements and compiled buffers with the IBIS assembly evidence.
+`RouteNetworkSolver` uses the copper geometry, extracted RLGC matrices and channel netlist to assemble a coupled ladder with via and oblique corrections and emit a SPICE deck.
 
 ```mermaid
 flowchart LR
@@ -34,6 +35,10 @@ flowchart LR
   netlist --> checks["Allocate nodes and check channel contacts and paths"]
   checks --> spice["Compile one IBIS model per step"]
   spice --> netlistOutput["Channel netlist and IBIS assembly"]
+  geometry --> network["RouteNetworkSolver"]
+  transmissionLineRlgc --> network
+  netlistOutput --> network
+  network --> deck["SPICE deck"]
   planner --> manifest["Transient channel simulation plan manifest"]
 ```
 
@@ -51,8 +56,11 @@ stateDiagram-v2
   CompilingModels --> Failed: IBIS conversion failed
   GeometryReady --> Failed: invalid cross-section geometry or material options
   Ready --> Failed: invalid input, conflicting IBIS model selections, invalid package matrices or undeclared aggressors
-  FieldsReady --> [*]
-  NetlistReady --> [*]
+  FieldsReady --> NetworkReady: channel netlist and copper geometry available
+  NetlistReady --> NetworkReady: routed RLGC matrices and copper geometry available
+  NetworkReady --> DeckReady: RouteNetworkSolver
+  NetworkReady --> Failed: invalid network inputs
+  DeckReady --> [*]
   Failed --> [*]
 ```
 
