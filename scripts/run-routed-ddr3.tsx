@@ -103,7 +103,7 @@ const timings: Record<string, number> = {}
 const stats: Record<string, unknown> = {}
 let stageStart = started
 const root = new RoutedPipelineSolver({
-  input: { circuitJson, ibisSources, scopeDistanceMm: ROUTE_SCOPE_DISTANCE_MM },
+  input: { circuitJson, ibisSources, nearbyGapMm: ROUTE_SCOPE_DISTANCE_MM },
   context: {
     progress: console.log,
     runSolver: async (request) => {

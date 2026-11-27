@@ -88,8 +88,7 @@ flowchart TD
 ```
 
 The pipeline is inspectable with solver-utils. All six stage rows exist before the
-first step; each stage processes all admitted blocks in order, with no nested block
-pipelines.
+first step. Each stage processes all planned channel simulations in order.
 
 <!-- routed-stages:start -->
 | # | Stage solver |
@@ -141,8 +140,14 @@ IBIS edge rates, bit rates, stackup and actual routes. Every channel simulation 
 independent run. A differential endpoint drives opposite physical levels and
 measures P minus N. Quiet channels remain connected and are probed at the far
 receiver and at the near quiet driver. Single-ended probes always use their chip's
-local ground. Numeric offsets are seconds. Automatic duration covers a full pattern for every switching channel or
-aggressor, measured at its declared bit rate after its offset.
+local ground. Numeric offsets are seconds. Automatic duration ends when the
+last channel or switching aggressor completes one full pattern at its
+declared bit rate after its offset.
+Clock uses two unit intervals, a switching literal uses its bit count, and
+PRBS7 uses 127 unit intervals. Quiet channels use one unit interval from time
+zero. A default clock-only or short-literal capture shows the time trace. Set
+`duration` for a longer recording or to run PRBS15 or PRBS31. Explicit durations
+are used as supplied.
 IBIS values always use the typical corner.
 
 ### 2D RLGC calculation
