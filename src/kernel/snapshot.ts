@@ -24,3 +24,9 @@ export function snapshot<T>(source: T): Snapshot<T> {
   if (prototype === null) Object.setPrototypeOf(copy, null)
   return Object.freeze(copy) as Snapshot<T>
 }
+
+/** Check whether a planning input can be reused as an immutable input. */
+export function isDeeplyFrozen(input: unknown): boolean {
+  if (input === null || typeof input !== "object") return true
+  return Object.isFrozen(input) && Object.values(input).every(isDeeplyFrozen)
+}

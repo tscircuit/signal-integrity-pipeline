@@ -58,8 +58,7 @@ function buildChannelPlan({
   })
   const artifactPrefix = `channelSimulations/${simulationPcbTransientChannelSimulationId}`
   const circuitJson = snapshot(prepared.circuit)
-  const modeling = snapshot(prepared.settings)
-  const { traceContacts } = modeling
+  const { copperScope, traceContacts, ...modeling } = prepared.settings
   const requiredSourcePortIds = Object.freeze([
     ...new Set(
       traceContacts.flatMap(({ fromSourcePortId, toSourcePortId }) => [
@@ -77,16 +76,15 @@ function buildChannelPlan({
     warnings: snapshot(prepared.warnings || []),
     sections: Object.freeze({
       circuitJson,
-      copperScope: modeling.copperScope,
+      copperScope: snapshot(copperScope),
       requiredSourcePortIds,
       artifactPrefix,
     }),
     bindings: Object.freeze({
       circuitJson,
-      copperScope: modeling.copperScope,
       receiverPaths,
-      traceContacts,
-      modeling,
+      traceContacts: snapshot(traceContacts),
+      modeling: snapshot(modeling),
       controls: snapshot(prepared.controls),
       ibisSources: input.ibisSources,
       artifactPrefix,

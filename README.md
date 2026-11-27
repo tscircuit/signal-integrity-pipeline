@@ -7,11 +7,10 @@ Signal-integrity tools for tscircuit boards.
 The stack retains Circuit JSON validation, physical stackup and stimulus helpers, IBIS asset loading and the ngspice adapter.
 `TransientChannelSimulationPlanSolver` reads PCB transient channel simulation records written by core from TSX. It checks
 channel endpoints, IBIS models, timing and patterns, including pseudo-random binary sequences (PRBS).
-Each declared channel simulation becomes immutable inputs for copper geometry extraction and buffer binding.
+Each declared channel simulation becomes immutable inputs for copper geometry extraction and channel netlist generation.
 `CopperGeometryExtractionSolver` models scoped traces, vias, reference pours, and pad contacts. It groups wires into sections with consistent nearby copper and reference surfaces.
 `TransmissionLineRlgcSolver` screens nearby wire pairs for coupling and calculates per-unit-length RLGC matrices for each coupled group.
-IBIS conversion resolves scalar or coupled package elements and validates selected package matrices during planning.
-`ChannelNetlistSolver` takes the planner's binding input, allocates SPICE nodes and compiles one IBIS model per step.
+Planning validates selected IBIS package matrices. The internal `ChannelNetlistSolver` allocates SPICE nodes and compiles one IBIS model per step, including scalar or coupled package elements.
 
 Aggressors are output-capable pins retained by the copper scope that do not
 drive a declared channel in the simulation. This includes bidirectional
@@ -35,8 +34,8 @@ flowchart LR
   packages --> plan
   plan --> geometry["CopperGeometryExtractionSolver"]
   geometry --> transmissionLineRlgc["TransmissionLineRlgcSolver"]
-  plan -->|Binding input| netlist["ChannelNetlistSolver"]
-  netlist --> bound["SPICE node map, electrical elements and IBIS assembly"]
+  plan -->|Scoped board, trace contacts, receiver paths, supplies, passives, reference, run controls and IBIS sources| netlist["ChannelNetlistSolver (internal)"]
+  netlist --> netlistOutput["SPICE node map, electrical elements and IBIS assembly"]
   plan --> manifest["Transient channel simulation plan manifest"]
 ```
 
@@ -46,13 +45,12 @@ stateDiagram-v2
   Ready --> Planned: TransientChannelSimulationPlanSolver
   Planned --> GeometryReady: CopperGeometryExtractionSolver
   GeometryReady --> FieldsReady: TransmissionLineRlgcSolver
-  Planned --> BindingModels: ChannelNetlistSolver allocates nodes and validates IBIS sources
-  BindingModels --> BindingModels: compile one IBIS model per step
-  BindingModels --> NetlistReady: publish netlist and assembly after the last model
-  Planned --> Failed: invalid experiment, electrical contacts or IBIS sources
-  BindingModels --> Failed: IBIS conversion failed
+  Planned --> CompilingModels: step 1 initializes the netlist and compiles model 0
+  CompilingModels --> CompilingModels: compile the next IBIS model
+  CompilingModels --> NetlistReady: compile the final model and publish the netlist and IBIS assembly
+  Planned --> Failed: invalid experiment or IBIS sources, missing contacts or reference, unsupported route or soldermask, or model 0 conversion failed
+  CompilingModels --> Failed: IBIS conversion failed
   GeometryReady --> Failed: invalid cross-section geometry or material options
-  Planned --> Failed: missing required contact or reference, unsupported route or soldermask
   Ready --> Failed: invalid input, conflicting IBIS model selections, invalid package matrices or undeclared aggressors
   FieldsReady --> [*]
   NetlistReady --> [*]

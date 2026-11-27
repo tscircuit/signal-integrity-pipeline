@@ -1,7 +1,6 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import {
   type CircuitJson,
-  type CopperScope,
   cloneCircuitJson,
   type ReceiverTracePath,
 } from "../board"
@@ -16,6 +15,7 @@ import {
 } from "../buffers"
 import {
   type ArtifactScope,
+  isDeeplyFrozen,
   type Produced,
   rootScope,
   type Snapshot,
@@ -35,7 +35,6 @@ import type {
 /** The planner's scoped board and lowered inputs for one channel simulation. */
 export interface ChannelNetlistInput {
   readonly circuitJson: Snapshot<CircuitJson>
-  readonly copperScope: Snapshot<CopperScope>
   readonly receiverPaths: readonly ReceiverTracePath[]
   readonly traceContacts: readonly TraceContacts[]
   readonly modeling: Snapshot<SimulationModeling>
@@ -58,7 +57,7 @@ type ChannelBuffer = Pick<
 /** Immutable node assignments, electrical elements and IBIS buffers for one channel simulation. */
 export type ChannelNetlist = Pick<
   ChannelNetlistInput,
-  "circuitJson" | "copperScope" | "receiverPaths"
+  "circuitJson" | "receiverPaths"
 > &
   Snapshot<{
     plan: SimulationPlan
@@ -84,14 +83,18 @@ export class ChannelNetlistSolver extends BaseSolver {
   private readonly models: CompiledIbisComponent[] = []
   private output?: Produced<ChannelNetlist>
 
-  /** Capture the board, scope, experiment inputs and raw IBIS sources for this run. */
+  /** Capture the board, experiment inputs and raw IBIS sources for this run. */
   constructor(input: ChannelNetlistInput) {
     super()
-    const { ibisSources, ...netlistInput } = input
-    this.input = Object.freeze({
+    const { circuitJson, ibisSources, ...netlistInput } = input
+    const captured = {
       ...snapshot(netlistInput),
+      circuitJson,
       ibisSources: captureIbisSources(ibisSources),
-    })
+    }
+    if (!isDeeplyFrozen(circuitJson))
+      captured.circuitJson = snapshot(circuitJson)
+    this.input = Object.freeze(captured)
   }
 
   /** Resolve the plan and validate every IBIS source it uses. */
@@ -136,7 +139,10 @@ export class ChannelNetlistSolver extends BaseSolver {
   override _step(): void {
     if (!this.state) {
       this.state = this.initialize()
-      this.MAX_ITERATIONS = this.state.plan.models.length
+      this.MAX_ITERATIONS = Math.min(
+        this.MAX_ITERATIONS,
+        this.state.plan.models.length,
+      )
     }
     const { plan, sources } = this.state
     const model = plan.models[this.models.length]
@@ -149,10 +155,6 @@ export class ChannelNetlistSolver extends BaseSolver {
     this.stats = {
       models: this.models.length,
       probes: plan.probes.length,
-      warnings: this.models.reduce(
-        (count, buffer) => count + buffer.warnings.length,
-        0,
-      ),
     }
     if (this.models.length !== plan.models.length) return
     this.finalize(this.state)
@@ -167,11 +169,9 @@ export class ChannelNetlistSolver extends BaseSolver {
     sources,
     scope,
   }: ChannelNetlistState): void {
-    const { circuitJson, copperScope, receiverPaths, artifactPrefix } =
-      this.input
+    const { circuitJson, receiverPaths, artifactPrefix } = this.input
     const value: ChannelNetlist = Object.freeze({
       circuitJson,
-      copperScope,
       receiverPaths,
       ...snapshot({
         plan,

@@ -9,35 +9,35 @@ import { inverterModelPath } from "../../fixtures/two-trace-plan-input"
 
 test("captures inputs once and replays them with an unused invalid IBIS asset", async () => {
   const original = await renderTwoTraceNetlistInput()
-  const circuitJson = cloneCircuitJson(original.circuitJson)
+  const circuitJson = Object.freeze(cloneCircuitJson(original.circuitJson))
+  const experiment = circuitJson.find(
+    (record) => record.type === "simulation_experiment",
+  )
+  assert.ok(experiment)
   const receiverPaths = [...original.receiverPaths]
-  const copperScope = {
-    ...original.copperScope,
-    extractedPcbTraceIds: [...original.copperScope.extractedPcbTraceIds],
-  }
   const bytes = new TextEncoder().encode(routedVisualIbis)
   const solver = new ChannelNetlistSolver({
     ...original,
     circuitJson,
     receiverPaths,
-    copperScope,
     ibisSources: {
       [inverterModelPath]: bytes,
       "unused.ibs": 42 as unknown as Uint8Array,
     },
   })
-  circuitJson.length = 0
-  bytes.fill(0)
-  solver.step()
+  const [captured] = solver.getConstructorParams()
+  const exposedBytes = captured.ibisSources[inverterModelPath]
+  assert.ok(exposedBytes instanceof Uint8Array)
+  experiment.end_time_ms = 0
   receiverPaths.length = 0
-  copperScope.extractedPcbTraceIds.length = 0
+  bytes.fill(0)
+  exposedBytes.fill(0)
   solver.solve()
 
   const output = solver.getOutput()
   const { value, artifacts } = output
   assert.deepEqual(value.circuitJson, original.circuitJson)
   assert.deepEqual(value.receiverPaths, original.receiverPaths)
-  assert.deepEqual(value.copperScope, original.copperScope)
   assert.equal(
     value.models[0].sourceEvidence.sourceSha256,
     sha256(routedVisualIbis),
@@ -47,7 +47,7 @@ test("captures inputs once and replays them with an unused invalid IBIS asset", 
     value,
     value.circuitJson[0],
     value.receiverPaths[0],
-    value.copperScope.extractedPcbTraceIds,
+    value.receiverPaths,
     value.nodeMap,
     value.models[0].spicePinMapping,
     artifacts,
@@ -55,12 +55,10 @@ test("captures inputs once and replays them with an unused invalid IBIS asset", 
   ]
   assert.ok(frozen.every(Object.isFrozen))
 
-  const [captured] = solver.getConstructorParams()
   const replay = new ChannelNetlistSolver(captured)
   replay.solve()
-  assert.equal(
-    replay.getConstructorParams()[0].ibisSources,
-    captured.ibisSources,
-  )
+  const [replayInput] = replay.getConstructorParams()
+  assert.equal(replayInput.circuitJson, captured.circuitJson)
+  assert.equal(replayInput.ibisSources, captured.ibisSources)
   assert.deepEqual(replay.getOutput(), output)
 })

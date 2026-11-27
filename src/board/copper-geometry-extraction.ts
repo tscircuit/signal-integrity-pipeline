@@ -1,7 +1,13 @@
 import { cju } from "@tscircuit/circuit-json-util"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
-import { type Produced, rootScope, type Snapshot, snapshot } from "../kernel"
+import {
+  isDeeplyFrozen,
+  type Produced,
+  rootScope,
+  type Snapshot,
+  snapshot,
+} from "../kernel"
 import type { CopperGeometryExtractionInput } from "./copper-geometry-extraction-input"
 import {
   type CopperGeometryExtractionProgress,
@@ -49,12 +55,6 @@ function validateRequiredPorts({
       `required endpoint ${sourcePortId} has no physical wire or via contact`,
     )
   }
-}
-
-/** Check whether a planning input can be reused as an immutable input. */
-function isDeeplyFrozen(input: unknown): boolean {
-  if (input === null || typeof input !== "object") return true
-  return Object.isFrozen(input) && Object.values(input).every(isDeeplyFrozen)
 }
 
 /** Read mutable caller inputs once without duplicating already frozen planning values. */

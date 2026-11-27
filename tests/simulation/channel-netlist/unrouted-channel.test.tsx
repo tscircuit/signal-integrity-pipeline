@@ -26,5 +26,6 @@ test("binds the driver and receiver of an allowed unrouted channel to one node",
   const { nodeMap } = solver.getOutput().value
   const driverNode = nodeMap[driver.source_port_id]
   assert.ok(driverNode)
+  assert.notEqual(driverNode, "0")
   assert.equal(nodeMap[receiver.source_port_id], driverNode)
 })

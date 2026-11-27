@@ -22,7 +22,7 @@ import type { NumericalSettings } from "./modeling"
 import {
   type ChannelSimulationControlOptions,
   channelSimulationDurationSeconds,
-  signalTiming,
+  signalStepSeconds,
   withChannelSimulationControls,
 } from "./signal-controls"
 import {
@@ -50,8 +50,6 @@ const DEFAULT_NEARBY_GAP_MM = 32
 export interface PreparedChannelSimulation {
   warnings?: string[]
   durationSeconds: number
-  fastestEdgeSeconds: number
-  stepSeconds: number
   channelSimulation: SimulationPcbTransientChannelSimulation
   driverReceiverChannels: SimulationPcbDriverReceiverChannel[]
   circuit: CircuitJson
@@ -199,12 +197,10 @@ interface ChannelSimulationOptions {
 function withPreparedChannelControls({
   settings,
   warnings,
-  fastestEdgeSeconds,
   ...options
 }: ChannelSimulationControlOptions & {
   settings: NumericalSettings
   warnings: string[]
-  fastestEdgeSeconds: number
 }): PreparedChannelSimulation {
   const { circuit, controls } = withChannelSimulationControls(options)
   const {
@@ -222,8 +218,6 @@ function withPreparedChannelControls({
     pins,
     settings,
     durationSeconds,
-    fastestEdgeSeconds,
-    stepSeconds: options.stepSeconds,
   }
   if (warnings.length) prepared.warnings = warnings
   return prepared
@@ -255,7 +249,11 @@ export function prepareChannelSimulation(
     channelSimulation: selection.channelSimulation,
     patterns,
   })
-  const timing = signalTiming({ patterns, durationSeconds, edgeTimesSeconds })
+  const stepSeconds = signalStepSeconds({
+    patterns,
+    durationSeconds,
+    edgeTimesSeconds,
+  })
   validateComponentModels({ ...scoped, topology: signalPins.topology })
   const traceContacts = prepareTraceContacts(scoped)
   const pruned = withUsedIbisModels(scoped)
@@ -267,7 +265,7 @@ export function prepareChannelSimulation(
   })
   return withPreparedChannelControls({
     ...selection,
-    ...timing,
+    stepSeconds,
     ...supplied,
     durationSeconds,
     aggressors,

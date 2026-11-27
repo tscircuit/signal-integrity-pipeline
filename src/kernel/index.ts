@@ -28,4 +28,4 @@ export { type SafeId, safeId } from "./ids"
 
 export { type Matrix, symmetrize } from "./matrix"
 
-export { type Snapshot, snapshot } from "./snapshot"
+export { isDeeplyFrozen, type Snapshot, snapshot } from "./snapshot"
