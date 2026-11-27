@@ -179,14 +179,14 @@ test("withholds capture after an engine failure", async () => {
 
 import { routeTones } from "../../src/board"
 import {
-  assertRouteVisual,
+  assertPlanDrawingSnapshot,
   routedVisualFixture,
 } from "../fixtures/routed-visual"
 
 test("live stage uses the shared waveform atlas for completed samples and failure diagnostics", async () => {
   const { root } = await routedVisualFixture()
   const stage = root.getSolver<RouteTransientSolver>("RouteTransientSolver")!
-  assertRouteVisual({
+  assertPlanDrawingSnapshot({
     drawing: stage.visualize(),
     module: "simulation",
     name: "route-transient",

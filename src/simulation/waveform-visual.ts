@@ -18,10 +18,11 @@ import {
   type SourcePortId,
   withRouteDrawing,
 } from "../board"
-import type { IbisSources, TextRange } from "../buffers"
-import type { Snapshot } from "../kernel"
+import type { IbisSources } from "../buffers"
 import { sha256 } from "../kernel"
-import type { RouteBuffer, RoutedCapture } from "./route-inputs"
+import type { ChannelNetlist } from "./channel-netlist"
+import type { RoutedCapture } from "./route-inputs"
+import type { StringOffsets } from "./spice-header"
 
 /** A board port and its transient waveform label. */
 export interface WaveformProbe {
@@ -119,7 +120,7 @@ function ibisLinePrefix({
   text: string
   prefix: string
   from: number
-}): TextRange | undefined {
+}): StringOffsets | undefined {
   for (let start = from; start < text.length; start++) {
     if (start > 0 && !LINE_ENDINGS.includes(text[start - 1])) continue
     const keyword = skipWhitespace({ text, start })
@@ -194,7 +195,7 @@ export function receiverThreshold({
   receivers,
 }: {
   ibisSources: IbisSources
-  models: readonly Snapshot<RouteBuffer>[]
+  models: ChannelNetlist["models"]
   receivers: ReadonlySet<SourcePortId>
 }): ReceiverThreshold | undefined {
   const texts = Object.values(ibisSources).map((bytes) => {

@@ -14,6 +14,10 @@ export {
   type ChannelNetlistInput,
   ChannelNetlistSolver,
 } from "./channel-netlist"
+export {
+  ChannelNetlistStage,
+  type ChannelNetlistStageInput,
+} from "./channel-netlist-stage"
 export { buildConnectionGraph, findConnectionPath } from "./connection-paths"
 export {
   generalDeclarations,

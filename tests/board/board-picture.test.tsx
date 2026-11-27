@@ -258,7 +258,7 @@ test("composed board pictures of every two-trace stage match their PNG snapshots
       "__snapshots__",
       `board-picture-stage-${number}.png`,
     )
-    if (process.env.UPDATE_ROUTED_VISUALS === "1") {
+    if (process.env.UPDATE_PLAN_DRAWINGS === "1") {
       mkdirSync(join(path, ".."), { recursive: true })
       writeFileSync(path, png)
     }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { planColors } from "../../../src/board"
 import { TransientChannelSimulationPlanSolver } from "../../../src/pipeline"
 import {
-  assertRouteVisual,
+  assertPlanDrawingSnapshot,
   routedVisualFixture,
 } from "../../fixtures/routed-visual"
 
@@ -11,7 +11,7 @@ test("rejected plan carries a visible red reason without inventing a planned cha
   const { root } = await routedVisualFixture()
   const solver = new TransientChannelSimulationPlanSolver({
     ...root.inputProblem,
-    scopeDistanceMm: 0,
+    nearbyGapMm: 0,
   })
   assert.throws(
     () => solver.solve(),
@@ -30,7 +30,7 @@ test("rejected plan carries a visible red reason without inventing a planned cha
       rect.label?.includes("Copper search gap must be finite and positive"),
     ),
   )
-  assertRouteVisual({
+  assertPlanDrawingSnapshot({
     drawing,
     module: "pipeline",
     name: "transient-channel-simulation-plan-rejected",

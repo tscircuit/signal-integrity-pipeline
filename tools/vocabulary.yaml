@@ -26,7 +26,6 @@ domain:
   chevron: a mark indicating the direction of a receiver path
   dash: one mark in a dashed line
   fault: a diagnostic tied to specific contacts or copper
-  header: the text band above the board in a plan drawing
   ideal: an electrical connection with no extracted impedance
   legend: the explanation of a drawing's symbols and colors
   scene: the records and annotations used to draw one view
@@ -44,6 +43,7 @@ domain:
   artifact: a file the pipeline produces (solver deck, log, capture, evidence), recorded in the ledger
   assembly: the bundle of converted IBIS chip models used by one experiment
   asset: an IBIS model file that the board names (ibis_model_asset in Circuit JSON)
+  axis: a plot scale representing a measured quantity
   bandwidth: the number of stored off-diagonals in a banded IBIS package matrix
   barrel: the plated copper tube that lines a via hole
   below: toward decreasing solver z in a physical stackup
@@ -58,6 +58,7 @@ domain:
   bus: an IBIS Pin Mapping label for pins sharing an electrical reference
   c: capacitance matrix or its entries
   cache: reused solution keyed only by identical physical cross-section geometry
+  camera: the fixed board region a problem's stage drawings show
   capability: an operation an IBIS model supports, such as driving, receiving or disabling
   capacitance: how much charge copper stores per volt (the C in RLGC)
   capacitive: coupling between conductors through their electric field
@@ -99,21 +100,27 @@ domain:
   digital: a stimulus described by timed binary logic states
   dispersion: frequency-dependent wave travel that can distort a signal edge
   driver: the chip output that sends a signal
+  envelope: the band between the lowest and highest of many probe curves at each moment
   er: relative dielectric permittivity
   evidence: data kept in the result that shows how a conclusion was reached
+  excursion: how far a curve goes beyond the band most samples stay in
   execution: a completed invocation through the solver port
   experiment: one transient run with stimuli and probes
   extent: horizontal reach of the discretized dielectric interfaces
   extract: derive copper geometry from PCB records
   extraction: deriving copper geometry from PCB records
   farad: SI unit of capacitance
+  eye: a waveform folded every two bit periods so all transitions overlay
   filament: an ideal thin current path used to estimate mutual inductance
   fixture: a known resistive load used to capture an IBIS switching waveform
+  focus: the board region a stage drawing keeps in view, around the selected copper
   gate: the start of the interval compared during numerical convergence
   general: shared across supported channel experiment shapes
   geometry: the board's copper shapes, layers and positions, in millimeters
   ground: the zero-volt reference copper that signal current returns through
   h: inductance measured in henries
+  halo: a dark outline behind a mark so it reads over copper
+  header: a heading for a drawing or a directive at the start of a line
   hold: the interval over which a switching coefficient stays fixed
   impedance: a wire's opposition to changing current, in ohms
   henry: SI unit of inductance
@@ -162,10 +169,12 @@ domain:
   pad: the copper area a component pin is soldered to
   pair: two conductors screened together for mutual coupling
   panel: a small flat boundary piece of a cross-section that carries constant charge in the 2D field calculation
+  pane: an opaque panel beside the board in a stage drawing, holding a cross-section or a waveform plot
   parallel: conductors sharing a common longitudinal direction
   passive: a component that does not amplify: resistor, capacitor or inductor
   passivity: the property that a circuit can store or dissipate energy but cannot supply it
   permittivity: how strongly an insulator stores electric field (its dielectric constant)
+  picture: the real board drawn by circuit-to-svg with a stage drawing on top, both in one camera
   pin: a chip leg, named in the IBIS model
   pipeline: the whole routed run from board to transient capture, as a fixed chain of stages
   pivot: the matrix coefficient used to eliminate entries in its column
@@ -223,6 +232,7 @@ domain:
   stage: one fixed step of the routed pipeline (planning, copper geometry extraction, RLGC calculation, channel netlist, network, transient)
   startup: the time a switching channel needs to settle after its stimulus starts
   stimulus: the bit pattern a driver sends during an experiment
+  strip: a pane showing each selected net unrolled into a to-scale bar
   stub: the unused part of a via beyond the layer where the signal leaves it
   subcircuit: a nested group of components on the board; in SPICE, a reusable circuit block
   subject: the thing a diagnostic points at, such as a cell, port or experiment
@@ -232,6 +242,7 @@ domain:
   tangent: dielectric dissipation factor or direction along a boundary panel
   terminal: a connection end of a conductor or source
   timestamp: the time at which a waveform sample was recorded
+  tone: a fixed drawing colour with one meaning, such as the slice cut or a failure
   top: the outer copper layer on the upper face of the board
   trace: routed PCB copper identified by a source trace, including its wire runs and layer transitions
   transient: a circuit simulation that follows voltage and current through time
@@ -241,6 +252,8 @@ domain:
   vacuum: reference material with relative permittivity one
   vector: one named sequence of engine samples, such as time or a node voltage
   via: a plated hole that carries a signal between layers
+  viewport: the world-coordinate region visible in a picture
+  visualize: draw a solver's current physical work in the shared graphics atlas
   waveform: measured voltage over time at a fixture or probe
   wire: one straight planar conductor derived from a PCB trace
   word: a contiguous non-whitespace field in an ASCII raw file or diagnostic
@@ -276,6 +289,7 @@ abbreviations:
   spice: the standard circuit simulation netlist format (run by ngspice)
   stderr: standard error output of a program
   stdout: standard output of a program
+  svg: Scalable Vector Graphics, the image format of board pictures
   ui: unit interval, one bit period
   url: web address
   v: volt

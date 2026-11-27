@@ -110,13 +110,13 @@ test.skipIf(!vendorAvailable("sn74lvc1g04.ibs"))(
 
 import { routeTones } from "../../src/board"
 import {
-  assertRouteVisual,
+  assertPlanDrawingSnapshot,
   routedVisualFixture,
 } from "../fixtures/routed-visual"
 
 test("two-trace TSX route-network visual SVG snapshot", async () => {
   const { root } = await routedVisualFixture()
-  assertRouteVisual({
+  assertPlanDrawingSnapshot({
     drawing: root
       .getSolver<RouteNetworkSolver>("RouteNetworkSolver")!
       .visualize(),
@@ -143,7 +143,7 @@ test("rejected network drawing retains physical context and shows its red reason
       (text) => text.color === routeTones.failure && text.text.includes("1835"),
     ),
   )
-  assertRouteVisual({
+  assertPlanDrawingSnapshot({
     drawing,
     module: "simulation",
     name: "route-network-rejected",

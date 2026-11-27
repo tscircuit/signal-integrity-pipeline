@@ -13,7 +13,7 @@ import type {
   SourcePortId,
   SourceTraceId,
 } from "./ids"
-import { routeBoardBox, routeBounds } from "./plan-view"
+import { getBoardBounds, getPointBounds } from "./plan-view"
 import type { CircuitJson } from "./schema"
 import {
   endpointPorts,
@@ -180,7 +180,7 @@ export function routeView({
     }
   }
   // Endpoint parts join the focus, but a large package (a BGA) only near the copper.
-  const copper = routeBounds(points) ?? {
+  const copper = getPointBounds(points) ?? {
     minX: 0,
     maxX: 1,
     minY: 0,
@@ -210,14 +210,14 @@ export function routeView({
         ),
       })
   }
-  const parts = routeBounds(points) ?? {
+  const parts = getPointBounds(points) ?? {
     minX: 0,
     maxX: 1,
     minY: 0,
     maxY: 1,
   }
   // A board edge just beyond the problem is framed too, so the camera never cuts a board a few millimetres short.
-  const board = routeBoardBox(db)
+  const board = getBoardBounds(db)
   const reachX = (parts.maxX - parts.minX) * FOCUS_REACH_RATIO
   const reachY = (parts.maxY - parts.minY) * FOCUS_REACH_RATIO
   const box = { ...parts }

@@ -68,7 +68,7 @@ test.skipIf(!vendorAvailable(vendorModels.cmos.file))(
       () =>
         new TransientChannelSimulationPlanSolver({
           ...input,
-          scopeDistanceMm: 0,
+          nearbyGapMm: 0,
         }).solve(),
       /Copper search gap must be finite and positive/,
     )

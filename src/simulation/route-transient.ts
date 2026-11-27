@@ -1,15 +1,25 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
+import type { GraphicsObject } from "graphics-debug"
+import type { CopperGeometry, SourcePortId } from "../board"
 import { type Produced, rootScope, sha256, snapshot } from "../kernel"
 import { type SpiceProbeRow, spiceProbeRows } from "../observation"
 import { invoke, type SolverContext, type SolverRequest } from "../solver"
 import { fail } from "./diagnostics"
 import type { RoutedCapture, RoutedDeck } from "./route-inputs"
+import { type ReceiverThreshold, routeWaveformDrawing } from "./waveform-visual"
+
+/** Driver-port key in the serialized route evidence. */
+interface DeckRouteEvidence {
+  from: SourcePortId
+}
 
 /** The compiled deck and injected engine capabilities for a routed transient. */
 export interface RouteTransientInput {
   compiled: RoutedDeck
   artifactPrefix: string
   context: SolverContext
+  board?: CopperGeometry
+  threshold?: ReceiverThreshold
 }
 
 /** A solver request with the routed transient's single raw waveform output. */
@@ -31,6 +41,7 @@ export function routedRequest(
 export class RouteTransientSolver extends BaseSolver {
   override MAX_ITERATIONS = Infinity
   private output?: Produced<RoutedCapture>
+  private running = false
   /** Execution is an injected capability, separate from the immutable deck input. */
   constructor(private readonly input: RouteTransientInput) {
     super()
@@ -44,37 +55,43 @@ export class RouteTransientSolver extends BaseSolver {
       `Simulate ${compiled.name} (${compiled.probes.length} probes)`,
     )
     const scope = rootScope("simulation").child(this.input.artifactPrefix)
-    const execution = await invoke({
-      context: this.input.context,
-      scope: scope.child("solver").handTo("solver"),
-      request: routedRequest(compiled),
-    })
-    const run = execution.value
-    const logs = `${run.stdout}\n${run.stderr}`
-    const diagnostic = logs.split("\n").find(hasSolverDiagnostic)
-    if (diagnostic)
-      fail("native_solver", `${compiled.name}: ${diagnostic.trim()}`, {
-        artifacts: run.logPaths,
+    this.running = true
+    try {
+      const solverScope = scope.child("solver").handTo("solver")
+      const execution = await invoke({
+        context: this.input.context,
+        scope: solverScope,
+        request: routedRequest(compiled),
       })
-    const raw = run.outputs["waveform.raw"]
-    const rows = spiceProbeRows({ text: raw, probes: compiled.probes })
-    validateCoverage({ compiled, rows })
-    const capture = completedCapture({ compiled, rows })
-    const artifact = scope.json("capture.json", {
-      ...capture,
-      waveformSha256: sha256(raw),
-    })
-    this.output = {
-      value: capture,
-      artifacts: [...execution.artifacts, artifact],
+      const run = execution.value
+      const logs = `${run.stdout}\n${run.stderr}`
+      const diagnostic = logs.split("\n").find(hasSolverDiagnostic)
+      if (diagnostic)
+        fail("native_solver", `${compiled.name}: ${diagnostic.trim()}`, {
+          artifacts: run.logPaths,
+        })
+      const raw = run.outputs["waveform.raw"]
+      const rows = spiceProbeRows({ text: raw, probes: compiled.probes })
+      validateCoverage({ compiled, rows })
+      const capture = completedCapture({ compiled, rows })
+      const artifact = scope.json("capture.json", {
+        ...capture,
+        waveformSha256: sha256(raw),
+      })
+      this.output = {
+        value: capture,
+        artifacts: [...execution.artifacts, artifact],
+      }
+      this.stats = {
+        invocations: 1,
+        samples: rows.length,
+        probes: capture.probes.length,
+        elapsedMs: performance.now() - started,
+      }
+      this.solved = true
+    } finally {
+      this.running = false
     }
-    this.stats = {
-      invocations: 1,
-      samples: rows.length,
-      probes: capture.probes.length,
-      elapsedMs: performance.now() - started,
-    }
-    this.solved = true
   }
   /** Complete engine samples remain candidate evidence, without convergence qualification. */
   override getOutput(): Produced<RoutedCapture> {
@@ -86,6 +103,28 @@ export class RouteTransientSolver extends BaseSolver {
     typeof RouteTransientSolver
   > {
     return [this.input]
+  }
+  /** Probe marks on the board and their waveforms beside it; the axes stay empty until ngspice returns samples. */
+  override visualize(): GraphicsObject {
+    const { compiled, board } = this.input
+    const routes = compiled.evidence.routes as DeckRouteEvidence[] | undefined
+    const probes = compiled.probes.map((probe) => ({
+      name: probe.name,
+      sourcePortId: probe.signalSourceId,
+      near:
+        routes?.some((route) => route.from === probe.signalSourceId) === true,
+    }))
+    let error: string | undefined
+    if (this.failed) error = this.error ?? "Transient failed"
+    return routeWaveformDrawing({
+      board,
+      probes,
+      capture: this.output?.value,
+      durationSeconds: compiled.durationSeconds,
+      threshold: this.input.threshold,
+      running: this.running,
+      error,
+    })
   }
 }
 

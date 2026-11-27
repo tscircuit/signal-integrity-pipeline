@@ -1,8 +1,23 @@
+import { cju } from "@tscircuit/circuit-json-util"
 import { BaseSolver } from "@tscircuit/solver-utils"
+import type { PcbComponent, PcbPort } from "circuit-json"
+import type { GraphicsObject } from "graphics-debug"
 import {
   type CircuitJson,
+  type CopperScope,
   cloneCircuitJson,
   type ReceiverTracePath,
+  routeBoardDrawing,
+  routeBuffers,
+  routeFailure,
+  routeLengths,
+  routeOutline,
+  routePinDirection,
+  routePortPoint,
+  routeStrip,
+  routeTones,
+  routeView,
+  withRouteDrawing,
 } from "../board"
 import {
   type CompiledIbisComponent,
@@ -220,4 +235,149 @@ export class ChannelNetlistSolver extends BaseSolver {
   > {
     return [this.input]
   }
+
+  /**
+   * Draw compiled buffers at their signal pins and rail pins as grey dots.
+   * Missing buffers are outlined in red.
+   */
+  protected visualizeNetlist(
+    copperScope: Snapshot<CopperScope>,
+  ): GraphicsObject {
+    const circuit = cloneCircuitJson(this.input.circuitJson)
+    const view = routeView({ circuit, scope: copperScope })
+    let drawing = routeBoardDrawing({ circuit, scope: copperScope })
+    const db = cju([...circuit])
+    const pcbPorts = new Map(
+      db.pcb_port.list().map((port) => [port.source_port_id, port]),
+    )
+    const components = new Map(
+      db.pcb_component
+        .list()
+        .map((component) => [component.pcb_component_id, component]),
+    )
+    const outlineContext = {
+      pcbPorts,
+      components,
+      unit: view.unit,
+    }
+    const buffers = this.models.flatMap((model) => {
+      drawing.polygons!.push(
+        ...portComponentOutlines({
+          ports: Object.values(model.spicePinMapping),
+          color: routeTones.via,
+          label: model.name,
+          context: outlineContext,
+        }),
+      )
+      return [...new Set(Object.values(model.spicePinMapping))].flatMap(
+        (id) => {
+          const point = routePortPoint({ circuit, sourcePortId: id })
+          if (!point) return []
+          const mappedSignal = this.input.receiverPaths.some(
+            (mapping) =>
+              mapping.fromSourcePortId === id || mapping.toSourcePortId === id,
+          )
+          if (
+            !mappedSignal ||
+            !model.metadata.pins.some((pin) => pin.port === id)
+          ) {
+            drawing.circles!.push({
+              center: point,
+              radius: view.unit * 0.3,
+              fill: routeTones.quiet,
+              stroke: routeTones.quiet,
+            })
+            return []
+          }
+          const net = view.ports.get(id)
+          return [
+            {
+              point,
+              direction: routePinDirection({ circuit, view, pin: point }),
+              color: net?.color ?? routeTones.copper,
+              driver: Boolean(
+                this.state?.plan.states.some(
+                  (state) => state.source_port_id === id && state.is_output,
+                ),
+              ),
+              label: net?.label,
+            },
+          ]
+        },
+      )
+    })
+    drawing.polygons!.push(...routeBuffers({ buffers, unit: view.unit }))
+    // Each bound net unrolled, its driver and receiver glyphs at the ends once both are bound.
+    const bound = new Set(buffers.map((buffer) => buffer.label))
+    drawing = withRouteDrawing({
+      drawing: drawing,
+      overlay: routeStrip({
+        pane: view.pane,
+        rows: routeLengths({ circuit, view }).filter((row) =>
+          bound.has(row.net.label),
+        ),
+        buffers: { driver: true, receiver: true },
+      }),
+    })
+    if (this.failed) {
+      drawing.polygons!.push(
+        ...portComponentOutlines({
+          ports: this.input.receiverPaths.flatMap((mapping) => [
+            mapping.fromSourcePortId,
+            mapping.toSourcePortId,
+          ]),
+          color: routeTones.failure,
+          label: "unbound",
+          context: outlineContext,
+        }),
+      )
+      drawing.texts!.push(
+        ...routeFailure({
+          box: view.pane,
+          message: this.error ?? "Channel netlist unavailable",
+        }),
+      )
+    }
+    return drawing
+  }
+}
+
+/** Circuit lookups and drawing scale shared by all component outlines. */
+interface PortOutlineContext {
+  pcbPorts: ReadonlyMap<PcbPort["source_port_id"], PcbPort>
+  components: ReadonlyMap<
+    PcbComponent["pcb_component_id"],
+    Snapshot<PcbComponent>
+  >
+  unit: number
+}
+
+/** Outline the parts that own the selected ports. */
+function portComponentOutlines({
+  ports,
+  color,
+  label,
+  context,
+}: {
+  ports: Iterable<PcbPort["source_port_id"]>
+  color: string
+  label: string
+  context: PortOutlineContext
+}): NonNullable<GraphicsObject["polygons"]> {
+  const outlines: NonNullable<GraphicsObject["polygons"]> = []
+  const { pcbPorts, components, unit } = context
+  for (const id of new Set(
+    [...ports].map((port) => pcbPorts.get(port)?.pcb_component_id),
+  )) {
+    if (!id) continue
+    const component = components.get(id)
+    if (component)
+      outlines.push({
+        points: routeOutline(component),
+        stroke: color,
+        strokeWidth: unit * 0.2,
+        label,
+      })
+  }
+  return outlines
 }

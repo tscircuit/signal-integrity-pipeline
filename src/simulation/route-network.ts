@@ -1,14 +1,28 @@
+/* eslint-disable local/max-file-lines -- Stage drawings use the same intermediate state as network compilation. */
 import { cju } from "@tscircuit/circuit-json-util"
 import { BaseSolver } from "@tscircuit/solver-utils"
+import type { GraphicsObject } from "graphics-debug"
 import {
   type CopperPoint,
   cloneCircuitJson,
   findPadContactWire,
   getSourcePortConnectivityMapFromCircuitJson,
   getWirePoint,
+  type Point,
+  type RouteStripRow,
+  routeBoardDrawing,
+  routeDisplayItems,
+  routeFailure,
+  routeLengths,
+  routeStrip,
+  routeTones,
+  routeUnrolled,
+  routeVia,
+  routeView,
   type SourcePortId,
   sourceNetMembers,
   type TraceWire,
+  withRouteDrawing,
 } from "../board"
 import {
   type Produced,
@@ -31,6 +45,7 @@ import { routedRequest } from "./route-transient"
 import { routeTransitions } from "./route-transitions"
 import { routedControl } from "./routed-control"
 import { spiceSubcircuitHeader, spiceWords } from "./spice-header"
+import { findClosestWirePoints } from "./wire-proximity"
 
 /** Small series resistance joins aliases without creating an ideal-voltage loop (ohms). */
 const JOIN_RESISTANCE = "1e-6"
@@ -47,12 +62,16 @@ const GEAR_MAX_ORDER = 2
 /** Relative pivot threshold used by ngspice during sparse elimination. */
 const PIVOT_TOLERANCE = "0.1"
 
+/** Omit coupling bands below 1% so weak interactions do not crowd the drawing. */
+const MINIMUM_DRAWN_COUPLING = 0.01
+
 /** Physical node identity, coupled ladders, corrections and the single deck assembly. */
 export class RouteNetworkSolver extends BaseSolver {
   override MAX_ITERATIONS = Infinity
   private steps?: Generator<void, Produced<RoutedDeck>>
   private output?: Produced<RoutedDeck>
   private ladder?: RouteLadder
+  private obliqueRecords: ReturnType<typeof routeOblique>["records"] = []
   /** Completed geometry, fields and the channel netlist are immutable input snapshots. */
   constructor(private readonly input: RouteNetworkInput) {
     super()
@@ -420,6 +439,7 @@ export class RouteNetworkSolver extends BaseSolver {
       })),
     }
     evidence.warnings.unshift(...this.input.warnings)
+    this.obliqueRecords = oblique.records
     const deck = `${lines.join("\n")}\n`
     const request = routedRequest({ deck })
     const compiled = snapshot<RoutedDeck>({
@@ -452,6 +472,212 @@ export class RouteNetworkSolver extends BaseSolver {
     typeof RouteNetworkSolver
   > {
     return [this.input]
+  }
+
+  /**
+   * Coupling bands between parallel sections (width grows with k), ladder cells as ticks across the selected
+   * copper, and every modelled via with the shared glyph.
+   */
+  override visualize(): GraphicsObject {
+    const { copperGeometry, extracted } = this.input
+    const { copperScope: scope, geometry } = copperGeometry
+    const circuit = cloneCircuitJson(copperGeometry.circuitJson)
+    const view = routeView({ circuit, scope })
+    let drawing = routeBoardDrawing({ circuit, scope })
+    let built: Set<number> | undefined
+    if (!this.output) built = new Set(this.ladder?.wireNodes.keys() ?? [])
+    const bands = extracted.solvedWireSections
+      .flatMap((slice) =>
+        slice.wires.flatMap((a, i) =>
+          slice.wires.slice(i + 1).map((b, offset) => {
+            const j = i + offset + 1
+            const k = Math.max(
+              Math.abs(slice.rlgcMatrices.capacitanceFaradsPerMeter[i][j]) /
+                Math.sqrt(
+                  slice.rlgcMatrices.capacitanceFaradsPerMeter[i][i] *
+                    slice.rlgcMatrices.capacitanceFaradsPerMeter[j][j],
+                ),
+              Math.abs(
+                slice.rlgcMatrices.externalInductanceHenriesPerMeter[i][j],
+              ) /
+                Math.sqrt(
+                  slice.rlgcMatrices.externalInductanceHenriesPerMeter[i][i] *
+                    slice.rlgcMatrices.externalInductanceHenriesPerMeter[j][j],
+                ),
+            )
+            return {
+              slice,
+              a,
+              b,
+              k,
+            }
+          }),
+        ),
+      )
+      .filter(({ a, b, k }) => {
+        const visibleCoupling = k >= MINIMUM_DRAWN_COUPLING
+        if (!visibleCoupling) return false
+        if (!view.traces.has(a.pcbTraceId) && !view.traces.has(b.pcbTraceId))
+          return false
+        return !built || (built.has(a.wireIndex) && built.has(b.wireIndex))
+      })
+      .sort((p, q) => q.k - p.k)
+      .slice(0, 800)
+    for (const { slice, a, b, k } of bands) {
+      const middle = (a.lateralOffsetMm + b.lateralOffsetMm) / 2
+      const half =
+        (Math.max(
+          0,
+          Math.abs(a.lateralOffsetMm - b.lateralOffsetMm) -
+            (a.widthMm + b.widthMm) / 2,
+        ) /
+          2) *
+        Math.min(1, k / 0.25)
+      drawing.polygons!.push({
+        points: [
+          offsetPoint({
+            wire: a,
+            position: slice.startMm,
+            transverse: middle - half,
+          }),
+          offsetPoint({
+            wire: a,
+            position: slice.endMm,
+            transverse: middle - half,
+          }),
+          offsetPoint({
+            wire: a,
+            position: slice.endMm,
+            transverse: middle + half,
+          }),
+          offsetPoint({
+            wire: a,
+            position: slice.startMm,
+            transverse: middle + half,
+          }),
+        ],
+        fill: routeTones.coupling,
+        stroke: "none",
+        label: `k ${k.toFixed(2)}`,
+      })
+    }
+    const wires = new Map(geometry.wires.map((wire) => [wire.wireIndex, wire]))
+    const nodes = [...(this.ladder?.wireNodes ?? [])].flatMap(
+      ([id, samples]) => {
+        const wire = wires.get(id)
+        if (!view.traces.has(wire?.pcbTraceId ?? "")) return []
+        return samples.map((sample) => ({
+          wire: wire!,
+          position: sample.position,
+        }))
+      },
+    )
+    for (const { wire, position } of routeDisplayItems({
+      items: nodes,
+      limit: 1500,
+    })) {
+      const [x, y] = getWirePoint({ wire, positionMm: position })
+      drawing.lines!.push({
+        points: [-1, 1].map((sign) => ({
+          x: x - sign * wire.direction[1] * wire.widthMm * 1.4,
+          y: y + sign * wire.direction[0] * wire.widthMm * 1.4,
+        })),
+        strokeColor: routeTones.cell,
+        strokeWidth: wire.widthMm * 0.3,
+      })
+    }
+    for (const record of routeDisplayItems({
+      items: this.obliqueRecords,
+      limit: 120,
+    })) {
+      if (!Array.isArray(record.wires) || record.wires.length !== 2) continue
+      const pair = (record.wires as number[]).map((id) => wires.get(id))
+      if (!pair[0] || !pair[1]) continue
+      const near = findClosestWirePoints({
+        firstWire: pair[0],
+        secondWire: pair[1],
+      })
+      drawing.lines!.push({
+        points: [near.firstPoint, near.secondPoint].map(([x, y]) => ({ x, y })),
+        strokeColor: routeTones.coupling,
+        strokeWidth: view.unit * 0.3,
+      })
+    }
+    const records = this.output?.value.evidence.transitions
+    let transitions: Record<string, unknown>[] = []
+    if (Array.isArray(records)) transitions = records
+    const physical = new Map(
+      cju([...circuit])
+        .pcb_via.list()
+        .map((item) => [item.pcb_via_id, item]),
+    )
+    const { minX, maxX, minY, maxY } = view.focus
+    const selected = geometry.wires.filter((wire) =>
+      view.traces.has(wire.pcbTraceId),
+    )
+    let width = view.unit
+    if (selected.length)
+      width =
+        selected.reduce((sum, wire) => sum + wire.widthMm, 0) / selected.length
+    for (const record of transitions) {
+      if (record.kind !== "via") continue
+      const via = physical.get(String(record.id))
+      if (
+        via &&
+        via.x >= minX &&
+        via.x <= maxX &&
+        via.y >= minY &&
+        via.y <= maxY
+      )
+        drawing.polygons!.push(
+          ...routeVia({
+            center: via,
+            radius: width * 1.4,
+          }),
+        )
+    }
+    // The pane unrolls each net with its ladder cells as ticks and its coupling as violet under the bar.
+    const unrolled = routeUnrolled({ view, wires: geometry.wires })
+    const lengths = routeLengths({ circuit, view })
+    const rows = new Map<RouteStripRow["net"]["label"], RouteStripRow>(
+      lengths.map((row) => [
+        row.net.label,
+        {
+          ...row,
+          length: unrolled.lengths.get(row.net) ?? row.length,
+          ticks: [],
+          bands: [],
+        },
+      ]),
+    )
+    for (const { wire, position } of nodes) {
+      const at = unrolled.along({ id: wire.wireIndex, position })
+      if (at) rows.get(at.net.label)?.ticks!.push(at.distance)
+    }
+    for (const { slice, a, b, k } of bands)
+      for (const wire of [a, b]) {
+        const from = unrolled.along({
+          id: wire.wireIndex,
+          position: slice.startMm,
+        })
+        const to = unrolled.along({ id: wire.wireIndex, position: slice.endMm })
+        if (from && to)
+          rows
+            .get(from.net.label)
+            ?.bands!.push({ from: from.distance, to: to.distance, k })
+      }
+    drawing = withRouteDrawing({
+      drawing: drawing,
+      overlay: routeStrip({ pane: view.pane, rows: [...rows.values()] }),
+    })
+    if (this.failed)
+      drawing.texts!.push(
+        ...routeFailure({
+          box: view.pane,
+          message: this.error ?? "Network rejected",
+        }),
+      )
+    return drawing
   }
 }
 
@@ -493,4 +719,21 @@ function createRouteEndpoint({
     nodes.set(id, node)
     return node
   }
+}
+
+/** Project a position along a wire at a different transverse offset. */
+function offsetPoint({
+  wire,
+  position,
+  transverse,
+}: {
+  wire: Snapshot<TraceWire>
+  position: number
+  transverse: number
+}): Point {
+  const [x, y] = getWirePoint({
+    wire: { ...wire, lateralOffsetMm: transverse },
+    positionMm: position,
+  })
+  return { x, y }
 }

@@ -11,7 +11,7 @@ type RouteBuffer = Parameters<typeof receiverThreshold>[0]["models"][number]
 
 import { sha256 } from "../../src/kernel"
 import {
-  assertRouteVisual,
+  assertPlanDrawingSnapshot,
   routedVisualFixture,
 } from "../fixtures/routed-visual"
 
@@ -47,7 +47,11 @@ test("waveform pane draws probe colors, dashed drivers, thresholds and round tic
     threshold: { low: 0.8, high: 2 },
     running: false,
   })
-  assertRouteVisual({ drawing, module: "simulation", name: "waveform-visual" })
+  assertPlanDrawingSnapshot({
+    drawing,
+    module: "simulation",
+    name: "waveform-visual",
+  })
   assert.deepEqual(capture, original, "pure drawing never mutates results")
   const curves = drawing.lines!.filter((line) => line.layer === "waveform")
   assert.deepEqual(
@@ -82,7 +86,7 @@ test("pending, running and failed captures draw status and empty axes", () => {
     durationSeconds: 1e-9,
     running: false,
   })
-  assertRouteVisual({
+  assertPlanDrawingSnapshot({
     drawing: pending,
     module: "simulation",
     name: "waveform-visual-pending",
@@ -103,7 +107,7 @@ test("pending, running and failed captures draw status and empty axes", () => {
     running: false,
     error: "native timeout",
   })
-  assertRouteVisual({
+  assertPlanDrawingSnapshot({
     drawing: failed,
     module: "simulation",
     name: "waveform-visual-failed",
@@ -116,8 +120,8 @@ test("long captures fold into a two-unit-interval eye and crowded plots draw an 
   const { root } = await routedVisualFixture()
   const board = root.stageOutput("CopperGeometryExtractionSolver").value[0]
   const ports = root
-    .stageOutput("RouteBindingsSolver")
-    .value[0].mappings.map((mapping) => mapping.to)
+    .stageOutput("ChannelNetlistSolver")
+    .value[0].receiverPaths.map(({ toSourcePortId }) => toSourcePortId)
   const times = Array.from({ length: 4001 }, (_, i) => i * 25e-12)
   const square = times.map((time) => (Math.floor(time / 2.5e-9) % 2) * 3.3)
   const eye = routeWaveformDrawing({

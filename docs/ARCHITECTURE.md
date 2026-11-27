@@ -204,7 +204,7 @@ layers hollow, bottom dimmed. Each stage draws what it produced:
 | Transient channel simulation plan | selected nets, drivers as dots, receivers as rings | each net's routed length, to scale |
 | Sections | sections in two tones of the net's hue, the route cut this step cased white, uncut copper grey | the same partition unrolled per net |
 | Fields | solved copper coloured by Z0, an amber cut at the slice on screen | that slice's stack at one mm scale, Z0 of selected conductors, coupling bands sized by k, the Z0 scale |
-| Bindings | bound parts outlined, ▶ at drivers and ◁ at receivers along the trace | each bound net with its buffer glyphs |
+| Channel netlist | compiled parts outlined, ▶ at drivers and ◁ at receivers along the trace | each net with its buffer glyphs |
 | Network | coupling bands between parallel sections (width grows with k), cell ticks, modelled vias | cells and coupling unrolled per net |
 | Transient | probe marks | an eye folded every two bit periods when the capture is long, else the window from the first activity; IBIS Vinl–Vinh of single-ended receivers as a band; above six far-end probes an envelope plus the worst curve; amber hatching while ngspice runs |
 

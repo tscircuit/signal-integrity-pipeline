@@ -112,7 +112,9 @@ export function indexPlanPorts(db: CircuitJsonUtilObjects): PlanPorts {
   return ports
 }
 
-/** Name a pin from its source records, including pins without a PCB pad. */
+/** Name a pin from its source records, including pins without a PCB pad.
+ * @internal
+ */
 export function getPinName({
   sourcePortId,
   db,

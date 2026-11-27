@@ -8,7 +8,7 @@ import {
   getSvgFromGraphicsObject,
   type Viewbox,
 } from "graphics-debug"
-import { routeBoardBox, routeBounds } from "./route-visual"
+import { getBoardBounds, getPointBounds } from "./route-visual"
 import type { CircuitJson, Point } from "./schema"
 
 /** Keep a visible view box for drawings with coincident coordinates. */
@@ -92,7 +92,7 @@ function drawingBounds({
   ) {
     return getBounds(drawing)
   }
-  return routeBoardBox(circuit)
+  return getBoardBounds(circuit)
 }
 
 /** A point with numeric x and y. */
@@ -147,7 +147,7 @@ function cropCircuit({
       ) {
         return true
       }
-      const box = routeBounds(recordPoints(record))
+      const box = getPointBounds(recordPoints(record))
       if (!box) return true
       const overlapsX =
         box.maxX >= view.minX - margin && box.minX <= view.maxX + margin

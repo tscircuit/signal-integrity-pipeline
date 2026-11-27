@@ -3,7 +3,7 @@ import type { GraphicsObject, Point, Viewbox } from "graphics-debug"
 import type { Snapshot } from "../kernel"
 import type { CopperScope } from "./geometry/scope"
 import type { PcbTraceId, SourcePortId } from "./ids"
-import { routeBoardBox as planBoardBox } from "./plan-view"
+import { getBoardBounds as planBoardBox } from "./plan-view"
 import {
   routeCircle as circle,
   routeNets as drawRouteNets,
@@ -19,7 +19,7 @@ import {
 } from "./route-visual-view"
 import type { CircuitJson } from "./schema"
 
-export { routeBounds } from "./plan-view"
+export { getPointBounds } from "./plan-view"
 export {
   routeCanvas,
   routeFailure,
@@ -146,7 +146,7 @@ export function routePane({
 }
 
 /** Reuse the plan bounds for the debugger's board overlay. */
-export function routeBoardBox(circuit: CircuitJson): Viewbox {
+export function getBoardBounds(circuit: CircuitJson): Viewbox {
   return planBoardBox(cju([...circuit]))
 }
 
