@@ -30,10 +30,8 @@ test("captures inputs once and replays them with an unused invalid IBIS asset", 
   const [experimentId, control] = Object.entries(original.controls)[0]
   const stimuli = [...control.stimuli]
   const bytes = new TextEncoder().encode(routedVisualIbis)
-  const ibisSources = {
-    [inverterModelPath]: bytes,
-    "unused.ibs": 42 as unknown as Uint8Array,
-  }
+  const ibisSources = { [inverterModelPath]: bytes }
+  Reflect.set(ibisSources, "unused.ibs", 42)
   const input = {
     ...original,
     circuitJson,

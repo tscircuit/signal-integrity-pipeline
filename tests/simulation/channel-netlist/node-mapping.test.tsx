@@ -1,6 +1,7 @@
 import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { cju } from "@tscircuit/circuit-json-util"
+import type { AssemblyEntry } from "../../../src/buffers"
 import { ChannelNetlistSolver } from "../../../src/simulation"
 import { fixturePortId } from "../../fixtures/channel-netlist"
 import { differentialIbis } from "../../fixtures/routed-visual-fixture"
@@ -46,21 +47,33 @@ test("allocates distinct SPICE nodes for each leg of a routed differential chann
       nodes.add(nodeMap[id])
     }
   }
-  assert.equal(nodes.size, 6)
+  for (const pin of [1, 2]) {
+    const node = nodeMap[fixturePortId({ db, component: "RTERM", pin })]
+    assert.ok(node)
+    nodes.add(node)
+  }
+  assert.equal(nodes.size, 8)
+  const [positiveLeg, negativeLeg] = [6, 7].map((pin) =>
+    components.map((component) => fixturePortId({ db, component, pin })),
+  )
+  const assembly = artifacts.find(({ path }) =>
+    path.endsWith("/native-ibis-assembly.json"),
+  )
+  assert.ok(assembly)
+  const [{ run }]: AssemblyEntry[] = JSON.parse(assembly.body)
+  assert.equal(run.stimuli[positiveLeg[0]].inverted, false)
+  assert.equal(run.stimuli[negativeLeg[0]].inverted, true)
   assert.deepEqual(
     receiverPaths.map(({ fromSourcePortId, toSourcePortId }) => [
       fromSourcePortId,
       toSourcePortId,
     ]),
-    [6, 7].map((pin) => [
-      fixturePortId({ db, component: "TX", pin }),
-      fixturePortId({ db, component: "RX", pin }),
-    ]),
+    [positiveLeg, negativeLeg],
   )
   assert.equal(nodeMap[groundSourcePortId], "0")
 
-  const signal = fixturePortId({ db, component: "RX", pin: 6 })
-  const reference = fixturePortId({ db, component: "RX", pin: 7 })
+  const signal = positiveLeg[1]
+  const reference = negativeLeg[1]
   assert.equal(plan.probes.length, 1)
   const [probe] = plan.probes
   assert.equal(probe.signalSourceId, signal)

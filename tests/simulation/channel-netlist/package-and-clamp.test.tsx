@@ -55,5 +55,22 @@ test("binds package parasitics and a separate power clamp bias", async () => {
     electricalLines.filter((line) => line.startsWith("R")),
     [`RPHYSICAL0 ${seriesInput} ${seriesOutput} 33`],
   )
-  assert.ok(models[0].source.split("\n").includes("RPKG0 PAD0 PKGR0 0.2"))
+  for (const { source, spicePinMapping } of models) {
+    const lines = source.split("\n")
+    assert.ok(lines.includes("RPKG0 PAD0 PKGR0 0.2"))
+    assert.ok(lines.includes("LPKG0 PKGR0 PKGL0 2e-9"))
+    assert.match(source, /^CPKG0a PAD0 /m)
+    assert.match(source, /^CPKG0b PKGL0 /m)
+    // The power-clamp argument follows the signal, pullup and pulldown.
+    const buffer = lines.find((line) => line.startsWith("XBUF0 "))
+    assert.ok(buffer)
+    const clampDie = buffer.split(" ")[4]
+    assert.ok(clampDie.startsWith("DIE"))
+    const branch = lines.find((line) =>
+      line.startsWith(`RPKG${clampDie.slice(3)} `),
+    )
+    assert.ok(branch)
+    const [, terminal] = branch.split(" ")
+    assert.equal(nodeMap[spicePinMapping[terminal]], clampNode)
+  }
 })

@@ -1,11 +1,17 @@
 import { spyOn, test } from "bun:test"
 import assert from "node:assert/strict"
 import * as buffers from "../../../src/buffers"
+import { sha256 } from "../../../src/kernel"
 import { ChannelNetlistSolver } from "../../../src/simulation"
 import { renderTwoTraceNetlistInput } from "../../fixtures/channel-netlist"
+import { routedVisualIbis } from "../../fixtures/routed-visual-fixture"
 
 test("uses the lowered timing while compiling one buffer per step", async () => {
   const input = await renderTwoTraceNetlistInput()
+  assert(!/copperScope|traceContacts/.test(Object.keys(input.modeling).join()))
+  const [experimentId, control] = Object.entries(input.controls)[0]
+  const [driver, ...otherStimuli] = control.stimuli
+  const driverOffsetMs = 5e-6
   const timing = {
     start_time_ms: 7e-6,
     end_time_ms: 53e-6,
@@ -13,6 +19,15 @@ test("uses the lowered timing while compiling one buffer per step", async () => 
   }
   const solver = new ChannelNetlistSolver({
     ...input,
+    controls: {
+      [experimentId]: {
+        ...control,
+        stimuli: [
+          { ...driver, start_time_ms: driverOffsetMs },
+          ...otherStimuli,
+        ],
+      },
+    },
     circuitJson: input.circuitJson.map((record) => {
       if (record.type !== "simulation_experiment") return record
       return { ...record, ...timing }
@@ -39,6 +54,22 @@ test("uses the lowered timing while compiling one buffer per step", async () => 
   assert.equal(solver.solved, true)
   assert.equal(solver.iterations, 4)
   const output = solver.getOutput()
+  assert.equal(output.value.models.length, 4)
+  const [model] = output.value.models
+  const [compiled] = assemble.mock.calls[0][0].models
+  assert.deepEqual(Object.keys(model).sort(), [
+    "metadata",
+    "name",
+    "source",
+    "sourceEvidence",
+    "spicePinMapping",
+    "warnings",
+  ])
+  assert.equal(model.name, "LVC1G04_DCK")
+  assert.equal(model.sourceEvidence.sourceSha256, sha256(routedVisualIbis))
+  assert.deepEqual(model.metadata, compiled.metadata)
+  assert.deepEqual(model.warnings, compiled.warnings)
+  assert.deepEqual(model.sourceEvidence, compiled.sourceEvidence)
   assert.equal(output.value.plan.startTimeSeconds, timing.start_time_ms / 1000)
   assert.equal(output.value.plan.durationSeconds, timing.end_time_ms / 1000)
   assert.equal(output.value.plan.maxStepSeconds, timing.time_per_step / 1000)
@@ -46,12 +77,12 @@ test("uses the lowered timing while compiling one buffer per step", async () => 
   const prefix = input.artifactPrefix
   const assemblyPath = `${prefix}/native-ibis-assembly.json`
   assert.deepEqual(
-    output.artifacts.map(({ path }) => path).toSorted(),
+    output.artifacts.map(({ owner, path }) => `${owner}:${path}`).toSorted(),
     [
-      ...modelIds.map((id) => `${prefix}/inputs/ibis/${id}.ibs`),
-      `${prefix}/vendor-sources.json`,
-      assemblyPath,
-      `${prefix}/electrical-node-map.json`,
+      ...modelIds.map((id) => `buffers:${prefix}/inputs/ibis/${id}.ibs`),
+      `buffers:${prefix}/vendor-sources.json`,
+      `buffers:${assemblyPath}`,
+      `simulation:${prefix}/electrical-node-map.json`,
     ].toSorted(),
   )
   const assembly = output.artifacts.find(({ path }) => path === assemblyPath)
@@ -67,6 +98,7 @@ test("uses the lowered timing while compiling one buffer per step", async () => 
   const [driverStimulus] = Object.values(entries[0].run.stimuli)
   assert.equal(driverStimulus.pattern.bits, "10")
   assert.equal(driverStimulus.inverted, false)
+  assert.equal(driverStimulus.startTime, driverOffsetMs)
   assert.equal(driverStimulus.initialState, 1)
   solver.step()
   assert.equal(compile.mock.calls.length, 4)
