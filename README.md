@@ -12,6 +12,7 @@ Each declared channel simulation becomes immutable inputs for copper geometry ex
 `TransmissionLineRlgcSolver` screens nearby wire pairs for coupling and calculates per-unit-length RLGC matrices for each coupled group.
 Planning validates selected IBIS package matrices. The internal `ChannelNetlistSolver` allocates SPICE nodes and compiles one IBIS model per step, including scalar or coupled package elements.
 `RouteNetworkSolver` uses the copper geometry, extracted RLGC matrices and channel netlist to assemble a coupled ladder with via and oblique corrections and emit a SPICE deck.
+`RouteTransientSolver` invokes ngspice through the injected solver port and publishes complete raw-vector captures.
 
 Aggressors are output-capable pins retained by the copper scope that do not
 drive a declared channel in the simulation. This includes bidirectional
@@ -41,6 +42,8 @@ flowchart LR
   transmissionLineRlgc --> network
   netlistOutput --> network
   network --> deck["SPICE deck"]
+  deck --> transient["RouteTransientSolver"]
+  transient --> capture["Raw-vector capture"]
   plan --> manifest["Transient channel simulation plan manifest"]
 ```
 
@@ -62,7 +65,9 @@ stateDiagram-v2
   NetlistReady --> NetworkReady: routed RLGC matrices and copper geometry available
   NetworkReady --> DeckReady: RouteNetworkSolver
   NetworkReady --> Failed: invalid network inputs
-  DeckReady --> [*]
+  DeckReady --> CaptureReady: RouteTransientSolver completes ngspice and reads the raw vectors
+  DeckReady --> Failed: ngspice or capture parsing failed
+  CaptureReady --> [*]
   Failed --> [*]
 ```
 

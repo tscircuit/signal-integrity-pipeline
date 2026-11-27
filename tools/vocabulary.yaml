@@ -203,6 +203,7 @@ domain:
   seal: sort and freeze a ledger's files into the published file map
   second: the SI time unit or the second member of an ordered pair
   self: a matrix term belonging to one conductor rather than a mutual pair
+  separator: a character that marks the boundary between raw fields or lines
   settle: stay within a stated tolerance for the entire remaining measured waveform
   shunt: an electrical branch across two conductor or reference nodes
   signal: a voltage that carries data along a lane
@@ -230,6 +231,7 @@ domain:
   tail: the settled suffix of a measured rising or falling waveform
   tangent: dielectric dissipation factor or direction along a boundary panel
   terminal: a connection end of a conductor or source
+  timestamp: the time at which a waveform sample was recorded
   top: the outer copper layer on the upper face of the board
   trace: routed PCB copper identified by a source trace, including its wire runs and layer transitions
   transient: a circuit simulation that follows voltage and current through time
@@ -241,6 +243,7 @@ domain:
   via: a plated hole that carries a signal between layers
   waveform: measured voltage over time at a fixture or probe
   wire: one straight planar conductor derived from a PCB trace
+  word: a contiguous non-whitespace field in an ASCII raw file or diagnostic
   # Transmission line is the electrical model of a coupled wire group over one section.
   # Cross-section is its two-dimensional copper and material geometry, and RLGC matrices are its electrical results.
 

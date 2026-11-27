@@ -18,6 +18,7 @@ Planning validates the package matrices for the mapped pins and records any capa
 The package uses one branch for each merged rail pin group. Multiple board pins in a group must already share a board node. Rail branches with zero DC resistance use the board bias. The die clamp biases a rail behind nonzero series resistance. Scalar shunt capacitance uses the buffer’s pulldown reference, and a coupled package with separate ground banks uses circuit ground for its shared matrix reference.
 The internal `ChannelNetlistSolver` uses the planner's lowered experiment for timing, allocates SPICE nodes and compiles one IBIS model per step through `@tscircuit/ibis-to-spice`. It publishes the node map, ideal electrical elements and compiled buffers with the IBIS assembly evidence.
 `RouteNetworkSolver` uses the copper geometry, extracted RLGC matrices and channel netlist to assemble a coupled ladder with via and oblique corrections and emit a SPICE deck.
+`RouteTransientSolver` invokes ngspice through the injected solver port and publishes complete raw-vector captures.
 
 ```mermaid
 flowchart LR
@@ -39,6 +40,8 @@ flowchart LR
   transmissionLineRlgc --> network
   netlistOutput --> network
   network --> deck["SPICE deck"]
+  deck --> transient["RouteTransientSolver"]
+  transient --> capture["Raw-vector capture"]
   planner --> manifest["Transient channel simulation plan manifest"]
 ```
 
@@ -60,7 +63,9 @@ stateDiagram-v2
   NetlistReady --> NetworkReady: routed RLGC matrices and copper geometry available
   NetworkReady --> DeckReady: RouteNetworkSolver
   NetworkReady --> Failed: invalid network inputs
-  DeckReady --> [*]
+  DeckReady --> CaptureReady: RouteTransientSolver completes ngspice and reads the raw vectors
+  DeckReady --> Failed: ngspice or capture parsing failed
+  CaptureReady --> [*]
   Failed --> [*]
 ```
 

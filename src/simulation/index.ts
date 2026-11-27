@@ -31,6 +31,7 @@ export {
 } from "./receiver-paths"
 export type {
   RouteCompileOptions,
+  RoutedCapture,
   RoutedDeck,
   RouteNetworkInput,
   TraceContacts,
@@ -38,6 +39,7 @@ export type {
 export { type RouteLadder, routeLadder } from "./route-ladder"
 export { RouteNetworkSolver } from "./route-network"
 export { routeOblique } from "./route-oblique"
+export { RouteTransientSolver } from "./route-transient"
 export {
   barrelCapacitance,
   barrelInductance,
