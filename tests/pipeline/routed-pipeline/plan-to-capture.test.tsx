@@ -22,11 +22,9 @@ test.skipIf(
   })
   await solver.solveAsync()
   assert.equal(solver.MAX_ITERATIONS, Infinity)
-  const [{ bindings }] = solver.stageOutput(
-    "TransientChannelSimulationPlanSolver",
-  ).value
+  const [netlist] = solver.stageOutput("ChannelNetlistSolver").value
   assert.deepEqual(
-    bindings.receiverPaths.map(({ channelName }) => channelName),
+    netlist.receiverPaths.map(({ channelName }) => channelName),
     ["DATA", "VICTIM"],
   )
   for (const { solverName } of solver.pipelineDef) {

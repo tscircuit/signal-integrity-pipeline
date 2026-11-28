@@ -107,7 +107,6 @@ export function generalDeclarations({
   circuit,
   receiverPaths,
   traceContacts,
-  additionalSourceTraceIds,
   modeling,
   controls,
 }: CircuitNodesInput & {
@@ -159,7 +158,6 @@ export function generalDeclarations({
     circuit,
     receiverPaths,
     traceContacts,
-    additionalSourceTraceIds,
     modeling,
   })
   const endpoints = collectRequiredContacts({

@@ -1,83 +1,31 @@
-import type {
-  CircuitJson,
-  CopperScope,
-  ExtractedCopper,
-  ReceiverTracePath,
-  SourcePortId,
-  SourceTraceId,
-} from "../board"
-import type { CompiledIbisComponent, IbisSources } from "../buffers"
+import type { CopperGeometry, SourcePortId, SourceTraceId } from "../board"
 import type { Snapshot } from "../kernel"
 import type { DielectricMaterials, TransmissionLineRlgc } from "../rlgc"
-import type {
-  CircuitNodes,
-  RunControls,
-  SimulationModeling,
-  SimulationPlan,
-  VoltageProbePlan,
-} from "./types"
+import type { ChannelNetlist } from "./channel-netlist"
+import type { VoltageProbePlan } from "./types"
 
-/** Timing and mesh settings shared by the routed simulation stages. */
+/** Settings for the route ladder mesh and convergence. */
 export interface RouteCompileOptions {
   readonly fastestEdgeSeconds: number
   readonly refinement: number
-  readonly durationSeconds: number
-  readonly stepSeconds: number
-  readonly materials?: DielectricMaterials
   panels?: number
   currentToleranceA?: number
   cellsPerRise?: number
 }
+
 /** One physical conductor removed from ideal connectivity for routed extraction. */
 export interface TraceContacts {
   readonly sourceTraceId: SourceTraceId
   readonly fromSourcePortId: SourcePortId
   readonly toSourcePortId: SourcePortId
 }
-
-/** Board, receiver paths and trace contacts for routed IBIS binding. */
-export interface RouteBindingsInput {
-  readonly circuitJson: Snapshot<CircuitJson>
-  readonly receiverPaths: readonly ReceiverTracePath[]
-  readonly traceContacts: readonly TraceContacts[]
-  readonly modeling: Snapshot<SimulationModeling>
-  readonly controls: Snapshot<Record<string, RunControls>>
-  readonly ibisSources: Readonly<IbisSources>
-  readonly options: RouteCompileOptions
-  readonly artifactPrefix: string
-}
-/** Planned binding inputs and the copper scope resolved by route sectioning. */
-export interface ScopedRouteBindingsInput extends RouteBindingsInput {
-  readonly copperScope: Snapshot<CopperScope>
-}
-
-/** Compiled IBIS buffer data needed to wire a routed deck. */
-export type RouteBuffer = Pick<
-  CompiledIbisComponent,
-  | "name"
-  | "source"
-  | "spicePinMapping"
-  | "metadata"
-  | "warnings"
-  | "sourceEvidence"
->
-/** Immutable circuit nodes, compiled buffers and inputs for the route network. */
-export type RoutedBindings = { readonly circuitJson: CircuitJson } & Snapshot<{
-  scope: CopperScope
-  receiverPaths: readonly ReceiverTracePath[]
-  plan: SimulationPlan
-  nodeMap: CircuitNodes["mapping"]
-  groundSourcePortId: SourcePortId
-  electricalLines: string[]
-  models: RouteBuffer[]
-}>
-/** Scoped geometry, field results and electrical bindings for a routed deck. */
+/** Scoped copper, extracted fields and channel netlist for a routed deck. */
 export interface RouteNetworkInput {
   simulationPcbTransientChannelSimulationId: string
   name: string
-  geometry: Snapshot<ExtractedCopper>
+  copperGeometry: CopperGeometry
   extracted: TransmissionLineRlgc
-  bindings: RoutedBindings
+  channelNetlist: ChannelNetlist
   materials: DielectricMaterials
   options: RouteCompileOptions
   warnings: readonly string[]

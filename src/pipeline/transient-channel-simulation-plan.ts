@@ -13,7 +13,8 @@ import {
   sha256,
   snapshot,
 } from "../kernel"
-import type { RouteBindingsInput } from "../simulation"
+import type { DielectricMaterials } from "../rlgc"
+import type { ChannelNetlistInput, RouteCompileOptions } from "../simulation"
 import {
   capturePlanInput,
   type TransientChannelSimulationPlanInput,
@@ -29,19 +30,21 @@ import { prepareChannelSimulation } from "./signals"
 /** Planning starts with the base route mesh resolution. */
 const BASE_REFINEMENT = 1
 
-/** Frozen section and binding inputs for one planned transient channel simulation. */
+/** Frozen stage inputs for one planned transient channel simulation. */
 export interface TransientChannelSimulationPlan {
   readonly simulationPcbTransientChannelSimulationId: SimulationPcbTransientChannelSimulationId
   readonly name: string
   readonly sections: CopperGeometryExtractionInput
-  readonly bindings: RouteBindingsInput
+  readonly materials?: DielectricMaterials
+  readonly bindings: ChannelNetlistInput
+  readonly networkOptions: RouteCompileOptions
   readonly warnings: readonly string[]
 }
 
 /** The completed channel plans and their plan manifest. */
 type PlanOutput = Produced<readonly TransientChannelSimulationPlan[]>
 
-/** Lower the validated declaration into sectioning and binding inputs. */
+/** Lower the validated declaration into sectioning, netlist and route mesh inputs. */
 function buildChannelPlan({
   input,
   nearbyGapMm,
@@ -63,8 +66,7 @@ function buildChannelPlan({
   })
   const artifactPrefix = `channelSimulations/${simulationPcbTransientChannelSimulationId}`
   const circuitJson = snapshot(prepared.circuit)
-  const modeling = snapshot(prepared.settings)
-  const { traceContacts } = modeling
+  const { copperScope, traceContacts, ...modeling } = prepared.settings
   const requiredSourcePortIds = Object.freeze([
     ...new Set(
       traceContacts.flatMap(({ fromSourcePortId, toSourcePortId }) => [
@@ -80,26 +82,24 @@ function buildChannelPlan({
     simulationPcbTransientChannelSimulationId,
     name: channelSimulation.name ?? simulationPcbTransientChannelSimulationId,
     warnings: snapshot(prepared.warnings || []),
+    materials: input.materials,
     sections: Object.freeze({
       circuitJson,
-      copperScope: modeling.copperScope,
+      copperScope: snapshot(copperScope),
       requiredSourcePortIds,
       artifactPrefix,
+    }),
+    networkOptions: Object.freeze({
+      fastestEdgeSeconds: prepared.fastestEdgeSeconds,
+      refinement: BASE_REFINEMENT,
     }),
     bindings: Object.freeze({
       circuitJson,
       receiverPaths,
-      traceContacts,
-      modeling,
+      traceContacts: snapshot(traceContacts),
+      modeling: snapshot(modeling),
       controls: snapshot(prepared.controls),
       ibisSources: input.ibisSources,
-      options: Object.freeze({
-        fastestEdgeSeconds: prepared.fastestEdgeSeconds,
-        refinement: BASE_REFINEMENT,
-        stepSeconds: prepared.stepSeconds,
-        durationSeconds: prepared.durationSeconds,
-        materials: input.materials,
-      }),
       artifactPrefix,
     }),
   })

@@ -27,8 +27,8 @@ import {
 } from "../kernel"
 import { type TransmissionLineRlgc, TransmissionLineRlgcSolver } from "../rlgc"
 import {
-  RouteBindingsSolver,
-  type RoutedBindings,
+  type ChannelNetlist,
+  ChannelNetlistStage,
   type RoutedCapture,
   type RoutedDeck,
   RouteNetworkSolver,
@@ -71,22 +71,25 @@ export const routedStages = [
         .value.map((copperGeometry, i) => ({
           copperGeometry,
           materials: p.stageOutput("TransientChannelSimulationPlanSolver")
-            .value[i].bindings.options.materials,
+            .value[i].materials,
           artifactPrefix: p.stageOutput("TransientChannelSimulationPlanSolver")
             .value[i].sections.artifactPrefix,
         })),
     ],
   ),
   definePipelineStep(
-    "RouteBindingsSolver",
-    routedStage(RouteBindingsSolver),
+    "ChannelNetlistSolver",
+    routedStage(ChannelNetlistStage),
     (p: RoutedPipelineSolver) => [
       p
         .stageOutput("TransientChannelSimulationPlanSolver")
         .value.map((plan, i) => ({
           ...plan.bindings,
-          copperScope: p.stageOutput("CopperGeometryExtractionSolver").value[i]
-            .copperScope,
+          board: {
+            copperScope: p.stageOutput("CopperGeometryExtractionSolver").value[
+              i
+            ].copperScope,
+          },
         })),
     ],
   ),
@@ -100,13 +103,14 @@ export const routedStages = [
           simulationPcbTransientChannelSimulationId:
             plan.simulationPcbTransientChannelSimulationId,
           name: plan.name,
-          geometry: p.stageOutput("CopperGeometryExtractionSolver").value[i]
-            .geometry,
+          copperGeometry: p.stageOutput("CopperGeometryExtractionSolver").value[
+            i
+          ],
           extracted: p.stageOutput("TransmissionLineRlgcSolver").value[i],
-          bindings: p.stageOutput("RouteBindingsSolver").value[i],
+          channelNetlist: p.stageOutput("ChannelNetlistSolver").value[i],
           materials: p.stageOutput("TransmissionLineRlgcSolver").value[i]
             .materials,
-          options: plan.bindings.options,
+          options: plan.networkOptions,
           warnings: plan.warnings,
           artifactPrefix: plan.sections.artifactPrefix,
         })),
@@ -124,10 +128,10 @@ export const routedStages = [
         context: p.context,
         threshold: receiverThreshold({
           ibisSources: p.inputProblem.ibisSources,
-          models: p.stageOutput("RouteBindingsSolver").value[i].models,
+          models: p.stageOutput("ChannelNetlistSolver").value[i].models,
           receivers: new Set(
             p
-              .stageOutput("RouteBindingsSolver")
+              .stageOutput("ChannelNetlistSolver")
               .value[i].receiverPaths.map(
                 ({ toSourcePortId }) => toSourcePortId,
               ),
@@ -145,7 +149,7 @@ interface RoutedStageOutputs {
   >
   CopperGeometryExtractionSolver: RoutedStageOutput<CopperGeometry>
   TransmissionLineRlgcSolver: RoutedStageOutput<TransmissionLineRlgc>
-  RouteBindingsSolver: RoutedStageOutput<RoutedBindings>
+  ChannelNetlistSolver: RoutedStageOutput<ChannelNetlist>
   RouteNetworkSolver: RoutedStageOutput<RoutedDeck>
   RouteTransientSolver: RoutedStageOutput<RoutedCapture>
 }

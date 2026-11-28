@@ -56,23 +56,16 @@ export interface ChannelSimulationControlOptions {
   captureDrivers?: boolean
 }
 
-/** Fastest edge and maximum transient step for the recording. */
-interface SignalTiming {
-  fastestEdgeSeconds: number
-  stepSeconds: number
-}
-
 /** Limit the step by the shortest bit, fastest edge and recording duration. */
-export function signalTiming({
+export function signalStepSeconds({
   patterns,
   durationSeconds,
-  edgeTimesSeconds,
+  fastestEdgeSeconds,
 }: {
   patterns: readonly DriverPattern[]
   durationSeconds: number
-  edgeTimesSeconds: number[]
-}): SignalTiming {
-  const fastestEdgeSeconds = Math.min(...edgeTimesSeconds)
+  fastestEdgeSeconds: number
+}): number {
   const rate = Math.max(...patterns.map((signal) => signal.bit_rate_bps))
   const stepSeconds = Math.min(
     1 / rate / STEPS_PER_BIT,
@@ -85,7 +78,7 @@ export function signalTiming({
       "simulation_timing",
       "Transient timestep must be finite and positive (time_per_step)",
     )
-  return { fastestEdgeSeconds, stepSeconds }
+  return stepSeconds
 }
 
 /** Choose the capture duration in seconds and check coverage of enabled stimuli. */

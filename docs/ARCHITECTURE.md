@@ -7,23 +7,23 @@ transient records are private and never appear in the input Circuit JSON.
 
 The stack retains Circuit JSON validation, physical stackup and stimulus helpers, IBIS asset loading and the ngspice adapter.
 Declare transient channels in Circuit JSON. Signal preparation validates endpoint topology, selected IBIS capabilities,
-timing and pseudo-random binary sequence (PRBS) patterns.
-TransientChannelSimulationPlanSolver lowers each declared channel simulation into immutable inputs for copper geometry extraction and buffer binding.
+timing, pseudo-random binary sequence (PRBS) patterns and declared aggressor states.
+TransientChannelSimulationPlanSolver lowers each declared channel simulation into immutable inputs for copper geometry extraction and channel netlist generation.
 Ideal wires, named nets and internal pin ties form the source groups used by SPICE.
 A named net can span the extracted traces connecting its own contacts, including multipoint ideal junctions.
-Channel planning and binding use the same receiver graph. Its paths traverse ideal junctions, extracted traces and series passives.
+Channel planning and netlist generation use the same receiver graph. Its paths traverse ideal junctions, extracted traces and series passives.
 Rail shunts and differential terminations stay outside those paths, including terminations attached by both copper and ideal wires.
-Each extracted trace keeps both physical contacts. Binding checks their selected models and detects signal contacts tied to ground.
+Each extracted trace keeps both physical contacts. The netlist stage checks their selected models and detects signal contacts tied to ground.
 Removing an extracted trace or series passive from the receiver graph must disconnect its two ends.
 An alternate path reports the physical contacts and distinguishes an entirely routed loop from a bypass through ideal wiring.
 `CopperGeometryExtractionSolver` models scoped traces, vias, reference pours, and pad contacts. It groups wires into sections with consistent nearby copper and reference surfaces.
 `TransmissionLineRlgcSolver` screens nearby wire pairs for coupling and calculates per-unit-length RLGC matrices for each coupled group.
-Planning validates the package matrices for the mapped pins and records any capacitance sign conversion and the source SHA-256. Binding calls `compileBuffers` to convert each validated model through `@tscircuit/ibis-to-spice` and retain its assembly evidence. The package converter accepts scalar `[Pin]` and `[Package]` values and local lumped `[Define Package Model]` matrices with pipe comments. External `.pkg` lookup and distributed package sections are unsupported.
+Planning validates the package matrices for the mapped pins and records any capacitance sign conversion and the source SHA-256. The package converter accepts scalar `[Pin]` and `[Package]` values and local lumped `[Define Package Model]` matrices with pipe comments. External `.pkg` lookup and distributed package sections are unsupported.
 
 The package uses one branch for each merged rail pin group. Multiple board pins in a group must already share a board node. Rail branches with zero DC resistance use the board bias. The die clamp biases a rail behind nonzero series resistance. Scalar shunt capacitance uses the buffer’s pulldown reference, and a coupled package with separate ground banks uses circuit ground for its shared matrix reference.
-RouteBindingsSolver associates compiled buffers, sources and probes with the allocated circuit node map.
-RouteNetworkSolver integrates route energies into a coupled ladder with via and oblique corrections and emits a deck.
-RouteTransientSolver invokes ngspice through the injected solver port and publishes complete raw-vector captures.
+The internal `ChannelNetlistSolver` uses the planner's lowered experiment for timing, allocates SPICE nodes and compiles one IBIS model per step through `@tscircuit/ibis-to-spice`. It publishes the node map, ideal electrical elements and compiled buffers with the IBIS assembly evidence.
+`RouteNetworkSolver` uses the copper geometry, extracted RLGC matrices and channel netlist to assemble a coupled ladder with via and oblique corrections and emit a SPICE deck.
+`RouteTransientSolver` invokes ngspice through the injected solver port and publishes complete raw-vector captures.
 
 ```mermaid
 flowchart LR
@@ -34,13 +34,15 @@ flowchart LR
   traceContacts --> sections["board: copper scope, straight sections and reference planes"]
   traceContacts --> groups["simulation: ideal source groups"]
   groups --> receiverPaths["pipeline: routed receiver paths"]
-  sections --> fields["extraction: quasi-TEM cross-sections, pair screen and causal loss"]
-  receiverPaths --> bindings["buffers + simulation: contact checks, vendor models, pin packages, ideal die rails, probes and sources"]
-  fields --> network["simulation: coupled ladders, via and oblique corrections, one deck"]
-  bindings --> network
+  sections --> fields["rlgc: quasi-TEM cross-sections and pair screening"]
+  receiverPaths --> netlist["buffers + simulation: channel netlist, including IBIS models, pin packages, ideal die rails, probes and sources"]
+  modelSources --> netlist
+  sections --> network["simulation: coupled ladders, via and oblique corrections, one deck"]
+  fields --> network
+  netlist --> network
   network --> transient["simulation: one native ngspice transient per channel simulation"]
   transient --> output["pipeline: captures and the sealed artifact ledger"]
-  admit -->|"no channel simulations"| output
+  plan -->|"no channel simulations"| output
 ```
 
 Module boundaries remain enforced by `check:modules`: modules import one another
@@ -113,7 +115,7 @@ Regenerate with `bun scripts/document-routed-stages.ts`.
 | 1 | TransientChannelSimulationPlanSolver |
 | 2 | CopperGeometryExtractionSolver |
 | 3 | TransmissionLineRlgcSolver |
-| 4 | RouteBindingsSolver |
+| 4 | ChannelNetlistSolver |
 | 5 | RouteNetworkSolver |
 | 6 | RouteTransientSolver |
 
@@ -122,7 +124,7 @@ flowchart LR
   s0["TransientChannelSimulationPlanSolver<br/>Plan one transient channel simulation per step"]
   s1["CopperGeometryExtractionSolver<br/>All planned channel simulations, one item per step"]
   s2["TransmissionLineRlgcSolver<br/>All planned channel simulations, one item per step"]
-  s3["RouteBindingsSolver<br/>All planned channel simulations, one item per step"]
+  s3["ChannelNetlistSolver<br/>Compile one IBIS model per step"]
   s4["RouteNetworkSolver<br/>All planned channel simulations, one item per step"]
   s5["RouteTransientSolver<br/>All planned channel simulations, one item per step"]
   s0 --> s1
@@ -138,14 +140,14 @@ stateDiagram-v2
   [*] --> TransientChannelSimulationPlanSolver
   TransientChannelSimulationPlanSolver --> CopperGeometryExtractionSolver: all channel simulations completed
   CopperGeometryExtractionSolver --> TransmissionLineRlgcSolver: all channel simulations completed
-  TransmissionLineRlgcSolver --> RouteBindingsSolver: all channel simulations completed
-  RouteBindingsSolver --> RouteNetworkSolver: all channel simulations completed
+  TransmissionLineRlgcSolver --> ChannelNetlistSolver: all channel simulations completed
+  ChannelNetlistSolver --> RouteNetworkSolver: all channel simulations completed
   RouteNetworkSolver --> RouteTransientSolver: all channel simulations completed
   RouteTransientSolver --> [*]
   TransientChannelSimulationPlanSolver --> failed: invalid channel simulation input, including undeclared aggressors
   CopperGeometryExtractionSolver --> failed
   TransmissionLineRlgcSolver --> failed
-  RouteBindingsSolver --> failed
+  ChannelNetlistSolver --> failed
   RouteNetworkSolver --> failed
   RouteTransientSolver --> failed
   failed --> [*]
@@ -218,7 +220,7 @@ layers hollow, bottom dimmed. Each stage draws what it produced:
 | Transient channel simulation plan | selected nets, drivers as dots, receivers as rings | each net's routed length, to scale |
 | Sections | sections in two tones of the net's hue, the route cut this step cased white, uncut copper grey | the same partition unrolled per net |
 | Fields | solved copper coloured by Z0, an amber cut at the slice on screen | that slice's stack at one mm scale, Z0 of selected conductors, coupling bands sized by k, the Z0 scale |
-| Bindings | bound parts outlined, ▶ at drivers and ◁ at receivers along the trace | each bound net with its buffer glyphs |
+| Channel netlist | compiled parts outlined, ▶ at drivers and ◁ at receivers along the trace | each net with its buffer glyphs |
 | Network | coupling bands between parallel sections (width grows with k), cell ticks, modelled vias | cells and coupling unrolled per net |
 | Transient | probe marks | an eye folded every two bit periods when the capture is long, else the window from the first activity; IBIS Vinl–Vinh of single-ended receivers as a band; above six far-end probes an envelope plus the worst curve; amber hatching while ngspice runs |
 
@@ -252,18 +254,27 @@ through an integrity-locked pkg.pr.new URL. Switch to a release after #62 ships.
 
 ```mermaid
 flowchart LR
-  board["Circuit JSON and channel declarations"] --> prepare["Prepare channel and aggressor states"]
-  ibis["IBIS sources"] --> packages["Validate IBIS package matrices"]
-  packages --> prepare
-  prepare --> traces["Identify extracted trace contacts"]
-  traces --> groups["Group ideal source contacts"]
-  groups --> paths["Map ordered driver-to-receiver paths"]
-  traces --> geometry["CopperGeometryExtractionSolver"]
+  subgraph planner["TransientChannelSimulationPlanSolver"]
+    packages["Validate IBIS package matrices"] --> prepare["Prepare channel and aggressor states"]
+    prepare --> traces["Identify extracted trace contacts"]
+    traces --> groups["Group ideal source contacts"]
+    groups --> paths["Map ordered driver-to-receiver paths"]
+  end
+  board["Circuit JSON and channel declarations"] --> planner
+  ibis["IBIS sources"] --> planner
+  planner --> geometry["CopperGeometryExtractionSolver"]
   geometry --> transmissionLineRlgc["TransmissionLineRlgcSolver"]
-  paths --> bindings["Binding inputs"]
-  bindings --> spice["Convert packages and switching coefficients to SPICE"]
-  bindings --> checks["Check contacts and alternate paths around each segment"]
-  paths --> manifest["Transient channel simulation plan manifest"]
+  planner -->|Scoped board, trace contacts, receiver paths, supplies, passives, reference, run controls and IBIS sources| netlist["ChannelNetlistSolver (internal)"]
+  netlist --> checks["Allocate nodes and check channel contacts and paths"]
+  checks --> spice["Compile one IBIS model per step"]
+  spice --> netlistOutput["Channel netlist and IBIS assembly"]
+  geometry --> network["RouteNetworkSolver"]
+  transmissionLineRlgc --> network
+  netlistOutput --> network
+  network --> deck["SPICE deck"]
+  deck --> transient["RouteTransientSolver"]
+  transient --> capture["Raw-vector capture"]
+  planner --> manifest["Transient channel simulation plan manifest"]
 ```
 
 ```mermaid
@@ -271,11 +282,22 @@ stateDiagram-v2
   [*] --> Ready
   Ready --> Planned: TransientChannelSimulationPlanSolver
   Planned --> GeometryReady: CopperGeometryExtractionSolver
-  GeometryReady --> Complete: TransmissionLineRlgcSolver
+  GeometryReady --> FieldsReady: TransmissionLineRlgcSolver
+  Planned --> NetlistReady: compile the only model and publish in one step
+  Planned --> CompilingModels: initialize a multi-model netlist and compile its first model
+  CompilingModels --> CompilingModels: compile the next IBIS model
+  CompilingModels --> NetlistReady: compile the final model and publish the netlist and IBIS assembly
+  Planned --> Failed: invalid experiment or IBIS sources, missing contacts or reference, unsupported route or soldermask, or model 0 conversion failed
+  CompilingModels --> Failed: IBIS conversion failed
   GeometryReady --> Failed: invalid cross-section geometry or material options
-  Planned --> Failed: missing required contact or reference, unsupported route or soldermask
   Ready --> Failed: invalid input, conflicting IBIS model selections, invalid package matrices or undeclared aggressors
-  Complete --> [*]
+  FieldsReady --> NetworkReady: channel netlist and copper geometry available
+  NetlistReady --> NetworkReady: routed RLGC matrices and copper geometry available
+  NetworkReady --> DeckReady: RouteNetworkSolver
+  NetworkReady --> Failed: invalid network inputs
+  DeckReady --> CaptureReady: RouteTransientSolver completes ngspice and reads the raw vectors
+  DeckReady --> Failed: ngspice or capture parsing failed
+  CaptureReady --> [*]
   Failed --> [*]
 ```
 

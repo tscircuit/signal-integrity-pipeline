@@ -10,7 +10,6 @@ import { Diagnostic } from "../../kernel"
 import {
   buildReceiverGraphs,
   type CircuitNodes,
-  extractedNonrailSourceTraceIds,
   findReceiverPath,
   numberCircuitNodes,
   type ReceiverGraphs,
@@ -174,10 +173,6 @@ export function resolvePlanTopology({
     db,
     circuit: circuitJson,
     traceContacts,
-    additionalSourceTraceIds: extractedNonrailSourceTraceIds({
-      db,
-      copperScope: plan.sections.copperScope,
-    }),
     channels,
     groundSourcePortId,
     modeling,

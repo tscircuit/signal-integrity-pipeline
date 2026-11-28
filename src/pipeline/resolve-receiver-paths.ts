@@ -2,7 +2,6 @@ import { cju } from "@tscircuit/circuit-json-util"
 import { endpointPorts, type ReceiverTracePath } from "../board"
 import {
   buildReceiverGraphs,
-  extractedNonrailSourceTraceIds,
   findReceiverPath,
   type TraceContacts,
 } from "../simulation"
@@ -18,17 +17,12 @@ export function resolveReceiverTracePaths({
   traceContacts: readonly TraceContacts[]
 }): ReceiverTracePath[] {
   const { circuit, settings, driverReceiverChannels } = prepared
-  const db = cju([...circuit])
   const graphs = buildReceiverGraphs({
-    db,
+    db: cju([...circuit]),
     circuit,
     groundSourcePortId: settings.channelReference.sourcePortId,
     modeling: settings,
     traceContacts,
-    additionalSourceTraceIds: extractedNonrailSourceTraceIds({
-      db,
-      copperScope: settings.copperScope,
-    }),
     channels: driverReceiverChannels,
   })
   const receiverPaths: ReceiverTracePath[] = []

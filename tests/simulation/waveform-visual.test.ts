@@ -120,7 +120,7 @@ test("long captures fold into a two-unit-interval eye and crowded plots draw an 
   const { root } = await routedVisualFixture()
   const board = root.stageOutput("CopperGeometryExtractionSolver").value[0]
   const ports = root
-    .stageOutput("RouteBindingsSolver")
+    .stageOutput("ChannelNetlistSolver")
     .value[0].receiverPaths.map(({ toSourcePortId }) => toSourcePortId)
   const times = Array.from({ length: 4001 }, (_, i) => i * 25e-12)
   const square = times.map((time) => (Math.floor(time / 2.5e-9) % 2) * 3.3)

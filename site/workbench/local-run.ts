@@ -307,7 +307,7 @@ export async function runLocalSimulation({
     ).value)
       for (const warning of plan.warnings)
         log({ stage: "Channel plan", level: "Warning", message: warning })
-    const { models, receiverPaths } = solver.stageOutput("RouteBindingsSolver")
+    const { models, receiverPaths } = solver.stageOutput("ChannelNetlistSolver")
       .value[0]
     log({
       stage: "Capture",

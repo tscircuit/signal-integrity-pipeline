@@ -72,7 +72,7 @@ export class RouteNetworkSolver extends BaseSolver {
   private output?: Produced<RoutedDeck>
   private ladder?: RouteLadder
   private obliqueRecords: ReturnType<typeof routeOblique>["records"] = []
-  /** Completed geometry, fields and bindings are immutable input snapshots. */
+  /** Completed geometry, fields and the channel netlist are immutable input snapshots. */
   constructor(private readonly input: RouteNetworkInput) {
     super()
   }
@@ -91,10 +91,14 @@ export class RouteNetworkSolver extends BaseSolver {
   }
   /** Preserve the original compiler's exact node and SPICE ordering. */
   private *build(): Generator<void, Produced<RoutedDeck>> {
-    const { geometry, extracted, bindings, options, materials } = this.input
-    const { scope, models, receiverPaths } = bindings
-    const probes = [...bindings.plan.probes]
-    const db = cju(cloneCircuitJson(bindings.circuitJson))
+    const { copperGeometry, extracted, channelNetlist, options, materials } =
+      this.input
+    const { geometry, copperScope: scope } = copperGeometry
+    const { models, receiverPaths, plan } = channelNetlist
+    const { durationSeconds, maxStepSeconds: stepSeconds } = plan
+    const probes = [...plan.probes]
+    const circuit = cloneCircuitJson(channelNetlist.circuitJson)
+    const db = cju(circuit)
     const ports = db.pcb_port.list()
     const aliases: string[] = []
     const known = new Map<RouteContactKey, string>()
@@ -112,7 +116,7 @@ export class RouteNetworkSolver extends BaseSolver {
           continue
         const id = routeContactKey({ layer, point })
         const portNode = routedNode({
-          nodeMap: bindings.nodeMap,
+          nodeMap: channelNetlist.nodeMap,
           id: port.source_port_id,
         })
         const previous = known.get(id)
@@ -160,11 +164,11 @@ export class RouteNetworkSolver extends BaseSolver {
       panels: options.panels,
     })
     const transitions = routeTransitions({
-      circuit: bindings.circuitJson,
+      circuit,
       scope,
       geometry,
       endpoint,
-      groundPort: bindings.groundSourcePortId,
+      groundPort: channelNetlist.groundSourcePortId,
     })
     const currentTolerance =
       options.currentToleranceA ?? DEFAULT_CURRENT_TOLERANCE
@@ -173,7 +177,7 @@ export class RouteNetworkSolver extends BaseSolver {
     const lines = [
       "Routed quasi-TEM coupled 2D extraction; JLC standard stackup (assumed)",
       `.options ${convergence} ${integration}`,
-      ...bindings.electricalLines,
+      ...channelNetlist.electricalLines,
     ]
     const saved: string[] = []
     for (const [i, model] of models.entries()) {
@@ -184,7 +188,7 @@ export class RouteNetworkSolver extends BaseSolver {
       const header = spiceSubcircuitHeader(model.source)!
       const nodes = spiceWords(header[1]).map((terminal) => {
         return routedNode({
-          nodeMap: bindings.nodeMap,
+          nodeMap: channelNetlist.nodeMap,
           id: model.spicePinMapping[terminal],
         })
       })
@@ -213,7 +217,7 @@ export class RouteNetworkSolver extends BaseSolver {
     )
     const modelNodes = models.flatMap((model) => {
       return Object.values(model.spicePinMapping).map((port) =>
-        routedNode({ nodeMap: bindings.nodeMap, id: port }),
+        routedNode({ nodeMap: channelNetlist.nodeMap, id: port }),
       )
     })
     const biasNodes = [...new Set([...routeNodes, ...modelNodes])].filter(
@@ -235,7 +239,7 @@ export class RouteNetworkSolver extends BaseSolver {
           signalNode,
           signalSourceId: signalSourceId!,
           referenceNode: "0",
-          referenceSourceId: bindings.groundSourcePortId,
+          referenceSourceId: channelNetlist.groundSourcePortId,
         })
       }
     }
@@ -250,8 +254,8 @@ export class RouteNetworkSolver extends BaseSolver {
     lines.push(
       ...routedControl({
         saved: save,
-        stepSeconds: options.stepSeconds,
-        durationSeconds: options.durationSeconds,
+        stepSeconds,
+        durationSeconds,
       }),
     )
     const connectivity = getSourcePortConnectivityMapFromCircuitJson(
@@ -259,7 +263,7 @@ export class RouteNetworkSolver extends BaseSolver {
     )
     const ground = sourceNetMembers({
       connectivity,
-      memberId: bindings.groundSourcePortId,
+      memberId: channelNetlist.groundSourcePortId,
     })
     const powerReferences = geometry.sections.flatMap((slice) => {
       return slice.references
@@ -337,11 +341,11 @@ export class RouteNetworkSolver extends BaseSolver {
       receiverPaths.flatMap(({ fromSourcePortId, toSourcePortId }) => [
         [
           fromSourcePortId,
-          routedNode({ nodeMap: bindings.nodeMap, id: fromSourcePortId }),
+          routedNode({ nodeMap: channelNetlist.nodeMap, id: fromSourcePortId }),
         ],
         [
           toSourcePortId,
-          routedNode({ nodeMap: bindings.nodeMap, id: toSourcePortId }),
+          routedNode({ nodeMap: channelNetlist.nodeMap, id: toSourcePortId }),
         ],
       ]),
     )
@@ -352,7 +356,12 @@ export class RouteNetworkSolver extends BaseSolver {
       label: "JLC standard stackup (assumed)",
       materials,
       mask_thickness_source: maskThicknessSource,
-      options: { riseSeconds: fastestEdgeSeconds, ...networkOptions },
+      options: {
+        riseSeconds: fastestEdgeSeconds,
+        ...networkOptions,
+        stepSeconds,
+        durationSeconds,
+      },
       scope,
       warnings,
       cells: ladder.cells,
@@ -440,8 +449,8 @@ export class RouteNetworkSolver extends BaseSolver {
       deck,
       requestSha256: sha256(JSON.stringify(request)),
       probes,
-      durationSeconds: options.durationSeconds,
-      stepSeconds: options.stepSeconds,
+      durationSeconds,
+      stepSeconds,
       evidence,
     })
     const artifactScope = rootScope("simulation").child(
@@ -470,10 +479,11 @@ export class RouteNetworkSolver extends BaseSolver {
    * copper, and every modelled via with the shared glyph.
    */
   override visualize(): GraphicsObject {
-    const { geometry, bindings, extracted } = this.input
-    const circuit = bindings.circuitJson
-    const view = routeView({ circuit, scope: bindings.scope })
-    let drawing = routeBoardDrawing({ circuit, scope: bindings.scope })
+    const { copperGeometry, extracted } = this.input
+    const { copperScope: scope, geometry } = copperGeometry
+    const circuit = cloneCircuitJson(copperGeometry.circuitJson)
+    const view = routeView({ circuit, scope })
+    let drawing = routeBoardDrawing({ circuit, scope })
     let built: Set<number> | undefined
     if (!this.output) built = new Set(this.ladder?.wireNodes.keys() ?? [])
     const bands = extracted.solvedWireSections
@@ -671,12 +681,12 @@ export class RouteNetworkSolver extends BaseSolver {
   }
 }
 
-/** Every physical port was allocated by declarations before binding completed. */
+/** Every physical port was allocated by the channel netlist. */
 function routedNode({
   nodeMap,
   id,
 }: {
-  nodeMap: RouteNetworkInput["bindings"]["nodeMap"]
+  nodeMap: RouteNetworkInput["channelNetlist"]["nodeMap"]
   id: SourcePortId
 }): string {
   const node = nodeMap[id]
@@ -696,7 +706,7 @@ function createRouteEndpoint({
   scope,
   known,
 }: {
-  scope: RouteNetworkInput["bindings"]["scope"]
+  scope: RouteNetworkInput["copperGeometry"]["copperScope"]
   known: ReadonlyMap<RouteContactKey, string>
 }): RouteEndpoint {
   const nodes = new Map(known)

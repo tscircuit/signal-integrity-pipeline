@@ -75,8 +75,8 @@ API use port 5050. Both bind only to `127.0.0.1`.
 
 The sidebar lists the two-trace TSX board, every signal level, the DDR3 addr/cmd
 scope, and a paste/upload Circuit JSON page. Each mounts `GenericSolverDebugger`
-with `RoutedPipelineSolver`. Step through channel simulation planning, geometry, fields, buffers,
-network assembly, then the live local ngspice transient. Captures remain candidate
+with `RoutedPipelineSolver`. Step through channel simulation planning, copper geometry, RLGC fields, the
+channel netlist, network assembly and the local ngspice transient. Captures remain candidate
 results without independent convergence qualification. The DDR addr/cmd page
 runs the full 8 ns transient in about 25 minutes of local ngspice (1,503 s measured),
 after about 4 minutes of extraction. Times grow on a busy machine.
@@ -148,8 +148,10 @@ flowchart TD
   s1 --> s2["2. Cut the scoped copper into straight sections over their reference planes<br/><small>board</small>"]
   s2 --> s3["3. Calculate each unique cross-section's coupled RLGC matrices<br/><small>rlgc</small>"]
   chips --> s4
-  s3 --> s4["4. Bind IBIS buffers, probes, sources and passives to physical ports<br/><small>buffers, simulation</small>"]
-  s4 --> s5["5. Assemble delay-bounded coupled ladders with via and oblique corrections into one deck<br/><small>simulation</small>"]
+  s1 --> s4["4. Allocate SPICE nodes and compile one IBIS model per step into the channel netlist<br/><small>buffers, simulation</small>"]
+  s2 --> s5["5. Assemble delay-bounded coupled ladders with via and oblique corrections into one deck<br/><small>simulation</small>"]
+  s3 --> s5
+  s4 --> s5
   s5 --> s6["6. Run one transient per channel simulation and admit only complete probe vectors<br/><small>simulation</small>"]
   s6 <-->|"RunSolver"| ng{{"ngspice"}}
   s6 --> out[/"Captures + deck and evidence artifacts"/]
@@ -157,10 +159,12 @@ flowchart TD
 ```
 
 The pipeline is inspectable with solver-utils. All six stage rows exist before the
-first step. Each stage processes the planned channel simulations in order. The site's `Step` input starts at 0 for the initial view. Enter 1–6 to
-inspect a retained stage by table row number; the next pipeline advance updates the
-input to the active stage. Unrun stages show a not-run note. Synchronous stages can
-be stepped up to stage 6; `RouteTransientSolver` awaits one live ngspice run.
+first step. Each stage processes the planned channel simulations in order.
+
+The site's `Step` input starts at 0 for the initial view. Enter 1–6 to inspect a
+retained stage. The next pipeline advance selects the active stage. Stages that
+have yet to run show a status note. You can step synchronously up to stage 6,
+where `RouteTransientSolver` awaits one live ngspice run.
 
 <!-- routed-stages:start -->
 | # | Stage solver |
@@ -168,7 +172,7 @@ be stepped up to stage 6; `RouteTransientSolver` awaits one live ngspice run.
 | 1 | TransientChannelSimulationPlanSolver |
 | 2 | CopperGeometryExtractionSolver |
 | 3 | TransmissionLineRlgcSolver |
-| 4 | RouteBindingsSolver |
+| 4 | ChannelNetlistSolver |
 | 5 | RouteNetworkSolver |
 | 6 | RouteTransientSolver |
 
@@ -177,7 +181,7 @@ flowchart LR
   s0["TransientChannelSimulationPlanSolver<br/>Plan one transient channel simulation per step"]
   s1["CopperGeometryExtractionSolver<br/>All planned channel simulations, one item per step"]
   s2["TransmissionLineRlgcSolver<br/>All planned channel simulations, one item per step"]
-  s3["RouteBindingsSolver<br/>All planned channel simulations, one item per step"]
+  s3["ChannelNetlistSolver<br/>Compile one IBIS model per step"]
   s4["RouteNetworkSolver<br/>All planned channel simulations, one item per step"]
   s5["RouteTransientSolver<br/>All planned channel simulations, one item per step"]
   s0 --> s1
@@ -193,14 +197,14 @@ stateDiagram-v2
   [*] --> TransientChannelSimulationPlanSolver
   TransientChannelSimulationPlanSolver --> CopperGeometryExtractionSolver: all channel simulations completed
   CopperGeometryExtractionSolver --> TransmissionLineRlgcSolver: all channel simulations completed
-  TransmissionLineRlgcSolver --> RouteBindingsSolver: all channel simulations completed
-  RouteBindingsSolver --> RouteNetworkSolver: all channel simulations completed
+  TransmissionLineRlgcSolver --> ChannelNetlistSolver: all channel simulations completed
+  ChannelNetlistSolver --> RouteNetworkSolver: all channel simulations completed
   RouteNetworkSolver --> RouteTransientSolver: all channel simulations completed
   RouteTransientSolver --> [*]
   TransientChannelSimulationPlanSolver --> failed: invalid channel simulation input, including undeclared aggressors
   CopperGeometryExtractionSolver --> failed
   TransmissionLineRlgcSolver --> failed
-  RouteBindingsSolver --> failed
+  ChannelNetlistSolver --> failed
   RouteNetworkSolver --> failed
   RouteTransientSolver --> failed
   failed --> [*]

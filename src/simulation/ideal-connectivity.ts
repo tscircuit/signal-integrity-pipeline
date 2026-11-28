@@ -1,14 +1,7 @@
 import type { CircuitJsonUtilObjects } from "@tscircuit/circuit-json-util"
 import type { SourceTrace } from "circuit-json"
 import { findConnectedNetworks } from "circuit-json-to-connectivity-map"
-import {
-  type CopperScope,
-  type SourceNetId,
-  type SourcePortId,
-  type SourceTraceId,
-  sourcePinTies,
-} from "../board"
-import type { Snapshot } from "../kernel"
+import { type SourceNetId, type SourcePortId, sourcePinTies } from "../board"
 import {
   buildConnectionGraph,
   type ConnectionGraph,
@@ -252,46 +245,17 @@ export interface IdealConnectivity {
   wireConnections: SourceContactId[][]
 }
 
-/** Find all extracted nonrail traces using the same copper scope in channel planning and binding. */
-export function extractedNonrailSourceTraceIds({
-  db,
-  copperScope,
-}: {
-  db: CircuitJsonUtilObjects
-  copperScope: Pick<
-    Snapshot<CopperScope>,
-    "extractedPcbTraceIds" | "nearbyRailPcbTraceIds"
-  >
-}): SourceTraceId[] {
-  const extractedPcbTraceIds = new Set(copperScope.extractedPcbTraceIds)
-  const nearbyRailPcbTraceIds = new Set(copperScope.nearbyRailPcbTraceIds)
-  return db.pcb_trace
-    .list()
-    .flatMap(({ pcb_trace_id: pcbTraceId, source_trace_id: sourceTraceId }) => {
-      if (
-        sourceTraceId === undefined ||
-        !extractedPcbTraceIds.has(pcbTraceId) ||
-        nearbyRailPcbTraceIds.has(pcbTraceId)
-      )
-        return []
-      return [sourceTraceId]
-    })
-}
-
 /** Join source traces and internal pin ties, with routed copper removed. */
 export function resolveIdealConnectivity({
   db,
   traceContacts,
-  additionalSourceTraceIds = [],
 }: {
   db: CircuitJsonUtilObjects
   traceContacts: readonly TraceContacts[]
-  additionalSourceTraceIds?: readonly SourceTraceId[]
 }): IdealConnectivity {
-  const extracted = new Set([
-    ...traceContacts.map(({ sourceTraceId }) => sourceTraceId),
-    ...additionalSourceTraceIds,
-  ])
+  const extracted = new Set(
+    traceContacts.map((contacts) => contacts.sourceTraceId),
+  )
   const ideal = db.source_trace
     .list()
     .filter((trace) => !extracted.has(trace.source_trace_id))

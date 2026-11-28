@@ -22,9 +22,9 @@ test("carries explicit dielectric materials from planning to the RLGC artifact",
     },
   })
   materials.maskThicknessMm = 0.03
-  root.solveUntilStage("RouteBindingsSolver")
+  root.solveUntilStage("ChannelNetlistSolver")
   const [plan] = root.stageOutput("TransientChannelSimulationPlanSolver").value
-  assert.deepEqual(plan.bindings.options.materials, expected)
+  assert.deepEqual(plan.materials, expected)
   const {
     value: [result],
     artifacts: [artifact],

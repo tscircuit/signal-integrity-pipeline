@@ -34,7 +34,6 @@ export interface CircuitNodesInput {
   circuit: CircuitJson
   receiverPaths: readonly ReceiverTracePath[]
   traceContacts?: readonly TraceContacts[]
-  additionalSourceTraceIds?: readonly SourceTraceId[]
   modeling: Snapshot<SimulationModeling>
 }
 
@@ -362,7 +361,6 @@ export function resolveRoutedNodes({
   circuit,
   receiverPaths,
   traceContacts: explicitTraceContacts,
-  additionalSourceTraceIds,
   modeling,
 }: CircuitNodesInput): ResolvedRoutedNodes {
   const db = cju([...circuit])
@@ -379,7 +377,6 @@ export function resolveRoutedNodes({
     traceContacts,
     channels,
     groundSourcePortId,
-    additionalSourceTraceIds,
     modeling,
   })
   const nodes = numberCircuitNodes({ db, graphs, groundSourcePortId })

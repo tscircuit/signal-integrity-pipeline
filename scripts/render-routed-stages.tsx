@@ -168,7 +168,7 @@ async function stages({
       seen.add(stage.solverName)
       if (
         stage.solverName === "TransmissionLineRlgcSolver" ||
-        stage.solverName === "RouteBindingsSolver"
+        stage.solverName === "ChannelNetlistSolver"
       )
         await writeFile(
           join(output, `${name}-${stage.solverName}.state.json`),
