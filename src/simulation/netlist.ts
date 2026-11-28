@@ -77,7 +77,7 @@ export function namespaceSpice({
     offset !== -1;
     offset = source.indexOf(".", offset + 1)
   ) {
-    if (offset > 0 && !isSpiceLineBreak(source[offset - 1])) continue
+    if (!isSpiceStatementStart({ source, start: offset })) continue
     const keywordEnd = offset + ".subckt".length
     if (source.slice(offset, keywordEnd).toLowerCase() !== ".subckt") continue
     const start = skipSpiceWhitespace({ source, start: keywordEnd })
@@ -128,6 +128,24 @@ function spiceTokenEnd({
   return start
 }
 
+/**
+ * Whether a dot starts a statement after leading whitespace.
+ */
+function isSpiceStatementStart({
+  source,
+  start,
+}: {
+  source: string
+  start: number
+}): boolean {
+  for (let offset = start; offset > 0; offset--) {
+    const char = source[offset - 1]
+    if (isSpiceLineBreak(char)) return true
+    if (char.trim() !== "") return false
+  }
+  return true
+}
+
 /** SPICE terminal lists end at a carriage return or line feed. */
 const SPICE_TERMINAL_LINE_ENDINGS = "\r\n"
 /** SPICE statement scanning also recognizes the Unicode line and paragraph separators. */
@@ -157,7 +175,7 @@ export function placedSubcircuitPins(source: string): string[] | undefined {
     start !== -1;
     start = source.indexOf(".", start + 1)
   ) {
-    if (start > 0 && !isSpiceLineBreak(source[start - 1])) continue
+    if (!isSpiceStatementStart({ source, start })) continue
     let keywordEnd = start + 1
     while (isSpiceWordCharacter(source[keywordEnd])) keywordEnd++
     if (source.slice(start + 1, keywordEnd).toLowerCase() !== "subckt") continue
