@@ -1,12 +1,19 @@
 // Planar polygon helpers for copper pours, mm.
+import type { Snapshot } from "../../kernel"
 import type { CopperPoint as Point, CopperPolygon as Polygon } from "./types"
 
 /** The minimum and maximum coordinates of a ring. */
 type RingBounds = [minX: number, minY: number, maxX: number, maxY: number]
 
-const ringBounds = new WeakMap<Point[], RingBounds>()
+const ringBounds = new WeakMap<Snapshot<Point[]>, RingBounds>()
 /** Even-odd point-in-ring test, with a cached bounding box to reject far points quickly. */
-function inRing({ point, ring }: { point: Point; ring: Point[] }): boolean {
+function inRing({
+  point,
+  ring,
+}: {
+  point: Snapshot<Point>
+  ring: Snapshot<Point[]>
+}): boolean {
   let box = ringBounds.get(ring)
   if (!box) {
     box = [
@@ -36,8 +43,8 @@ export function polygonContains({
   point,
   polygon,
 }: {
-  point: Point
-  polygon: Polygon
+  point: Snapshot<Point>
+  polygon: Snapshot<Polygon>
 }): boolean {
   if (!inRing({ point, ring: polygon[0] })) return false
   return !polygon.slice(1).some((ring) => inRing({ point, ring }))

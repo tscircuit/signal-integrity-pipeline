@@ -64,6 +64,14 @@ tester.run("test-file-matches-source", rules["test-file-matches-source"], {
           ),
           [],
         )
+        assert.deepEqual(
+          linter.verify(
+            "",
+            config,
+            "tests/pipeline/topology-snapshots/point-to-point.test.tsx",
+          ),
+          [],
+        )
         const unmatched = linter.verify(
           "",
           config,

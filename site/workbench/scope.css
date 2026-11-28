@@ -1,0 +1,104 @@
+.wb-scope-content,
+.wb-scope-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.wb-scope-content > *,
+.wb-scope-plot {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.wb-scope-plot {
+  background: var(--scope-plot, var(--plot));
+  overflow: hidden;
+}
+.wb-scope-split {
+  border-block: 1px solid var(--shadow);
+}
+.wb-scope-legend {
+  width: 145px;
+  flex: none;
+  border-left: 1px solid var(--shadow);
+  padding: 5px;
+  overflow: auto;
+}
+.wb-scope-legend > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 5px;
+}
+.wb-scope-legend label i {
+  display: inline-block;
+  width: 12px;
+  height: 3px;
+  margin-top: 5px;
+}
+.wb-scope-legend label small {
+  display: block;
+  color: var(--muted);
+}
+.wb-scope-legend .wb-fields input {
+  max-width: 50px;
+  font-size: 11px;
+}
+.wb-scope .wb-tool-row input[type="number"] {
+  max-width: 46px;
+}
+.wb-mask-state {
+  color: var(--ok);
+}
+.wb-mask-state[data-failed="true"] {
+  color: var(--error);
+}
+.wb-capture-state {
+  margin-inline-start: auto;
+  color: var(--muted);
+}
+.wb-cursor-reading {
+  margin-right: 12px;
+}
+
+.wb-scope-plot > .wb-chart {
+  position: absolute;
+  inset: 0;
+}
+
+.wb-scope {
+  container-type: inline-size;
+}
+.wb-scope .wb-tabs {
+  flex-wrap: wrap;
+  overflow: auto;
+}
+.wb-scope .wb-tabs button {
+  flex: none;
+}
+.wb-scope .wb-check-label {
+  justify-content: flex-start;
+  gap: 4px;
+}
+.wb-measurements th {
+  min-width: 54px;
+  overflow-wrap: normal;
+}
+.wb-measurements th:first-child {
+  min-width: 92px;
+}
+@container (max-width: 380px) {
+  .wb-scope-split {
+    flex-direction: column;
+    overflow: auto;
+  }
+  .wb-scope-plot {
+    min-height: 132px;
+  }
+  .wb-scope-legend {
+    width: auto;
+    max-height: 100px;
+    border-left: 0;
+    border-top: 1px solid var(--shadow);
+  }
+}

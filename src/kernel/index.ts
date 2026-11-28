@@ -23,6 +23,9 @@ export {
   diagnostics,
 } from "./diagnostic"
 export { sha256 } from "./hash"
+export { hypotenuse } from "./hypotenuse"
 export { type SafeId, safeId } from "./ids"
+
+export { type Matrix, symmetrize } from "./matrix"
 
 export { type Snapshot, snapshot } from "./snapshot"

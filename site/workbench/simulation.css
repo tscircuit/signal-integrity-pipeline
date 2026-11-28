@@ -1,0 +1,69 @@
+.wb-log-grid {
+  font:
+    11px / 1.25 "Lucida Console",
+    monospace;
+}
+.wb-log-grid th {
+  position: sticky;
+  top: 0;
+}
+.wb-log-grid :is(td, th):nth-child(1),
+.wb-log-grid :is(td, th):nth-child(2),
+.wb-log-grid :is(td, th):nth-child(3) {
+  white-space: nowrap;
+}
+.wb-log-grid :is(td, th):nth-child(4) {
+  width: 100%;
+  min-width: 160px;
+  overflow-wrap: break-word;
+}
+.wb-log-grid td:nth-child(5) {
+  min-width: 91px;
+}
+.wb-log-grid td:nth-child(5) button {
+  white-space: nowrap;
+}
+.wb-log-grid td:nth-child(2) svg {
+  display: block;
+}
+.wb-status > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.wb-solver-indicator i {
+  background: var(--muted);
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--shadow);
+  border-radius: 50%;
+}
+.wb-solver-indicator[data-solver="ready"] i {
+  background: var(--ok);
+}
+.wb-solver-indicator[data-solver="running"] i {
+  background: var(--warn);
+}
+.wb-solver-indicator[data-solver="offline"] i {
+  background: var(--error);
+}
+.wb-status > .wb-progress {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 2px;
+  padding: 2px;
+}
+.wb-progress i[data-complete="true"] {
+  background: var(--progress-fill);
+  box-shadow: inset 1px 1px #fff5;
+}
+.wb-deck {
+  width: min(640px, 80vw);
+  height: min(410px, 62vh);
+  resize: none;
+  background: var(--surface);
+  color: var(--ink);
+  font:
+    11px "Lucida Console",
+    monospace;
+}

@@ -1,0 +1,222 @@
+.wb-editor {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wb-editor-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.wb-editor-scroll {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: var(--surface);
+}
+.wb-editor-grid td,
+.wb-editor-grid th {
+  white-space: nowrap;
+}
+.wb-editor-grid thead th {
+  position: sticky;
+  top: 0;
+}
+.wb-editor-grid input,
+.wb-fields input[type="number"] {
+  width: 68px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 3px;
+}
+.wb-probe-pane {
+  width: 189px;
+  flex: none;
+  border-left: 1px solid var(--shadow);
+  padding: 5px;
+  overflow: auto;
+}
+.wb-probe-pane svg {
+  display: block;
+  width: 100%;
+  background: var(--scene);
+  border: 1px solid var(--shadow);
+  margin-bottom: 7px;
+}
+.wb-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--shadow);
+  box-shadow: inset 1px 1px var(--light);
+}
+.wb-fields legend {
+  font-weight: bold;
+  padding-inline: 3px;
+}
+.wb-fields label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.wb-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border-top: 1px solid var(--shadow);
+  background: var(--face);
+}
+.wb-editor-actions > span {
+  flex: 1;
+}
+.wb-editor-actions button {
+  min-width: 67px;
+}
+.wb-readout {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px;
+}
+.wb-readout dd {
+  margin: 0;
+  font-family: "Lucida Console", ui-monospace, monospace;
+}
+.wb-assignment {
+  width: min(620px, 82vw);
+}
+.wb-assignment-list {
+  height: 192px;
+  overflow: auto;
+  margin-block: 6px;
+  border: 1px solid var(--shadow);
+  background: var(--surface);
+}
+.wb-assignment-list tr {
+  cursor: default;
+}
+.wb-assignment-fields {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+}
+.wb-assignment-fields label {
+  margin: 0;
+}
+.wb-ibis-plots {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.wb-ibis-plot {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  border-right: 1px solid var(--shadow);
+}
+.wb-ibis-plot h3 {
+  font-size: inherit;
+  margin: 0;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--shadow);
+  background: var(--face);
+}
+.wb-ibis-chart {
+  position: relative;
+  min-height: 140px;
+  flex: 1;
+  display: grid;
+  align-items: center;
+  background: var(--plot);
+}
+.wb-ibis-chart > .wb-chart {
+  position: absolute;
+  inset: 0;
+}
+.wb-plot-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 2px 7px;
+  padding: 4px;
+  background: var(--plot);
+  max-height: 59px;
+  overflow: auto;
+  align-content: start;
+}
+.wb-plot-legend label {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+.wb-chart-readout {
+  min-height: 19px;
+  padding: 3px 6px;
+  background: var(--face);
+  font-family: "Lucida Console", monospace;
+}
+.wb-ibis input[type="number"] {
+  width: 64px;
+}
+.wb-tabs {
+  display: flex;
+  padding: 4px 5px 0;
+  gap: 2px;
+  background: var(--face);
+  border-bottom: 1px solid var(--shadow);
+  user-select: none;
+}
+.wb-tabs button {
+  border-bottom-color: transparent;
+  padding: 3px 9px;
+}
+.wb-tabs button[aria-selected="true"] {
+  position: relative;
+  z-index: 1;
+  margin-bottom: -1px;
+  background: var(--panel);
+  font-weight: bold;
+  border-bottom-color: var(--panel);
+}
+:root[data-theme="luna"] .wb-tabs button[aria-selected="true"] {
+  border-top: 2px solid #e68b2c;
+}
+.wb-tab-panel {
+  min-height: 0;
+  flex: 1;
+  padding: 6px;
+  background: var(--panel);
+}
+.wb-stimulus {
+  width: min(640px, 85vw);
+}
+.wb-stimulus .wb-tab-panel {
+  min-height: 250px;
+}
+.wb-stimulus-timing {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 12px;
+}
+.wb-stimulus-timing input {
+  max-width: 106px;
+}
+.wb-stimulus-list {
+  overflow: auto;
+  margin-top: 8px;
+  border: 1px solid var(--shadow);
+  background: var(--surface);
+}
+.wb-stimulus-list td input:not([type="checkbox"]) {
+  max-width: 61px;
+}
+.wb-aggressor-mode label {
+  justify-content: flex-start;
+}

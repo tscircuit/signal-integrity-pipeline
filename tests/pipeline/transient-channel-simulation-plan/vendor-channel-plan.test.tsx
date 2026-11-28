@@ -39,5 +39,38 @@ test.skipIf(!vendorAvailable(vendorModels.cmos.file))(
         .length,
       2,
     )
+    const drawing = solver.visualize()
+    const marks = drawing.polygons?.filter(
+      (polygon) => polygon.layer === "endpoints",
+    )
+    assert.ok(marks)
+    assert.equal(
+      marks.filter(
+        (mark) =>
+          mark.label?.includes("Driver") &&
+          mark.points.length === 3 &&
+          mark.fill !== "#fff",
+      ).length,
+      2,
+      "each driver has one filled triangle",
+    )
+    assert.equal(
+      marks.filter(
+        (mark) =>
+          mark.label?.includes("Receiver") &&
+          mark.fill === "#fff" &&
+          mark.stroke !== "none",
+      ).length,
+      2,
+      "each receiver has one white-centered ring",
+    )
+    assert.throws(
+      () =>
+        new TransientChannelSimulationPlanSolver({
+          ...input,
+          nearbyGapMm: 0,
+        }).solve(),
+      /Copper search gap must be finite and positive/,
+    )
   },
 )

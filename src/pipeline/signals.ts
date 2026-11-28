@@ -16,21 +16,25 @@ import {
 import { type SafeId, safeId } from "../kernel"
 import type { RunControls } from "../simulation"
 import { planAggressors } from "./aggressors"
+import { listChannelSimulations } from "./channel-simulation-declarations"
 import { prepareTraceContacts } from "./channel-traces"
 import type { NumericalSettings } from "./modeling"
 import {
   type ChannelSimulationControlOptions,
   channelSimulationDurationSeconds,
-  signalTiming,
+  signalStepSeconds,
   withChannelSimulationControls,
 } from "./signal-controls"
 import {
   channelSimulationCircuit,
-  prepareSignalSettings,
   validateComponentModels,
   withUsedIbisModels,
 } from "./signal-models"
 import { compareNames } from "./signal-names"
+import { prepareSignalSettings } from "./signal-settings"
+
+export { listChannelSimulations } from "./channel-simulation-declarations"
+
 import {
   inspectSignalPins,
   scopeSignalPins,
@@ -44,56 +48,15 @@ const DEFAULT_NEARBY_GAP_MM = 32
 
 /** The lowered circuit and controls for a single transient channel simulation. */
 export interface PreparedChannelSimulation {
+  warnings?: string[]
   durationSeconds: number
   fastestEdgeSeconds: number
-  stepSeconds: number
   channelSimulation: SimulationPcbTransientChannelSimulation
   driverReceiverChannels: SimulationPcbDriverReceiverChannel[]
   circuit: CircuitJson
   controls: Record<string, RunControls>
   pins: Map<SourcePortId, InspectedPin>
   settings: NumericalSettings
-}
-
-/** Validate the shared channel simulation namespace before any independent channel simulation work. */
-export function listChannelSimulations(
-  circuitJson: CircuitJson,
-): SimulationPcbTransientChannelSimulation[] {
-  const db = cju([...circuitJson])
-  const channelSimulations =
-    db.simulation_pcb_transient_channel_simulation.list()
-  if (
-    channelSimulations.length > 1 &&
-    channelSimulations.some((channelSimulation) => !channelSimulation.name)
-  ) {
-    const element = "<simulation.pcbtransientchannelsimulation>"
-    throw new Error(
-      `This board has ${channelSimulations.length} ${element} declarations; give each a name.`,
-    )
-  }
-  const simulationPcbTransientChannelSimulationIds = new Set(
-    channelSimulations.map(
-      (channelSimulation) =>
-        channelSimulation.simulation_pcb_transient_channel_simulation_id,
-    ),
-  )
-  if (
-    simulationPcbTransientChannelSimulationIds.size !==
-    channelSimulations.length
-  )
-    throw new Error(
-      "Duplicate simulation_pcb_transient_channel_simulation identifier",
-    )
-  for (const signal of db.simulation_pcb_driver_receiver_channel.list()) {
-    if (
-      simulationPcbTransientChannelSimulationIds.has(
-        signal.simulation_pcb_transient_channel_simulation_id,
-      )
-    )
-      continue
-    throw new Error(`${signal.name}: unknown transient channel simulation`)
-  }
-  return channelSimulations
 }
 
 /** Shared by the search gap error and the plan drawing. */
@@ -180,7 +143,7 @@ function validateChannelNames({
     simulationPcbDriverReceiverChannelIds.size !== driverReceiverChannels.length
   ) {
     throw new Error(
-      `${channelSimulation.name ?? simulationPcbTransientChannelSimulationId}: require distinct named signals`,
+      `${channelSimulation.name || simulationPcbTransientChannelSimulationId}: require distinct named signals`,
     )
   }
 }
@@ -229,15 +192,19 @@ interface ChannelSimulationOptions {
   simulationPcbTransientChannelSimulationId: SafeId
   sources: IbisSources
   nearbyGapMm: number
+  captureDrivers?: boolean
+  disabledAggressorPorts?: readonly SourcePortId[]
 }
 
 /** Lower controls and assemble the prepared simulation. */
 function withPreparedChannelControls({
   settings,
+  warnings,
   fastestEdgeSeconds,
   ...options
 }: ChannelSimulationControlOptions & {
   settings: NumericalSettings
+  warnings: string[]
   fastestEdgeSeconds: number
 }): PreparedChannelSimulation {
   const { circuit, controls } = withChannelSimulationControls(options)
@@ -248,7 +215,7 @@ function withPreparedChannelControls({
     pins,
     simulationPcbTransientChannelSimulationId,
   } = options
-  return {
+  const prepared: PreparedChannelSimulation = {
     channelSimulation,
     driverReceiverChannels,
     circuit,
@@ -257,15 +224,17 @@ function withPreparedChannelControls({
     settings,
     durationSeconds,
     fastestEdgeSeconds,
-    stepSeconds: options.stepSeconds,
   }
+  if (warnings.length) prepared.warnings = warnings
+  return prepared
 }
 
 /** Prepare one channel simulation from its declarations through controls and probes. */
 export function prepareChannelSimulation(
   options: ChannelSimulationOptions,
 ): PreparedChannelSimulation {
-  const { sources, nearbyGapMm } = options
+  const { sources, nearbyGapMm, captureDrivers, disabledAggressorPorts } =
+    options
   const { circuit, ...selection } = selectChannelSimulation(options)
   const inspection = { ...selection, circuit, sources, nearbyGapMm }
   const signalPins = inspectSignalPins(inspection)
@@ -275,6 +244,7 @@ export function prepareChannelSimulation(
   const aggressors = planAggressors({
     ...scoped,
     driven: signalPins.driven,
+    disabledPorts: disabledAggressorPorts,
   })
   const patterns: DriverPattern[] = [...selection.driverReceiverChannels]
   const edgeTimesSeconds = [...signalPins.edgeTimesSeconds]
@@ -287,7 +257,12 @@ export function prepareChannelSimulation(
     channelSimulation: selection.channelSimulation,
     patterns,
   })
-  const timing = signalTiming({ patterns, durationSeconds, edgeTimesSeconds })
+  const fastestEdgeSeconds = Math.min(...edgeTimesSeconds)
+  const stepSeconds = signalStepSeconds({
+    patterns,
+    durationSeconds,
+    fastestEdgeSeconds,
+  })
   validateComponentModels({ ...scoped, topology: signalPins.topology })
   const traceContacts = prepareTraceContacts(scoped)
   const pruned = withUsedIbisModels(scoped)
@@ -299,10 +274,12 @@ export function prepareChannelSimulation(
   })
   return withPreparedChannelControls({
     ...selection,
-    ...timing,
+    stepSeconds,
+    fastestEdgeSeconds,
     ...supplied,
     durationSeconds,
     aggressors,
+    captureDrivers,
     pins: pruned.pins,
     driven: signalPins.driven,
   })

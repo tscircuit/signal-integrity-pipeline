@@ -8,8 +8,11 @@ import { fail } from "./diagnostics"
 
 export type {
   CircuitJson,
+  LayerRef,
+  Point,
   SimulationExperiment,
   SimulationIbisModel,
+  SourceTrace,
 } from "circuit-json"
 
 /** Copy a stage board for Circuit JSON libraries that require writable records. */

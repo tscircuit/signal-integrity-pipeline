@@ -1,10 +1,15 @@
 /**
- * extraction — what the channel is electrically.
- * Owns: quasi-TEM 2D cross-section extraction (field solve, per-unit-length RLGC),
- * per-route section lines and coupling (RouteFieldsSolver), and the matrix checks they need.
+ * Causal loss and matrix checks for the channel model.
  * Imports: kernel, board.
  */
 
+export {
+  causalLossPoles,
+  causalLossResponse,
+  crossoverPoles,
+  type LossPole,
+  skinCrossover,
+} from "./causal-loss"
 export { type MatrixCheck, validateMatrix } from "./checks"
 export type { Matrix } from "./linalg"
 export { multiply, sum, symmetrize, transpose } from "./linalg"

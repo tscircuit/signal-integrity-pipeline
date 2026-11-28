@@ -16,11 +16,13 @@ export function assertPlanDrawingSnapshot({
   module,
   name,
   caption,
+  trimTrailingWhitespace = false,
 }: {
   drawing: GraphicsObject
   module: string
   name: string
   caption?: string
+  trimTrailingWhitespace?: boolean
 }): void {
   const path = join(
     import.meta.dirname,
@@ -38,12 +40,17 @@ export function assertPlanDrawingSnapshot({
     return value
   })
   const normalized: GraphicsObject = JSON.parse(serialized)
-  const svg = getSvgFromGraphicsObject(normalized, {
+  let svg = getSvgFromGraphicsObject(normalized, {
     svgWidth: SNAPSHOT_WIDTH,
     svgHeight: SNAPSHOT_HEIGHT,
     backgroundColor: "white",
     includeTextLabels: false,
   })
+  if (trimTrailingWhitespace)
+    svg = svg
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .join("\n")
   if (process.env.UPDATE_PLAN_DRAWINGS === "1") {
     mkdirSync(join(path, ".."), { recursive: true })
     writeFileSync(path, svg)

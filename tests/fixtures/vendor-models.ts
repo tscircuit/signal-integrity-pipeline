@@ -36,3 +36,9 @@ export function vendorAvailable(file: string): boolean {
     throw error
   }
 }
+
+/** Decode the verified vendor bytes for tests that need to parse the model text directly. */
+export async function loadVendorModelText(model: VendorModel): Promise<string> {
+  const bytes = await loadVendorModel(model)
+  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes)
+}

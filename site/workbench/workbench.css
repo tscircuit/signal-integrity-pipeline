@@ -1,0 +1,130 @@
+@import "./themes.css";
+@import "./shell.css";
+@import "./menus.css";
+@import "./docks.css";
+@import "./board.css";
+@import "./ranges.css";
+@import "../channel-inspector/style.css";
+
+.wb-desktop,
+.wb-desktop * {
+  box-sizing: border-box;
+}
+.wb-desktop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: var(--title-height) 20px var(--bar-height) minmax(0, 1fr) auto 22px;
+  overflow: hidden;
+  padding: 2px;
+  box-shadow:
+    inset 1px 1px var(--light),
+    inset -1px -1px var(--edge);
+  color: var(--ink);
+  background: var(--face);
+  font:
+    11px / 1.3 Tahoma,
+    "MS Sans Serif",
+    "Segoe UI",
+    Arial,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+:where(.wb-desktop) button,
+.wb-desktop input,
+.wb-desktop select {
+  font: inherit;
+  color: inherit;
+}
+:where(.wb-desktop) button,
+.wb-desktop input,
+.wb-desktop select {
+  border: 1px solid var(--edge);
+}
+:where(.wb-desktop) button {
+  background: var(--btn-bg);
+  box-shadow:
+    inset 1px 1px var(--light),
+    inset -1px -1px var(--shadow);
+  padding: 3px 8px;
+  border-radius: var(--btn-radius);
+}
+.wb-desktop input:not([type="checkbox"], [type="radio"], [type="range"]),
+.wb-desktop select {
+  background: var(--surface);
+  color: var(--ink);
+}
+:where(.wb-desktop) button:active {
+  box-shadow: inset 1px 1px var(--shadow);
+}
+:where(.wb-desktop) button:disabled {
+  color: var(--muted);
+  opacity: 0.65;
+}
+:where(.wb-desktop) :focus-visible {
+  outline: 1px dotted currentColor;
+  outline-offset: -3px;
+}
+.wb-placeholder,
+.wb-error {
+  padding: 6px 8px;
+}
+.wb-error {
+  grid-row: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--error);
+  background: var(--surface);
+}
+.wb-grid {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+}
+.wb-grid th,
+.wb-grid td {
+  text-align: left;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.wb-grid th {
+  background: var(--face);
+  box-shadow: inset 1px 1px var(--light);
+}
+.wb-grid tr[aria-selected="true"] {
+  background: var(--select);
+  color: var(--select-ink);
+}
+
+.wb-desktop input[type="checkbox"],
+.wb-desktop input[type="radio"] {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  margin: 0 2px 0 0;
+  width: 13px;
+  height: 13px;
+  vertical-align: middle;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow:
+    inset 1px 1px var(--shadow),
+    1px 1px var(--light);
+}
+.wb-desktop input[type="radio"] {
+  border-radius: 50%;
+}
+.wb-desktop input[type="checkbox"]:checked {
+  background: var(--surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 11 11'%3E%3Cpath d='m2 5 2 2 5-5' fill='none' stroke='%230565ba' stroke-width='2'/%3E%3C/svg%3E")
+    center no-repeat;
+}
+.wb-desktop input[type="radio"]:checked {
+  background: radial-gradient(var(--ink) 0 2px, var(--surface) 3px);
+}
+.wb-desktop input:is([type="checkbox"], [type="radio"]):disabled {
+  opacity: 0.5;
+}

@@ -2,7 +2,7 @@ import { type CircuitJsonUtilObjects, cju } from "@tscircuit/circuit-json-util"
 import type { SourceComponentBase } from "circuit-json"
 import type { ConnectivityMap } from "circuit-json-to-connectivity-map"
 import type { SourceNetId, SourcePortId } from "./ids"
-import type { CircuitJson } from "./schema"
+import type { CircuitJson, SourceTrace } from "./schema"
 
 /** The identifier of a source component in Circuit JSON. */
 type SourceComponentId = SourceComponentBase["source_component_id"]
@@ -31,7 +31,7 @@ export type SourceConnectionGroup = Array<SourcePortId | SourceNetId>
 /** Source port and net identifiers on one electrical net. */
 export type SourceNetMembers = Set<SourcePortId | SourceNetId>
 
-/** Read internal pin ties from both Circuit JSON representations. */
+/** @internal Read pin ties from both Circuit JSON representations. */
 export function sourcePinTies(
   db: CircuitJsonUtilObjects,
 ): SourceConnectionGroup[] {
@@ -49,20 +49,20 @@ export function sourcePinTies(
   ]
 }
 
+/** Read the ports and nets declared on a source trace. */
+export function getTraceMembers(trace: SourceTrace): SourceConnectionGroup {
+  return [
+    ...trace.connected_source_port_ids,
+    ...(trace.connected_source_net_ids || []),
+  ]
+}
+
 /** Collect explicit source traces and component pin ties. */
 export function sourceConnections(
   circuit: CircuitJson,
 ): SourceConnectionGroup[] {
   const db = cju([...circuit])
-  return [
-    ...db.source_trace
-      .list()
-      .map((trace) => [
-        ...trace.connected_source_port_ids,
-        ...(trace.connected_source_net_ids ?? []),
-      ]),
-    ...sourcePinTies(db),
-  ]
+  return [...db.source_trace.list().map(getTraceMembers), ...sourcePinTies(db)]
 }
 
 /** The two pins of a resistor, capacitor or inductor treated as wired together for a signal. */

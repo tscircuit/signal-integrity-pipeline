@@ -1,0 +1,44 @@
+<svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#ffffff"/><g><polyline data-points="0,0 -0.0008,0" data-type="line" data-label="" points="320,333.65000000000003 319.968,333.65000000000003" fill="none" stroke="#cbd5e1" stroke-linejoin="round" stroke-width="12.549999999999999"/></g><g><polyline data-points="-0.0008,0 4,0" data-type="line" data-label="" points="319.968,333.65000000000003 480,333.65000000000003" fill="none" stroke="#cbd5e1" stroke-linejoin="round" stroke-width="12.549999999999999"/></g><g><polyline data-points="0,0 4,0" data-type="line" data-label="top wire · GND (bottom)" points="320,333.65000000000003 480,333.65000000000003" fill="none" stroke="#0369a1" stroke-linejoin="round" stroke-width="8"/></g><g><polyline data-points="0,-0.114 0,-0.2015" data-type="line" data-label="" points="320,338.21000000000004 320,341.71000000000004" fill="none" stroke="#0f172a" stroke-linejoin="round" stroke-width="1.26"/></g><g><polyline data-points="0,0.114 0,0.2015" data-type="line" data-label="" points="320,329.09000000000003 320,325.59000000000003" fill="none" stroke="#0f172a" stroke-linejoin="round" stroke-width="1.26"/></g><g><polyline data-points="4,-0.114 4,-0.2015" data-type="line" data-label="" points="480,338.21000000000004 480,341.71000000000004" fill="none" stroke="#0f172a" stroke-linejoin="round" stroke-width="1.26"/></g><g><polyline data-points="4,0.114 4,0.2015" data-type="line" data-label="" points="480,329.09000000000003 480,325.59000000000003" fill="none" stroke="#0f172a" stroke-linejoin="round" stroke-width="1.26"/></g><g><polygon data-type="polygon" data-label="" data-points="-7,-5 7,-5 7,5 -7,5" points="40,533.6500000000001 600,533.6500000000001 600,133.65000000000003 40,133.65000000000003" fill="none" stroke="#cbd5e1" stroke-width="1.4"/></g><g><polygon data-type="polygon" data-label="" data-points="-6.8,-4.8 6.8,-4.8 6.8,4.8 -6.8,4.8" points="48,525.6500000000001 592,525.6500000000001 592,141.65000000000003 48,141.65000000000003" fill="rgba(219,39,119,0.06)" stroke="#a45a70" stroke-width="0.8399999999999999"/></g><circle data-type="circle" data-label="" data-x="0" data-y="0" cx="320" cy="333.65000000000003" r="3.5" fill="#0f172a" stroke="black" stroke-width="0.025"/><circle data-type="circle" data-label="" data-x="0" data-y="0" cx="320" cy="333.65000000000003" r="2.1" fill="white" stroke="black" stroke-width="0.025"/><circle data-type="circle" data-label="" data-x="4" data-y="0" cx="480" cy="333.65000000000003" r="3.5" fill="#0f172a" stroke="black" stroke-width="0.025"/><circle data-type="circle" data-label="" data-x="4" data-y="0" cx="480" cy="333.65000000000003" r="2.1" fill="white" stroke="black" stroke-width="0.025"/><circle data-type="circle" data-label="" data-x="-0.3004" data-y="0" cx="307.984" cy="333.65000000000003" r="3.5" fill="#0f172a" stroke="black" stroke-width="0.025"/><circle data-type="circle" data-label="" data-x="-0.3004" data-y="0" cx="307.984" cy="333.65000000000003" r="2.1" fill="white" stroke="black" stroke-width="0.025"/><text data-type="text" data-label="Copper geometry extraction" data-x="-7" data-y="5.6825" x="40" y="106.35000000000002" fill="#0f172a" font-size="18.9" font-family="sans-serif" text-anchor="start" dominant-baseline="text-after-edge">Copper geometry extraction</text><text data-type="text" data-label="Ticks mark section boundaries. Circles mark pad contacts and vias. Dashes mark ideal joins." data-x="-7" data-y="5.2975" x="40" y="121.75000000000003" fill="#475569" font-size="10.149999999999999" font-family="sans-serif" text-anchor="start" dominant-baseline="text-after-edge">Ticks mark section boundaries. Circles mark pad contacts and vias. Dashes mark ideal joins.</text><text data-type="text" data-label="top · GND (bottom)" data-x="2" data-y="0.2575" x="400" y="323.35" fill="#0369a1" font-size="11.549999999999997" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">top · GND (bottom)</text><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="640" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="640" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+              document.currentScript.parentElement.addEventListener('mousemove', (e) => {
+                const svg = e.currentTarget;
+                const rect = svg.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const crosshair = svg.getElementById('crosshair');
+                const h = svg.getElementById('crosshair-h');
+                const v = svg.getElementById('crosshair-v');
+                const coords = svg.getElementById('coordinates');
+                
+                crosshair.style.display = 'block';
+                h.setAttribute('x1', '0');
+                h.setAttribute('x2', '640');
+                h.setAttribute('y1', y);
+                h.setAttribute('y2', y);
+                v.setAttribute('x1', x);
+                v.setAttribute('x2', x);
+                v.setAttribute('y1', '0');
+                v.setAttribute('y2', '640');
+
+                // Calculate real coordinates using inverse transformation
+                const matrix = {"a":40,"c":0,"e":320,"b":0,"d":-40,"f":333.65000000000003};
+                // Manually invert and apply the affine transform
+                // Since we only use translate and scale, we can directly compute:
+                // x' = (x - tx) / sx
+                // y' = (y - ty) / sy
+                const sx = matrix.a;
+                const sy = matrix.d;
+                const tx = matrix.e; 
+                const ty = matrix.f;
+                const realPoint = {
+                  x: (x - tx) / sx,
+                  y: (y - ty) / sy // Flip y back since we used negative scale
+                }
+                
+                coords.textContent = `(${realPoint.x.toFixed(2)}, ${realPoint.y.toFixed(2)})`;
+                coords.setAttribute('x', (x + 5).toString());
+                coords.setAttribute('y', (y - 5).toString());
+              });
+              document.currentScript.parentElement.addEventListener('mouseleave', () => {
+                document.currentScript.parentElement.getElementById('crosshair').style.display = 'none';
+              });
+            ]]></script></svg>

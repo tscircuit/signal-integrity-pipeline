@@ -1,0 +1,22 @@
+:is(.wb-desktop, .wb-snapshot) input[type="range"] {
+  appearance: none;
+  background: transparent;
+  height: 14px;
+}
+:is(.wb-desktop, .wb-snapshot)
+  input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border: 1px solid var(--shadow);
+  background: var(--surface);
+}
+:is(.wb-desktop, .wb-snapshot) input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 9px;
+  height: 14px;
+  margin-top: -6px;
+  background: var(--btn-bg);
+  border: 1px solid var(--edge);
+  box-shadow:
+    inset 1px 1px var(--light),
+    inset -1px -1px var(--shadow);
+}

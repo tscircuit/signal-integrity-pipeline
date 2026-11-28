@@ -7,16 +7,23 @@ import type { PcbTrace, PortSelector, RoutedPoint, SourcePort } from "./types"
 /** Native route points and physical via records match within this distance in millimetres. */
 const VIA_MATCH_DISTANCE_MM = 1e-5
 
-/** Native pcbPath keeps via dimensions on the associated physical record. */
-export function resolveRouteVias({
+/** Validated route points and the physical records that supply their via dimensions. */
+interface ResolvedTraceRoute {
+  route: RoutedPoint[]
+  pcbViasByRouteIndex: Map<number, PcbVia>
+}
+
+/** Resolve the physical via records that supply the route via dimensions. */
+export function resolveTraceRoute({
   circuit,
   trace,
 }: {
   circuit: CircuitJson
   trace: PcbTrace
-}): RoutedPoint[] {
+}): ResolvedTraceRoute {
   let vias: PcbVia[] | undefined
-  return trace.route.map((point) => {
+  const pcbViasByRouteIndex = new Map<number, PcbVia>()
+  const route = trace.route.map((point, routeIndex): RoutedPoint => {
     if (point.route_type === "through_pad")
       fail("route_type", "Only wire/via routed primitives supported")
     if (point.route_type !== "via") return point
@@ -58,8 +65,21 @@ export function resolveRouteVias({
         "via_geometry",
         `${trace.pcb_trace_id}: missing, invalid or conflicting via hole diameters at ${point.x},${point.y}`,
       )
+    if (matches[0]) pcbViasByRouteIndex.set(routeIndex, matches[0])
     return { ...point, hole_diameter: holes[0] }
   })
+  return { route, pcbViasByRouteIndex }
+}
+
+/** Native pcbPath keeps via dimensions on the associated physical record. */
+export function resolveRouteVias({
+  circuit,
+  trace,
+}: {
+  circuit: CircuitJson
+  trace: PcbTrace
+}): RoutedPoint[] {
+  return resolveTraceRoute({ circuit, trace }).route
 }
 
 /**

@@ -41,7 +41,10 @@ const RAISED = [
   "ibis_state",
   "matrix_format",
   "matrix_zero",
+  "cross_section_options",
+  "mesh_panel_limit",
   "native_declaration",
+  "cross_section_geometry",
   "native_output",
   "native_solver",
   "passive_capability",
@@ -52,11 +55,13 @@ const RAISED = [
   "reciprocity",
   "route_type",
   "simulation_capability",
+  "simulation_duration",
   "simulation_experiment",
   "simulation_id",
   "simulation_probe",
   "simulation_reference",
   "simulation_scope",
+  "simulation_start",
   "simulation_timing",
   "solver_result",
   "source_capability",
@@ -72,6 +77,7 @@ const RAISED = [
   "supply_short",
   "vendor_hash",
   "via_geometry",
+  "waveform",
 ].sort()
 
 /** Reads the DiagnosticCode union from src/modules.generated.ts as a list of its literal members. */
@@ -173,8 +179,10 @@ test("every literal code raised in non-legacy src/ is in the pinned set", () => 
     .filter(([code]) => !pinned.has(code))
     .map(([code, files]) => `${code} (${[...new Set(files)].join(", ")})`)
   assert.deepEqual(unknown, [])
+  const coverageMessage =
+    "removed legacy API paths must still leave the active diagnostics scanned"
   assert.ok(
-    raised.size >= 40,
-    `scanner found ${raised.size} codes in the surviving module surfaces`,
+    raised.size >= 54,
+    `scanner found ${raised.size} codes; ${coverageMessage}`,
   )
 })

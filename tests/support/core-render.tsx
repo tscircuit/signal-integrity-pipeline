@@ -3,14 +3,19 @@ import type { ReactElement } from "react"
 import type { CircuitJson } from "../../src/board"
 
 /** Render TSX through core and preserve partial records when it rejects the board. */
-export async function renderCoreSignals(
-  tree: ReactElement,
-): Promise<CircuitJson> {
+export async function renderCoreBoard({
+  tree,
+  keepDrcErrors = false,
+}: {
+  tree: ReactElement
+  keepDrcErrors?: boolean
+}): Promise<CircuitJson> {
   const circuit = new Circuit({ platform: { partsEngineDisabled: true } })
   try {
     circuit.add(tree)
     await circuit.renderUntilSettled()
     const records = circuit.getCircuitJson()
+    if (keepDrcErrors) return records
     const errors = records.filter((record) => record.type.endsWith("_error"))
     if (errors.length) throw new Error(JSON.stringify(errors))
     return records
@@ -19,4 +24,9 @@ export async function renderCoreSignals(
       circuitJson: circuit.db.toArray(),
     })
   }
+}
+
+/** Render an error-free signal fixture through core. */
+export function renderCoreSignals(tree: ReactElement): Promise<CircuitJson> {
+  return renderCoreBoard({ tree })
 }

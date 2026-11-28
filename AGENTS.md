@@ -88,7 +88,7 @@ Clarity beats brevity. More lines are fine when they are easier to read.
 
 - Reproductions and fixtures are **TSX source rendered through core**, not hand-written Circuit JSON (`tests/fixtures/signal-parts.tsx`, `signal-render.tsx`).
 - Put one `test()` per file. Use a short, kebab-case filename that describes the behaviour in `tests/<module>/<source>/`. Put shared setup in `tests/fixtures/`.
-- For routed pipeline refactors that claim "no behaviour change", prove it before merge:
+- A refactor that claims "no behaviour change" proves it before merge:
   - golden checks unchanged (27 pass, 2 TODO, 2 n/a; vendor waveform records identical);
   - the 40 ns two-trace replay byte-identical (deck SHA-256 and every sample);
   - for connectivity or topology changes, an equivalence run over every example and fixture, comparing results for every port as a seed.
@@ -96,7 +96,7 @@ Clarity beats brevity. More lines are fine when they are easier to read.
 
 ## Pull requests
 
-- **Small and focused, stacked.** One concept per PR, e.g. "add RouteSectionsSolver", not "pipeline changes". Dependency or package bumps get their own PR at the bottom of the stack. Use GitHub native stacks (`gh stack link`).
+- **Small and focused, stacked.** One concept per PR, e.g. "add CopperGeometryExtractionSolver", not "pipeline changes". Dependency or package bumps get their own PR at the bottom of the stack. Use GitHub native stacks (`gh stack link`).
 - **Specific titles.** Say what is added and where: `feat: check IBIS pin roles and references for channel endpoints`. Not `feat: read signals`. If a PR also updates packages, the title says so.
 - **Descriptions are short and plain:**
   - what the PR adds and why;
@@ -118,8 +118,8 @@ Clarity beats brevity. More lines are fine when they are easier to read.
 ## Private data (never commit)
 
 - Vendor IBIS files (`*.ibs`) stay local in the gitignored `models/`. Only `examples/vendor-models.lock.json` (names and hashes) is committed.
-- Real board Circuit JSON, board-derived decks, captures and extracted geometry stay local (`models/ddr3-board.json`, `.cache/`).
-- The only approved paths for board-derived example files are `examples/level4-ddr3-write/` and `examples/ddr3-parts.tsx`.
+- Board exports, board-derived decks, captures and extracted geometry stay local.
+- The approved board-derived files are `examples/am3352-ddr3/board.circuit.json`, `examples/level4-ddr3-write/` and `examples/ddr3-parts.tsx`.
 - Check `git status` and the diff before every commit.
 
 ## Lint

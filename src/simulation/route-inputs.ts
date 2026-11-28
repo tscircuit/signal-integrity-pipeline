@@ -1,35 +1,58 @@
-import type {
-  CircuitJson,
-  ReceiverTracePath,
-  SourcePortId,
-  SourceTraceId,
-} from "../board"
-import type { IbisSources } from "../buffers"
+import type { CopperGeometry, SourcePortId, SourceTraceId } from "../board"
 import type { Snapshot } from "../kernel"
-import type { RunControls, SimulationModeling } from "./types"
+import type { DielectricMaterials, TransmissionLineRlgc } from "../rlgc"
+import type { ChannelNetlist } from "./channel-netlist"
+import type { VoltageProbePlan } from "./types"
 
-/** Timing and mesh settings shared by the routed simulation stages. */
+/** Settings for the route ladder mesh and convergence. */
 export interface RouteCompileOptions {
   readonly fastestEdgeSeconds: number
   readonly refinement: number
-  readonly durationSeconds: number
-  readonly stepSeconds: number
+  panels?: number
+  currentToleranceA?: number
+  cellsPerRise?: number
 }
+
 /** One physical conductor removed from ideal connectivity for routed extraction. */
 export interface TraceContacts {
   readonly sourceTraceId: SourceTraceId
   readonly fromSourcePortId: SourcePortId
   readonly toSourcePortId: SourcePortId
 }
+/** Scoped copper, extracted fields and channel netlist for a routed deck. */
+export interface RouteNetworkInput {
+  simulationPcbTransientChannelSimulationId: string
+  name: string
+  copperGeometry: CopperGeometry
+  extracted: TransmissionLineRlgc
+  channelNetlist: ChannelNetlist
+  materials: DielectricMaterials
+  options: RouteCompileOptions
+  warnings: readonly string[]
+  artifactPrefix: string
+}
+/** Executable SPICE input and evidence for one routed transient. */
+export type RoutedDeck = Snapshot<{
+  simulationPcbTransientChannelSimulationId: string
+  name: string
+  deck: string
+  requestSha256: string
+  probes: VoltageProbePlan[]
+  durationSeconds: number
+  stepSeconds: number
+  evidence: Record<string, unknown>
+}>
+/** A completed live transient; failures never expose a partial capture. */
+export type RoutedCapture = Snapshot<{
+  kind: "completed"
+  qualification: "candidate-unqualified"
+  timestampsSeconds: number[]
+  probes: RoutedProbeCapture[]
+}>
 
-/** Board, receiver paths and trace contacts for routed IBIS binding. */
-export interface RouteBindingsInput {
-  readonly circuitJson: Snapshot<CircuitJson>
-  readonly receiverPaths: readonly ReceiverTracePath[]
-  readonly traceContacts: readonly TraceContacts[]
-  readonly modeling: Snapshot<SimulationModeling>
-  readonly controls: Snapshot<Record<string, RunControls>>
-  readonly ibisSources: Readonly<IbisSources>
-  readonly options: RouteCompileOptions
-  readonly artifactPrefix: string
+/** Recorded voltages for a physical source port at the capture's adaptive sample times. */
+interface RoutedProbeCapture {
+  name: string
+  sourcePortId: SourcePortId
+  voltageLevels: number[]
 }

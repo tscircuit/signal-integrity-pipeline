@@ -2,6 +2,10 @@ import type React from "react"
 import type { CircuitJson } from "../../src/board"
 import type { IbisSources } from "../../src/buffers"
 import {
+  RoutedPipelineSolver,
+  type TransientChannelSimulationPlan,
+} from "../../src/pipeline"
+import {
   listChannelSimulations,
   type PreparedChannelSimulation,
   prepareChannelSimulationById,
@@ -55,4 +59,26 @@ export function prepareChannelSimulations({
       distanceMm,
     }),
   )
+}
+
+/** Gets the first channel simulation's bindings through the public solver. */
+export function plannedBindings({
+  circuitJson,
+  ibisSources,
+}: {
+  circuitJson: CircuitJson
+  ibisSources: IbisSources
+}): TransientChannelSimulationPlan["bindings"] {
+  const root = new RoutedPipelineSolver({
+    input: { circuitJson, ibisSources },
+    context: {
+      runSolver: async () => {
+        throw new Error("channel planning needs no native solver")
+      },
+      progress: () => undefined,
+    },
+  })
+  root.solveUntilStage("CopperGeometryExtractionSolver")
+  return root.stageOutput("TransientChannelSimulationPlanSolver").value[0]
+    .bindings
 }

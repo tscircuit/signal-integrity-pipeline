@@ -31,11 +31,13 @@ export function planAggressors({
   channelSimulation,
   pins,
   driven,
+  disabledPorts,
 }: {
   circuit: CircuitJson
   channelSimulation: SimulationPcbTransientChannelSimulation
   pins: Map<SourcePortId, InspectedPin>
   driven: SignalPins["driven"]
+  disabledPorts?: readonly SourcePortId[]
 }): Aggressors {
   const aggressors: Aggressors = new Map()
   const aggressorPins = [...pins.values()]
@@ -44,27 +46,29 @@ export function planAggressors({
   if (aggressorPins.length === 0) return aggressors
 
   const db = cju([...circuit])
-  if (channelSimulation.aggressor_disabled === true) {
-    for (const pin of aggressorPins) {
-      if (!pinCapabilities(pin).disable) {
-        const name = aggressorName({ db, pin })
-        throw new Error(
-          `${name}: IBIS model "${pin.buffer.name}" has no disabled state. Set aggressorPattern to drive the aggressors.`,
-        )
-      }
-      aggressors.set(pin.port, null)
+  const disabled = new Set(disabledPorts)
+  const enabled = aggressorPins.filter((pin) => {
+    if (!channelSimulation.aggressor_disabled && !disabled.has(pin.port))
+      return true
+    if (!pinCapabilities(pin).disable) {
+      const name = aggressorName({ db, pin })
+      throw new Error(
+        `${name}: IBIS model "${pin.buffer.name}" has no disabled state. Set aggressorPattern to drive the aggressors.`,
+      )
     }
-    return aggressors
-  }
+    aggressors.set(pin.port, null)
+    return false
+  })
+  if (!enabled.length) return aggressors
   const pattern = channelSimulation.aggressor_pattern?.trim()
   if (!pattern) {
-    const names = aggressorPins.map((pin) => aggressorName({ db, pin }))
+    const names = enabled.map((pin) => aggressorName({ db, pin }))
     throw new Error(
       `Aggressors ${names.join(", ")} need a declared state. Set aggressorPattern or aggressorDisabled.`,
     )
   }
   const prbs = prbsPatterns.get(pattern)
-  for (const [index, pin] of aggressorPins.entries()) {
+  for (const [index, pin] of enabled.entries()) {
     const signal: DriverPattern = {
       name: aggressorName({ db, pin }),
       pattern,
@@ -73,7 +77,7 @@ export function planAggressors({
     }
     if (prbs) {
       const seedCount = 2 ** prbs.width - 1
-      signal.seed = 1 + Math.floor((index * seedCount) / aggressorPins.length)
+      signal.seed = 1 + Math.floor((index * seedCount) / enabled.length)
     }
     aggressors.set(pin.port, signal)
   }

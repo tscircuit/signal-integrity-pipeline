@@ -2,6 +2,7 @@ import { test } from "bun:test"
 import assert from "node:assert/strict"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { extname, join } from "node:path"
+import { routedStages } from "../../src/pipeline"
 
 const root = join(import.meta.dirname, "..", "..")
 /** README.md, AGENTS.md and every Markdown file under docs/, relative to the repo root. */
@@ -116,4 +117,45 @@ test("agent rules live only in AGENTS.md", () => {
       !existsSync(join(root, other)),
       `${other}: put agent rules in AGENTS.md instead`,
     )
+})
+
+/** Characters allowed in generated stage names. */
+const STAGE_NAME_CHARACTERS =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
+
+/** Read generated stage names from numbered Markdown table rows. */
+function documentedStageNames(text: string): string[] {
+  const names: string[] = []
+  for (const line of text
+    .replaceAll("\r", "\n")
+    .replaceAll("\u2028", "\n")
+    .replaceAll("\u2029", "\n")
+    .split("\n")) {
+    if (!line.startsWith("| ") || !line.endsWith(" |")) continue
+    const columns = line.slice(2, -2).split(" | ")
+    if (columns.length !== 2) continue
+    const [number, name] = columns
+    if (!number || ![...number].every((char) => char >= "0" && char <= "9"))
+      continue
+    if (
+      !name ||
+      ![...name].every((char) => STAGE_NAME_CHARACTERS.includes(char))
+    )
+      continue
+    names.push(name)
+  }
+  return names
+}
+
+test("routed documentation stage order is generated from the debugger tuple", () => {
+  for (const file of ["README.md", "docs/ARCHITECTURE.md"]) {
+    const markdown = readFileSync(join(root, file), "utf8")
+    const afterMarker = markdown.split("<!-- routed-stages:start -->")[1]
+    const [text] = afterMarker.split("<!-- routed-stages:end -->")
+    const names = documentedStageNames(text)
+    assert.deepEqual(
+      names,
+      routedStages.map((stage) => stage.solverName),
+    )
+  }
 })

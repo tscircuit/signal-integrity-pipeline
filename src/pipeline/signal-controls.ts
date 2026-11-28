@@ -53,25 +53,19 @@ export interface ChannelSimulationControlOptions {
   aggressors: Aggressors
   durationSeconds: number
   stepSeconds: number
-}
-
-/** Fastest edge and maximum transient step for the recording. */
-interface SignalTiming {
-  fastestEdgeSeconds: number
-  stepSeconds: number
+  captureDrivers?: boolean
 }
 
 /** Limit the step by the shortest bit, fastest edge and recording duration. */
-export function signalTiming({
+export function signalStepSeconds({
   patterns,
   durationSeconds,
-  edgeTimesSeconds,
+  fastestEdgeSeconds,
 }: {
   patterns: readonly DriverPattern[]
   durationSeconds: number
-  edgeTimesSeconds: number[]
-}): SignalTiming {
-  const fastestEdgeSeconds = Math.min(...edgeTimesSeconds)
+  fastestEdgeSeconds: number
+}): number {
   const rate = Math.max(...patterns.map((signal) => signal.bit_rate_bps))
   const stepSeconds = Math.min(
     1 / rate / STEPS_PER_BIT,
@@ -84,7 +78,7 @@ export function signalTiming({
       "simulation_timing",
       "Transient timestep must be finite and positive (time_per_step)",
     )
-  return { fastestEdgeSeconds, stepSeconds }
+  return stepSeconds
 }
 
 /** Choose the capture duration in seconds and check coverage of enabled stimuli. */
@@ -249,6 +243,7 @@ export function withChannelSimulationControls({
   aggressors,
   durationSeconds,
   stepSeconds,
+  captureDrivers,
 }: ChannelSimulationControlOptions): ChannelSimulationControls {
   const controls: RunControls = { states: [], stimuli: [] }
   const db = cju([...circuit])
@@ -300,7 +295,10 @@ export function withChannelSimulationControls({
     }
   }
   for (const signal of driverReceiverChannels) {
-    for (const [index, endpoint] of probeEndpoints(signal).entries()) {
+    const endpoints = captureDrivers
+      ? [...signal.receivers, signal.driver]
+      : probeEndpoints(signal)
+    for (const [index, endpoint] of endpoints.entries()) {
       const ports = endpointPorts(endpoint)
       let ref = ports[1]
       if (!("p_source_port_id" in endpoint))

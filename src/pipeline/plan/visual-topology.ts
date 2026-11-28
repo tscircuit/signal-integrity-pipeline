@@ -1,9 +1,8 @@
-import { type CircuitJsonUtilObjects, cju } from "@tscircuit/circuit-json-util"
+import { cju } from "@tscircuit/circuit-json-util"
 import {
   cloneCircuitJson,
   type PlanOverlay,
   type PlanTrace,
-  type SourceNetId,
   type SourcePortId,
   type SourceTraceId,
 } from "../../board"
@@ -19,6 +18,7 @@ import {
 } from "../../simulation"
 import type { TransientChannelSimulationPlan } from "../transient-channel-simulation-plan"
 import type { PlanPath } from "./visual"
+import { buildTopologyOverlays } from "./visual-topology-overlays"
 
 /** Presentation data for the electrical partitions before rendering the board. */
 export interface PlanTopology {
@@ -106,96 +106,7 @@ function resolvePath({
   return { ...path, pathSegments }
 }
 
-/** Draw only relevant series passives and ideal wires, keeping distinct explicit joins. */
-function buildTopologyOverlays({
-  db,
-  graphs,
-  activeSourcePortIds,
-  placedSourcePortIds,
-  spiceNodeNamesBySourceContactId,
-}: {
-  db: CircuitJsonUtilObjects
-  graphs: ReceiverGraphs
-  activeSourcePortIds: ReadonlySet<SourcePortId>
-  placedSourcePortIds: ReadonlySet<SourcePortId>
-  spiceNodeNamesBySourceContactId: CircuitNodes["mapping"]
-}): PlanOverlay[] {
-  const overlays: PlanOverlay[] = []
-  for (const { evidence } of graphs.channelConnections) {
-    if (evidence.sourceTraceId !== undefined) continue
-    const { fromSourcePortId, toSourcePortId } = evidence
-    overlays.push({
-      fromSourcePortId,
-      toSourcePortId,
-      kind: "series",
-      label: "Series passive",
-    })
-  }
-  const overlaySourcePortIds = new Set([
-    ...activeSourcePortIds,
-    ...overlays.flatMap(({ fromSourcePortId, toSourcePortId }) => [
-      fromSourcePortId,
-      toSourcePortId,
-    ]),
-  ])
-  const activeSpiceNodeNames = new Set(
-    [...overlaySourcePortIds].map(
-      (sourcePortId) => spiceNodeNamesBySourceContactId[sourcePortId],
-    ),
-  )
-  const sourcePortIdsBySourceNetId = new Map<SourceNetId, Set<SourcePortId>>()
-  const seen = new Set<string>()
-  for (const connection of graphs.wireConnections) {
-    const pins = connection.filter(
-      (sourcePortId) =>
-        placedSourcePortIds.has(sourcePortId) &&
-        activeSpiceNodeNames.has(
-          spiceNodeNamesBySourceContactId[sourcePortId],
-        ) &&
-        spiceNodeNamesBySourceContactId[sourcePortId] !== "0",
-    )
-    const [fromSourcePortId, ...targets] = pins
-    for (const toSourcePortId of targets) {
-      const key = [fromSourcePortId, toSourcePortId].sort().join(" ")
-      if (seen.has(key)) continue
-      seen.add(key)
-      overlays.push({
-        fromSourcePortId,
-        toSourcePortId,
-        kind: "ideal",
-        label: "Ideal connection",
-      })
-    }
-    for (const sourceContactId of connection) {
-      const sourceNet = db.source_net.get(sourceContactId)
-      if (!sourceNet) continue
-      const sourceNetId = sourceNet.source_net_id
-      const sourcePortIds =
-        sourcePortIdsBySourceNetId.get(sourceNetId) || new Set()
-      for (const sourcePortId of pins) sourcePortIds.add(sourcePortId)
-      sourcePortIdsBySourceNetId.set(sourceNetId, sourcePortIds)
-    }
-  }
-  for (const [
-    fromSourcePortId,
-    ...targets
-  ] of sourcePortIdsBySourceNetId.values()) {
-    for (const toSourcePortId of targets) {
-      const key = [fromSourcePortId, toSourcePortId].sort().join(" ")
-      if (seen.has(key)) continue
-      seen.add(key)
-      overlays.push({
-        fromSourcePortId,
-        toSourcePortId,
-        kind: "ideal",
-        label: "Ideal net connection",
-      })
-    }
-  }
-  return overlays
-}
-
-/** Number traces in receiver path order, then show the remaining selected copper. */
+/** Number traces in receiver path order, then show the remaining scoped copper. */
 function orientPlanTraces({
   paths,
   traceContacts,
@@ -255,7 +166,9 @@ export function resolvePlanTopology({
   const circuitJson = cloneCircuitJson(plannedCircuitJson)
   const db = cju(circuitJson)
   const channels = db.simulation_pcb_driver_receiver_channel.list()
-  const groundSourcePortId = plan.sections.referenceSourcePortId
+  const groundSourcePortId = modeling.channelReference?.sourcePortId
+  if (groundSourcePortId === undefined)
+    throw new Error("Plan has no resolved reference port")
   const graphs = buildReceiverGraphs({
     db,
     circuit: circuitJson,

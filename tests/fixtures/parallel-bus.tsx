@@ -115,17 +115,23 @@ function BusPart({
 
 /** Route both physical neighbors and let the caller choose which to declare as drivers. */
 export function ParallelBus({
+  children,
+  simulationName,
   neighbourPattern,
   driverDisabled,
   driverBitRate,
   aggressorPattern,
   aggressorDisabled,
+  duration,
 }: {
+  children?: React.ReactNode
+  simulationName?: string
   neighbourPattern?: "1"
   driverDisabled?: boolean
   driverBitRate?: string
   aggressorPattern?: string
   aggressorDisabled?: boolean
+  duration?: string
 }): React.JSX.Element {
   return (
     <board
@@ -141,6 +147,7 @@ export function ParallelBus({
       <BusPart name="TX" x={-5} />
       <BusPart name="RX" x={5} />
       <Reference />
+      {children}
       {["DQ0", "DQ1"].map((pin) => (
         <Fragment key={pin}>
           <trace
@@ -152,9 +159,11 @@ export function ParallelBus({
         </Fragment>
       ))}
       <simulation.pcbtransientchannelsimulation
+        name={simulationName}
         bitRate="20Mbps"
         aggressorPattern={aggressorPattern}
         aggressorDisabled={aggressorDisabled}
+        duration={duration}
       >
         <simulation.pcbdriverreceiverchannel
           name="DQ0"

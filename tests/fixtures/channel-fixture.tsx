@@ -14,11 +14,13 @@ type ChannelRouteScenario =
 export function ChannelFixture({
   route,
   namedNets = false,
+  separateClampRail = false,
   short,
   children,
 }: {
   route: ChannelRouteScenario
   namedNets?: boolean
+  separateClampRail?: boolean
   children?: React.ReactNode
   short?: "resistor" | "channel" | "junction"
 }): React.JSX.Element {
@@ -34,6 +36,8 @@ export function ChannelFixture({
   if (short === "junction") receiverStart = join
   let receiverPath: TraceProps["pcbPath"]
   if (route !== "driver-only") receiverPath = [receiverStart, receiver]
+  let clampNet: string | undefined
+  if (separateClampRail) clampNet = "net.PC"
   return (
     <board
       width={18}
@@ -45,9 +49,10 @@ export function ChannelFixture({
       schematicDisabled
       isViaInPadAllowed
     >
-      <Inverter name="TX" x={-5} y={0} driver />
-      <Inverter name="RX" x={5} y={0} driver={false} />
+      <Inverter name="TX" x={-5} y={0} driver clampNet={clampNet} />
+      <Inverter name="RX" x={5} y={0} driver={false} clampNet={clampNet} />
       <Reference />
+      {separateClampRail && <net name="PC" />}
       {children}
       {route === "unrouted" && <trace from={driver} to={receiver} />}
       {route === "parallel-passives" && (

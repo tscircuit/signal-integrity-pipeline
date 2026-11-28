@@ -26,7 +26,6 @@ domain:
   chevron: a mark indicating the direction of a receiver path
   dash: one mark in a dashed line
   fault: a diagnostic tied to specific contacts or copper
-  header: the text band above the board in a plan drawing
   ideal: an electrical connection with no extracted impedance
   legend: the explanation of a drawing's symbols and colors
   scene: the records and annotations used to draw one view
@@ -36,17 +35,19 @@ domain:
   visual: a board drawing or data used to build it
   above: toward increasing solver z in a physical stackup
   actual: read directly from the physical source-board records
-  admit: accept an IBIS asset after validating its content
   aggressor: an output-capable pin coupled to a selected channel outside its endpoints
   allow: an explicit caller-selected modelling permission
+  annulus: the ring of copper between a via hole and the surrounding pad or plating
   antipad: clearance opening in a plane around a signal via
   arc: distance measured along a routed polyline including its bends
   artifact: a file the pipeline produces (solver deck, log, capture, evidence), recorded in the ledger
   assembly: the bundle of converted IBIS chip models used by one experiment
   asset: an IBIS model file that the board names (ibis_model_asset in Circuit JSON)
+  axis: a plot scale representing a measured quantity
+  bandwidth: the number of stored off-diagonals in a banded IBIS package matrix
   barrel: the plated copper tube that lines a via hole
   below: toward decreasing solver z in a physical stackup
-  bias: very weak DC anchor used to fix an otherwise floating common-mode voltage
+  bias: a DC voltage that fixes an electrical operating point
   bind: attach chip models and probes to the planned experiment
   board: the circuit board being analysed, read from Circuit JSON
   bottom: the outer copper layer on the lower face of the board
@@ -57,34 +58,39 @@ domain:
   bus: an IBIS Pin Mapping label for pins sharing an electrical reference
   c: capacitance matrix or its entries
   cache: reused solution keyed only by identical physical cross-section geometry
+  camera: the fixed board region a problem's stage drawings show
   capability: an operation an IBIS model supports, such as driving, receiving or disabling
   capacitance: how much charge copper stores per volt (the C in RLGC)
   capacitive: coupling between conductors through their electric field
+  calculate: compute a physical quantity or matrix from its inputs
   capture: a finite recording of voltages over time
   causal: a response that depends only on present and earlier input
   channel: everything electrical between driver and receiver: signal traces, return paths and nearby copper
-  charge: electric charge on a conductor or dielectric interface in the cross-section solve
+  charge: electric charge on a conductor or dielectric interface in the cross-section field calculation
   chord: straight approximation to a densely tessellated curve
   circuit: an electrical network; also the Circuit JSON document that describes the board
   clamp: a protection circuit that conducts when a signal crosses its reference voltage
   coefficient: a dimensionless multiplier on an IBIS pullup or pulldown current
   component: a part on the board, such as a chip, resistor or capacitor
-  conductivity: how easily a material carries current, in siemens per metre
-  conductor: one piece of copper the field solver treats as a single electrical body
+  conductivity: how easily a material carries current, in siemens per meter
+  conductor: one piece of copper treated as a single electrical body in a cross-section
   constant: a bit pattern that repeats one level, so its driver never switches
   contrast: relative permittivity difference across a dielectric interface
   control: pin enable state or drive timing for a simulation
+  coplanar: lying in the same plane
   copper: the metal shapes on the board: traces, pours, pads and vias
-  correction: an explicit recorded change required by a documented numerical convention
+  term: an electrical quantity in a package matrix or scalar parasitic model
+  cutoff: the last measured sample time kept before a waveform tail is held
   coupled: electrical behavior in one pin or conductor that depends on another
   coupling: mutual electrical or magnetic interaction between conductors
   crossover: the frequency band where conductor loss turns from its DC value into skin loss
   cursor: the current position while traversing an ordered route
-  cut: an intentional break in physical copper
+  cutout: an opening in a copper pour
   deck: an input file for a solver (the ngspice netlist)
   declare: plan experiments and probes from the board's simulation records before any solver runs
   delay: time needed for a signal edge to propagate through a line
-  derivative: sensitivity of an extracted matrix to material or boundary displacement
+  derivative: sensitivity of a calculated matrix to material or boundary displacement
+  detect: check whether a solver executable is available on PATH
   deviation: the measured difference between an approximation and its reference
   diagnostic: the library's one error type: a short code, the module that failed and the logs that explain it
   diagonal: matrix entries relating each conductor to itself
@@ -93,128 +99,176 @@ domain:
   dielectric: the insulating material between copper layers
   differential: a signal carried as the voltage difference between two wires
   digital: a stimulus described by timed binary logic states
+  dispersion: frequency-dependent wave travel that can distort a signal edge
   driver: the chip output that sends a signal
+  envelope: the band between the lowest and highest of many probe curves at each moment
   er: relative dielectric permittivity
   evidence: data kept in the result that shows how a conclusion was reached
+  excursion: how far a curve goes beyond the band most samples stay in
   execution: a completed invocation through the solver port
   experiment: one transient run with stimuli and probes
-  extent: horizontal reach of the discretised dielectric interfaces
-  extract: measure each wire's R, L, G and C from its board cross-sections
-  extraction: measuring wire R, L, G and C from board cross-sections with the 2D field solver
+  extent: horizontal reach of the discretized dielectric interfaces
+  extract: derive copper geometry from PCB records
+  extraction: deriving copper geometry from PCB records
+  farad: SI unit of capacitance
+  eye: a waveform folded every two bit periods so all transitions overlay
+  filament: an ideal thin current path used to estimate mutual inductance
   fixture: a known resistive load used to capture an IBIS switching waveform
+  focus: the board region a stage drawing keeps in view, around the selected copper
   gate: the start of the interval compared during numerical convergence
   general: shared across supported channel experiment shapes
-  geometry: the board's copper shapes, layers and positions, in millimetres
+  geometry: the board's copper shapes, layers and positions, in millimeters
   ground: the zero-volt reference copper that signal current returns through
   h: inductance measured in henries
+  halo: a dark outline behind a mark so it reads over copper
+  header: a heading for a drawing or a directive at the start of a line
+  hold: the interval over which a switching coefficient stays fixed
   impedance: a wire's opposition to changing current, in ohms
+  henry: SI unit of inductance
   inductance: magnetic flux linkage per unit current, measured in henries
   inductive: coupling between conductors through their magnetic field
   initial: the state or value at the beginning of a simulation
+  integration: accumulating per-length electrical values along a route or over time
   interface: boundary between two dielectric materials
-  join: connect physically continuous copper pieces into one path
+  join: an ideal connection from an original wire to the centerline of its copper union
+  junction: the point where electrically connected conductors meet
   kernel: Green function relating boundary charge to potential or field
   ladder: distributed line approximated by connected lumped electrical cells
   lane: an existing converter term for an extracted transmission line
   overlay: a drawing mark that depicts an electrical connection or a fault
   segment: one trace, series component, or ideal connection along a receiver path
-  contact: a source port or source net used in electrical connectivity
+  contact: an electrical connection at a source port or net, or physical contact between a pad and wire or via copper
   group: contacts joined by ideal connections before SPICE node numbering
   receiver: the declared destination of a channel path
   path: the ordered connections from a driver to a receiver
   leg: one signal path of a differential pair, positive or negative
   clearance: space left free around a feature
   vertex: a point in a connection graph, represented by a source contact, ideal group or SPICE node
-  lateral: distance transverse to a routed line in the board plane
-  layer: one copper or insulating sheet in the stackup
+  longitudinal: along the canonical direction of a wire
+  lateral: across a wire within the board plane
+  layer: one copper or dielectric sheet in the stackup or cross-section
   ledger: the single record of every artifact path the pipeline writes; a second write to a path fails
+  local: running on the user's computer through its installed native solver
   loss: energy dissipated in conductors or dielectrics
+  laminate: board dielectric between copper layers
   mask: insulating soldermask on the outer copper layers
-  metre: SI unit of length used for per-unit-length electrical matrices
+  mesh: the set of boundary panels used to approximate the field in a cross-section
+  meter: SI unit of length used for per-unit-length electrical matrices
+  middleware: the local HTTP handler installed in the Vite development server
+  modal: describing an electrical mode or the factor that represents its stored energy
   model: a chip model (IBIS) or the electrical model of the channel built from extraction
   modeling: private numerical settings derived from Circuit JSON
+  mutual: a capacitance or inductance term relating two different conductors
   nearby: inside the explicitly defined spatial coupling horizon
   net: a set of pins and copper that are connected together
+  netlist: the SPICE nodes and the electrical elements connected to them
   network: the connected electrical cells and correction elements of routed copper
   node: a named connection point in the SPICE circuit
   non: prefix identifying an explicitly excluded property
   normal: perpendicular to a surface or conductor direction
   oblique: a neighbour whose direction differs from the local trace direction
   observation: adaptive waveform parsing and numerical convergence
+  open: disconnected from the electrical network
   pad: the copper area a component pin is soldered to
   pair: two conductors screened together for mutual coupling
-  panel: a small flat boundary piece of a cross-section that the 2D field solver puts charge on
+  panel: a small flat boundary piece of a cross-section that carries constant charge in the 2D field calculation
+  pane: an opaque panel beside the board in a stage drawing, holding a cross-section or a waveform plot
   parallel: conductors sharing a common longitudinal direction
   passive: a component that does not amplify: resistor, capacitor or inductor
+  passivity: the property that a circuit can store or dissipate energy but cannot supply it
   permittivity: how strongly an insulator stores electric field (its dielectric constant)
+  picture: the real board drawn by circuit-to-svg with a stage drawing on top, both in one camera
   pin: a chip leg, named in the IBIS model
   pipeline: the whole routed run from board to transient capture, as a fixed chain of stages
+  pivot: the matrix coefficient used to eliminate entries in its column
   plane: a large copper area on one layer, usually ground or power
   plating: the copper lining inside a via hole
   pole: a stable relaxation rate in a causal rational loss model
   polygon: a closed shape made of outline rings of points
   port: a chip connection the library drives or measures (source_port in Circuit JSON)
+  post: a vertical conductor between a terminal and a route or reference plane
   pour: a filled copper area on a layer (copper pour)
   power: an electrical supply net or reference plane
   prepare: derive private experiment settings from the declared channel intent
   probe: a point where we measure voltage
+  projection: the component of a point or vector along a chosen axis
   pulldown: the buffer path that pulls the signal toward its low reference
   pullup: the buffer path that pulls the signal toward its high reference
+  quadrature: numerical integration by evaluating a function at weighted points
   rail: a power or ground supply connection
   ramp: the loaded voltage change and duration between 20% and 80% of an IBIS edge
   recede: move a conducting wall away from the field region
   recession: displacement of conducting walls away from the field for Wheeler loss
   reciprocity: the check that a matrix is symmetric (the effect of A on B equals B on A)
+  reference: a copper surface or edge that supplies a return path
   refinement: a finer spatial subdivision of a solve, used to check that the answer stops changing
+  region: the part of a cross-section electrically separated by reference planes
   remainder: the part of a matrix diagonal left after its mutual energy terms
   residual: how far a computed result is from passing an exact check (smaller is better)
   resistance: how much a wire resists steady current, in ohms (the R in RLGC)
+  response: the status and result returned by an HTTP request
   return: the path current takes back to its source, usually through ground copper
   ring: one closed loop of points that outlines a polygon or a hole in it
   route: the path a trace follows across the board, as points and vias
   schedule: the actual logical transitions and their times in one stimulus
+  screen: decide whether a pair is coupled using its normalized mutual coefficients
   scope: a module's named artifact folder, or the board copper selected for a channel's extraction
   seal: sort and freeze a ledger's files into the published file map
   second: the SI time unit or the second member of an ordered pair
   self: a matrix term belonging to one conductor rather than a mutual pair
+  separator: a character that marks the boundary between raw fields or lines
   settle: stay within a stated tolerance for the entire remaining measured waveform
   shunt: an electrical branch across two conductor or reference nodes
   signal: a voltage that carries data along a lane
   simplify: reduce curve tessellation while bounding geometric displacement
   simulation: running the SPICE circuit over time with ngspice
+  sine: the trigonometric measure used here to compare route directions
   skin: concentration of alternating conductor current near its surface
-  slab: a flat layer of laminate or mask in a cross-section
-  slice: one local cross-section of routed conductors and reference surfaces
+  wheeler: incremental inductance method for calculating skin loss from a small displacement of conductor walls
+  sweep: partition geometry by visiting consecutive boundaries in order
+  section: a longitudinal interval with the same wires and reference surfaces
   snapshot: a copied and frozen domain value published by a completed stage
+  solution: the electrical matrices calculated for one cross-section
   solver: an external program that does the physics (ngspice), or one stepped pipeline stage
   span: the range of layers a via crosses
   sparse: a matrix or realization with mostly zero couplings
   stackup: the order and thickness of the board's copper and insulating layers
-  stage: one fixed step of the routed pipeline (planning, sections, fields, bindings, network, transient)
+  stage: one fixed step of the routed pipeline (planning, copper geometry extraction, RLGC calculation, channel netlist, network, transient)
   startup: the time a switching channel needs to settle after its stimulus starts
   stimulus: the bit pattern a driver sends during an experiment
+  strip: a pane showing each selected net unrolled into a to-scale bar
   stub: the unused part of a via beyond the layer where the signal leaves it
   subcircuit: a nested group of components on the board; in SPICE, a reusable circuit block
   subject: the thing a diagnostic points at, such as a cell, port or experiment
   swing: the voltage difference between the start and end of an edge
   switching: the time-dependent activation of a buffer's pullup and pulldown currents
-  tail: the inactive end of a measured transition after settling
+  tail: the settled suffix of a measured rising or falling waveform
   tangent: dielectric dissipation factor or direction along a boundary panel
   terminal: a connection end of a conductor or source
+  timestamp: the time at which a waveform sample was recorded
+  tone: a fixed drawing colour with one meaning, such as the slice cut or a failure
   top: the outer copper layer on the upper face of the board
   trace: routed PCB copper identified by a source trace, including its wire runs and layer transitions
   transient: a circuit simulation that follows voltage and current through time
   transition: a change of layer, reference or conductor geometry
   typical: the nominal vendor corner for a model value or waveform
-  unused: a vendor package lead excluded from the selected physical pin mapping
+  unused: an IBIS package pin absent from the simulation pin mapping
   vacuum: reference material with relative permittivity one
   vector: one named sequence of engine samples, such as time or a node voltage
   via: a plated hole that carries a signal between layers
-  waveform: voltage over time at one probe
-  weight: a switching coefficient extracted from IBIS voltage and current data
-  wire: a piece of copper that carries a signal; in plain words, a trace or via
+  viewport: the world-coordinate region visible in a picture
+  visualize: draw a solver's current physical work in the shared graphics atlas
+  watchdog: a host timer that terminates an engine exceeding its runtime limit
+  waveform: measured voltage over time at a fixture or probe
+  wire: one straight planar conductor derived from a PCB trace
+  word: a contiguous non-whitespace field in an ASCII raw file or diagnostic
+  worker: an isolated browser thread that can be terminated to stop a solver
+  # Transmission line is the electrical model of a coupled wire group over one section.
+  # Cross-section is its two-dimensional copper and material geometry, and RLGC matrices are its electrical results.
 
 abbreviations:
+  http: Hypertext Transfer Protocol used by the browser solver adapter
+  wasm: WebAssembly, the portable binary format used to run ngspice in a browser
   ac: alternating current; in DDR thresholds, the level a signal must reach
   args: arguments
   config: configuration
@@ -230,19 +284,20 @@ abbreviations:
   id: identifier
   init: initial settings
   json: JavaScript Object Notation
-  m: metre
-  mm: millimetre
+  m: meter
+  mm: millimeter
   ms: millisecond
   ns: nanosecond
   pcb: printed circuit board
   ps: picosecond
   rect: rectangle
-  rlgc: resistance, inductance, conductance, capacitance: the four wire measurements
+  rlgc: per-unit-length resistance, inductance, conductance and capacitance matrices calculated by a two-dimensional boundary-element method
   sha: Secure Hash Algorithm (as in sha256)
-  sm: siemens per metre, the unit of conductivity
+  sm: siemens per meter, the unit of conductivity
   spice: the standard circuit simulation netlist format (run by ngspice)
   stderr: standard error output of a program
   stdout: standard output of a program
+  svg: Scalable Vector Graphics, the image format of board pictures
   ui: unit interval, one bit period
   url: web address
   v: volt
@@ -259,18 +314,18 @@ general:
   - close compare compile connect contain convert create cross define derive display draw emit end exit
   - expect fail fall find finish flip flush generate get has inspect invoke is link load locate match measure
   - merge normalize omit override parse produce quote raise read receive reduce refine register remove rename
-  - replace reset resolve rise run select set shift skip solve sort split start supply test transmit
-  - unlink update use validate view visit write trim crop unroll cast fold
+  - replace reset resolve rise run save select set shift skip solve sort split start supply test transmit
+  - unlink update use validate view visit write trim crop unroll cast fold append
   # states and outcomes
   - connected contained default failure found grounded killed named oriented pinned scoped seen supplied
   - unavailable unconverged unevaluated unselected used done built crowded kept
   # data shapes and code structure
   - all any array attachment base binding body boolean box bucket budget byte candidate cell chain child
-  - code column command comment content context count data declaration definition descriptor element
+  - character code column command comment content context count data declaration definition descriptor element
   - entry error event expression field file first format graph grid hash index input item key
   - kind label last level line list location log map mapping member message metadata method mode name
   - namespace number option options order output owner package parent part pattern payload piece
-  - plan policy prefix progress record reference request rest result root row schema section selection
+  - plan policy prefix progress record request rest result root row schema selection
   - selector series source state status table text title token tree type unit validation value
   # program runs and tools
   - adapter comparison conversion converter diagram directory domain engine fast faster invocation tool
@@ -278,33 +333,39 @@ general:
   - ambiguity approximation button canvas client color description detail download drag font hint issue
   - limitation listener overview plot reason report role summary tab viewer warning drawing frame margin alpha bar hue tick band casing digit glyph lightness pitch fallback
   # describing and comparing
-  - absolute active analytic best canonical common compatible compatibility condition convention direct collect
+  - absolute active adjacent analytic best canonical common compatible compatibility condition convention direct collect
   - empty equivalent exact expected finite fixed flat full global high horizontal inner limit low lowest
   - max maximum middle min minimum native negative next numeric original other outer own physical half highest least longest median most near far reach
   - positive preceding previous primitive prior pure quiet range raw relative safe serial target threshold
-  - characterization compliance
+  - characterization compliance explicit external valid invalid vertical
   # quantities, electricity and units
-  - amount amplitude bit current denominator duration electrical energy factor farad fraction frequency
+  - amount amplitude bit current denominator duration electrical energy factor fraction frequency millimeter
   - interval material matrix measurement milliseconds ohm offset origin peak period phase plateau
-  - quantity reduction sample scale seconds speed step time timeout tolerance transmission voltage zero
+  - precision
+  - nominal schur quantity reduction sample scale seconds speed step time timeout tolerance transmission volt voltage zero
   # math
-  - cholesky delaunay interpolation multiply norm sum symmetrize transpose union total
+  - cholesky delaunay evaluate integral magnitude interpolation multiply norm ratio sqrt sum symmetrize transpose union total
+  - exponent
   # geometry
-  - alignment anchor ancestor area aspect border boundary center connection coordinate curve
+  - alignment angle anchor ancestor area aspect border boundary center connection coordinate curve
   - depth direction distance division edge endpoint epsilon face gap height hole left length nearest
   - outline point position profile radius right round side sign size sizing spacing surface circle corner closest across
-  - thickness triangle width
+  - thickness triangle width separation overlap
   # axis letters and their steps or counts (x, dx = step along x, nx = count along x)
   - x y z dx dy nx ny nz
   # place and relation words
-  - after along at before between by for from in inside of on out per through to up within
+  - with after along at before between by for from in inside of on out per through to up within
   # irregular plurals the checker cannot reduce
   - indices matrices stimuli
   # other everyday words
-  - seed
+  - tessellate hypotenuse touch
 
 avoid:
+  admit: validate
   centre: center
+  weight: coefficient
+  transverse: lateral
+  slice: section
   col: column
   ctx: context
   eps: epsilon

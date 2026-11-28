@@ -1,5 +1,5 @@
 import { cju } from "@tscircuit/circuit-json-util"
-import { type PcbBoard, pcb_stackup } from "circuit-json"
+import { type LayerRef, type PcbBoard, pcb_stackup } from "circuit-json"
 import { fail } from "./diagnostics"
 import type { CircuitJson } from "./schema"
 
@@ -13,7 +13,7 @@ const LAYER_POSITION_SCALE = 1e10
 const roundLayerPosition = (value: number): number =>
   Math.round(value * LAYER_POSITION_SCALE) / LAYER_POSITION_SCALE
 export interface CopperLayer {
-  name: string
+  name: LayerRef
   zMinMm: number
   zMaxMm: number
   conductivitySm: number
